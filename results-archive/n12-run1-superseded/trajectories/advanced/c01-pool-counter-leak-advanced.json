@@ -1,0 +1,231 @@
+{
+  "trajectory_id": "bafa2329-0d6d-42a4-9714-1a413c6b056c",
+  "case_id": "c01-pool-counter-leak",
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-30T10:17:12.991086500+00:00",
+  "finished_at": "2026-08-30T10:17:37.228020600+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 3
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_read_lines": 200,
+    "max_search_results": 40
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "advanced-review/v4",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nYou are producing CANDIDATE findings, not final ones. Nothing you write here\nreaches a human directly. Each candidate is investigated against the actual\nrepository and then independently adjudicated, and only what survives is\nreported. A candidate that turns out to be wrong costs almost nothing. A real\ndefect you never raised is never checked at all.\n\nSo err toward proposing. Raise anything a careful reviewer would want confirmed\nbefore approving this change, including things you expect will turn out to be\nfine.\n\n- Anchor each candidate to a specific file and line range.\n- State each claim as something that can actually happen, not as a\n  conditional. Write \"callers can reach this with an empty list, and it will\n  panic\", not \"this will panic if the list is empty\" — the second is true of\n  the code whether or not the situation ever arises, so it cannot be\n  disproved and is not a finding.\n- State each claim as a single falsifiable sentence — something repository\n  evidence could confirm or refute.\n- Pay particular attention to anything whose correctness depends on facts that\n  are not visible in the changed files. If the code is only correct given some\n  assumption about the rest of the repository, that assumption is a candidate.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Avoid vague concerns such as \"this looks fragile\"; say what would go wrong.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nReturn {\"findings\": []} only if there is genuinely nothing worth checking.\n\nUnder-proposing is the expensive mistake at this stage. Include a candidate\neven when you suspect it is fine, and in particular whenever the code's\ncorrectness depends on something you cannot see in the changed files — a\ncaller, a constructor, an invariant asserted in a comment, a value's origin.\nThose are the candidates the investigation stage exists to settle, and it can\nonly settle the ones you raise.",
+      "user": "## Change under review\n\nThe capacity check in `Pool::acquire` was rewritten so that the active counter is incremented first and the limit is then compared with `>` instead of `>=`. The author's stated intent was to remove the duplicated increment and make the comparison read more naturally against the number of connections that would be outstanding.\n\n## Diff\n\n```diff\n--- a/src/pool.rs\n+++ b/src/pool.rs\n@@ -53,12 +53,12 @@\n     /// Lease a connection, or fail if the pool is at capacity.\n     pub fn acquire(&self) -> Result<Conn, PoolError> {\n         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n+        *n += 1;\n \n-        if *n >= self.max {\n+        if *n > self.max {\n             return Err(PoolError::Exhausted);\n         }\n \n-        *n += 1;\n         drop(n);\n         Ok(Conn {\n             active: Arc::clone(&self.active),\n\n```\n\n## Current contents of the changed files\n\n\n### src/pool.rs\n\n```rust\n    1 | //! A bounded connection pool.\n    2 | \n    3 | use std::sync::{Arc, Mutex};\n    4 | \n    5 | #[derive(Debug, PartialEq, Eq)]\n    6 | pub enum PoolError {\n    7 |     /// All permits are in use.\n    8 |     Exhausted,\n    9 | }\n   10 | \n   11 | /// A handle to a leased connection. Releasing it returns the permit.\n   12 | pub struct Conn {\n   13 |     active: Arc<Mutex<usize>>,\n   14 |     released: bool,\n   15 | }\n   16 | \n   17 | impl Conn {\n   18 |     pub fn release(mut self) {\n   19 |         self.released = true;\n   20 |         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   21 |         *n -= 1;\n   22 |     }\n   23 | }\n   24 | \n   25 | impl Drop for Conn {\n   26 |     fn drop(&mut self) {\n   27 |         if !self.released {\n   28 |             let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   29 |             *n -= 1;\n   30 |         }\n   31 |     }\n   32 | }\n   33 | \n   34 | /// Hands out at most `max` concurrent connections.\n   35 | pub struct Pool {\n   36 |     active: Arc<Mutex<usize>>,\n   37 |     max: usize,\n   38 | }\n   39 | \n   40 | impl Pool {\n   41 |     pub fn new(max: usize) -> Self {\n   42 |         Self {\n   43 |             active: Arc::new(Mutex::new(0)),\n   44 |             max,\n   45 |         }\n   46 |     }\n   47 | \n   48 |     /// Number of connections currently leased out.\n   49 |     pub fn active(&self) -> usize {\n   50 |         *self.active.lock().expect(\"pool counter poisoned\")\n   51 |     }\n   52 | \n   53 |     /// Lease a connection, or fail if the pool is at capacity.\n   54 |     pub fn acquire(&self) -> Result<Conn, PoolError> {\n   55 |         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   56 |         *n += 1;\n   57 | \n   58 |         if *n > self.max {\n   59 |             return Err(PoolError::Exhausted);\n   60 |         }\n   61 | \n   62 |         drop(n);\n   63 |         Ok(Conn {\n   64 |             active: Arc::clone(&self.active),\n   65 |             released: false,\n   66 |         })\n   67 |     }\n   68 | }\n   69 | \n   70 | #[cfg(test)]\n   71 | mod tests {\n   72 |     use super::*;\n   73 | \n   74 |     #[test]\n   75 |     fn leases_up_to_the_limit() {\n   76 |         let pool = Pool::new(2);\n   77 |         let a = pool.acquire().unwrap();\n   78 |         let b = pool.acquire().unwrap();\n   79 |         assert_eq!(pool.active(), 2);\n   80 |         a.release();\n   81 |         b.release();\n   82 |         assert_eq!(pool.active(), 0);\n   83 |     }\n   84 | \n   85 |     #[test]\n   86 |     fn refuses_beyond_the_limit() {\n   87 |         let pool = Pool::new(1);\n   88 |         let a = pool.acquire().unwrap();\n   89 |         assert!(matches!(pool.acquire(), Err(PoolError::Exhausted)));\n   90 |         a.release();\n   91 |     }\n   92 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"StateManagement\",\n      \"severity\": \"High\",\n      \"file\": \"src/pool.rs\",\n      \"start_line\": 56,\n      \"end_line\": 60,\n      \"claim\": \"Failed acquire attempts leave the active connection counter permanently incremented, causing the pool to leak permits and eventually become permanently exhausted.\",\n      \"reasoning\": \"When `*n > self.max`, `acquire` increments `*n` but returns `Err(PoolError::Exhausted)` without decrementing `*n` or constructing a `Conn` to decrement it on drop. Subsequent releases will not return the counter to zero, artificially inflating the active count and eventually preventing any future permits from being acquired.\",\n      \"falsifiable_statement\": \"If `acquire` fails because the pool is exhausted and then all existing leases are released, `pool.active()` will be greater than 0.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 1888,
+        "output_tokens": 569,
+        "total_tokens": 2457
+      },
+      "latency_ms": 6199,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c01-pool-counter-leak-adv-1",
+        "issue_type": "StateManagement",
+        "severity": "High",
+        "location": {
+          "file": "src/pool.rs",
+          "start_line": 56,
+          "end_line": 60
+        },
+        "claim": "Failed acquire attempts leave the active connection counter permanently incremented, causing the pool to leak permits and eventually become permanently exhausted.",
+        "reasoning": "When `*n > self.max`, `acquire` increments `*n` but returns `Err(PoolError::Exhausted)` without decrementing `*n` or constructing a `Conn` to decrement it on drop. Subsequent releases will not return the counter to zero, artificially inflating the active count and eventually preventing any future permits from being acquired."
+      }
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Falsify",
+      "prompt_version": "advanced-falsify/v1",
+      "system": "You are helping test a code-review finding.\n\nGiven a claim about a defect, write the single most decisive question whose\nanswer would show the claim is WRONG. The question must be answerable by\ninspecting the repository: callers, implementations, tests, configuration, or\ntype definitions.\n\nGood: \"Does every caller of parse_row check is_empty() before indexing?\"\nBad:  \"Is this code correct?\"\n\nReturn JSON of exactly this shape:\n\n{\"falsification_question\": \"<one question>\"}",
+      "user": "Claim: Failed acquire attempts leave the active connection counter permanently incremented, causing the pool to leak permits and eventually become permanently exhausted.\nLocation: src/pool.rs:56-60\nReviewer's reasoning: When `*n > self.max`, `acquire` increments `*n` but returns `Err(PoolError::Exhausted)` without decrementing `*n` or constructing a `Conn` to decrement it on drop. Subsequent releases will not return the counter to zero, artificially inflating the active count and eventually preventing any future permits from being acquired.\n\nWhat evidence would prove this claim wrong?",
+      "response_text": "{\"falsification_question\": \"Does acquire check *n against self.max before incrementing it, or decrement *n before returning Err(PoolError::Exhausted)?\"}",
+      "usage": {
+        "input_tokens": 240,
+        "output_tokens": 275,
+        "total_tokens": 515
+      },
+      "latency_ms": 6683,
+      "attempts": 2
+    },
+    {
+      "event": "FalsificationQuestion",
+      "candidate_id": "c01-pool-counter-leak-adv-1",
+      "question": "Does acquire check *n against self.max before incrementing it, or decrement *n before returning Err(PoolError::Exhausted)?"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nFailed acquire attempts leave the active connection counter permanently incremented, causing the pool to leak permits and eventually become permanently exhausted.\n\nLocation: src/pool.rs:56-60\n\n## Falsification question\n\nDoes acquire check *n against self.max before incrementing it, or decrement *n before returning Err(PoolError::Exhausted)?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/pool.rs\n+++ b/src/pool.rs\n@@ -53,12 +53,12 @@\n     /// Lease a connection, or fail if the pool is at capacity.\n     pub fn acquire(&self) -> Result<Conn, PoolError> {\n         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n+        *n += 1;\n \n-        if *n >= self.max {\n+        if *n > self.max {\n             return Err(PoolError::Exhausted);\n         }\n \n-        *n += 1;\n         drop(n);\n         Ok(Conn {\n             active: Arc::clone(&self.active),\n\n```\n\n## Investigation so far\n\n(nothing yet)\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": false,\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"file\": \"src/pool.rs\",\n    \"start_line\": 45,\n    \"end_line\": 75\n  },\n  \"rationale\": \"Read src/pool.rs to check the implementation of acquire and see if *n is checked before incrementing or decremented on Err.\"\n}",
+      "usage": {
+        "input_tokens": 601,
+        "output_tokens": 162,
+        "total_tokens": 763
+      },
+      "latency_ms": 3810,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "c01-pool-counter-leak-adv-1-t1",
+      "candidate_id": "c01-pool-counter-leak-adv-1",
+      "tool": "read",
+      "arguments": {
+        "end_line": 75,
+        "file": "src/pool.rs",
+        "start_line": 45
+      },
+      "response": "src/pool.rs lines 45-75 of 92:\n   45 |         }\n   46 |     }\n   47 | \n   48 |     /// Number of connections currently leased out.\n   49 |     pub fn active(&self) -> usize {\n   50 |         *self.active.lock().expect(\"pool counter poisoned\")\n   51 |     }\n   52 | \n   53 |     /// Lease a connection, or fail if the pool is at capacity.\n   54 |     pub fn acquire(&self) -> Result<Conn, PoolError> {\n   55 |         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   56 |         *n += 1;\n   57 | \n   58 |         if *n > self.max {\n   59 |             return Err(PoolError::Exhausted);\n   60 |         }\n   61 | \n   62 |         drop(n);\n   63 |         Ok(Conn {\n   64 |             active: Arc::clone(&self.active),\n   65 |             released: false,\n   66 |         })\n   67 |     }\n   68 | }\n   69 | \n   70 | #[cfg(test)]\n   71 | mod tests {\n   72 |     use super::*;\n   73 | \n   74 |     #[test]\n   75 |     fn leases_up_to_the_limit() {\n",
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nFailed acquire attempts leave the active connection counter permanently incremented, causing the pool to leak permits and eventually become permanently exhausted.\n\nLocation: src/pool.rs:56-60\n\n## Falsification question\n\nDoes acquire check *n against self.max before incrementing it, or decrement *n before returning Err(PoolError::Exhausted)?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/pool.rs\n+++ b/src/pool.rs\n@@ -53,12 +53,12 @@\n     /// Lease a connection, or fail if the pool is at capacity.\n     pub fn acquire(&self) -> Result<Conn, PoolError> {\n         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n+        *n += 1;\n \n-        if *n >= self.max {\n+        if *n > self.max {\n             return Err(PoolError::Exhausted);\n         }\n \n-        *n += 1;\n         drop(n);\n         Ok(Conn {\n             active: Arc::clone(&self.active),\n\n```\n\n## Investigation so far\n\n\n--- step 1 : read {\"end_line\":75,\"file\":\"src/pool.rs\",\"start_line\":45} ---\nsrc/pool.rs lines 45-75 of 92:\n   45 |         }\n   46 |     }\n   47 | \n   48 |     /// Number of connections currently leased out.\n   49 |     pub fn active(&self) -> usize {\n   50 |         *self.active.lock().expect(\"pool counter poisoned\")\n   51 |     }\n   52 | \n   53 |     /// Lease a connection, or fail if the pool is at capacity.\n   54 |     pub fn acquire(&self) -> Result<Conn, PoolError> {\n   55 |         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   56 |         *n += 1;\n   57 | \n   58 |         if *n > self.max {\n   59 |             return Err(PoolError::Exhausted);\n   60 |         }\n   61 | \n   62 |         drop(n);\n   63 |         Ok(Conn {\n   64 |             active: Arc::clone(&self.active),\n   65 |             released: false,\n   66 |         })\n   67 |     }\n   68 | }\n   69 | \n   70 | #[cfg(test)]\n   71 | mod tests {\n   72 |     use super::*;\n   73 | \n   74 |     #[test]\n   75 |     fn leases_up_to_the_limit() {\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": true,\n  \"tool\": null,\n  \"arguments\": null,\n  \"rationale\": \"In `acquire` (src/pool.rs:54-67), `*n += 1;` executes unconditionally before any comparison against `self.max`. When `*n > self.max`, `acquire` directly returns `Err(PoolError::Exhausted)` without decrementing `*n`. Thus, `acquire` neither checks `*n` before incrementing nor decrements `*n` on error.\"\n}",
+      "usage": {
+        "input_tokens": 982,
+        "output_tokens": 417,
+        "total_tokens": 1399
+      },
+      "latency_ms": 3708,
+      "attempts": 1
+    },
+    {
+      "event": "EvidenceAssembled",
+      "candidate_id": "c01-pool-counter-leak-adv-1",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/pool.rs",
+          "start_line": 41,
+          "end_line": 75,
+          "excerpt": "   41 |     pub fn new(max: usize) -> Self {\n   42 |         Self {\n   43 |             active: Arc::new(Mutex::new(0)),\n   44 |             max,\n   45 |         }\n   46 |     }\n   47 | \n   48 |     /// Number of connections currently leased out.\n   49 |     pub fn active(&self) -> usize {\n   50 |         *self.active.lock().expect(\"pool counter poisoned\")\n   51 |     }\n   52 | \n   53 |     /// Lease a connection, or fail if the pool is at capacity.\n   54 |     pub fn acquire(&self) -> Result<Conn, PoolError> {\n   55 |         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   56 |         *n += 1;\n   57 | \n   58 |         if *n > self.max {\n   59 |             return Err(PoolError::Exhausted);\n   60 |         }\n   61 | \n   62 |         drop(n);\n   63 |         Ok(Conn {\n   64 |             active: Arc::clone(&self.active),\n   65 |             released: false,\n   66 |         })\n   67 |     }\n   68 | }\n   69 | \n   70 | #[cfg(test)]\n   71 | mod tests {\n   72 |     use super::*;\n   73 | \n   74 |     #[test]\n   75 |     fn leases_up_to_the_limit() {",
+          "tool_call_id": "c01-pool-counter-leak-adv-1-claimed-region"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/pool.rs",
+          "start_line": 45,
+          "end_line": 75,
+          "excerpt": "   45 |         }\n   46 |     }\n   47 | \n   48 |     /// Number of connections currently leased out.\n   49 |     pub fn active(&self) -> usize {\n   50 |         *self.active.lock().expect(\"pool counter poisoned\")\n   51 |     }\n   52 | \n   53 |     /// Lease a connection, or fail if the pool is at capacity.\n   54 |     pub fn acquire(&self) -> Result<Conn, PoolError> {\n   55 |         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   56 |         *n += 1;\n   57 | \n   58 |         if *n > self.max {\n   59 |             return Err(PoolError::Exhausted);\n   60 |         }\n   61 | \n   62 |         drop(n);\n   63 |         Ok(Conn {\n   64 |             active: Arc::clone(&self.active),\n   65 |             released: false,\n   66 |         })\n   67 |     }\n   68 | }\n   69 | \n   70 | #[cfg(test)]\n   71 | mod tests {\n   72 |     use super::*;\n   73 | \n   74 |     #[test]\n   75 |     fn leases_up_to_the_limit() {",
+          "tool_call_id": "c01-pool-counter-leak-adv-1-t1"
+        }
+      ]
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Verify",
+      "prompt_version": "fresh-verify/v2",
+      "system": "You are adjudicating whether a body of evidence supports a specific claim about a Rust codebase.\n\nYou did not write the claim and have no stake in it. Someone asserted it; your\ntask is to weigh the evidence.\n\nDecide one of:\n\n  \"Supports\"      - the evidence establishes that the claim is true.\n  \"Contradicts\"   - the evidence establishes that the claim is false.\n  \"Insufficient\"  - the evidence does not settle it either way.\n\nRules:\n- Judge only from the evidence provided. Do not assume facts about code you\n  were not shown.\n- Absence of evidence is not evidence. If the excerpts do not cover what the\n  claim depends on, the answer is \"Insufficient\", not \"Supports\".\n- \"Insufficient\" is a perfectly good answer and is expected to be common.\n- Quote the specific excerpts that decided it.\n\nReachability is part of the claim, not a separate question:\n\n- Most claims depend on the code reaching some state — a collection being\n  empty, a key being absent, a number being out of range, a caller passing a\n  particular value. Confirming that the code WOULD misbehave in that state\n  settles only half of it.\n- Code that would misbehave in a state it can never actually be in is not a\n  defect. If the evidence shows the state is prevented — by a constructor, a\n  guard, a type, or an invariant every mutation preserves — then the evidence\n  CONTRADICTS the claim, however faithfully the mechanism was described.\n- So do not answer \"Supports\" merely because the described mechanism is real.\n  Answer \"Supports\" only when the evidence also shows the triggering state is\n  reachable. If the evidence settles the mechanism but leaves reachability\n  open, that is \"Insufficient\".\n\nReturn JSON of exactly this shape:\n\n{\n  \"outcome\": \"Supports\" | \"Contradicts\" | \"Insufficient\",\n  \"rationale\": \"<2-4 sentences explaining what the evidence shows>\",\n  \"decisive_evidence\": [\"<short quote or file:line reference>\", ...]\n}",
+      "user": "## Claim\n\nFailed acquire attempts leave the active connection counter permanently incremented, causing the pool to leak permits and eventually become permanently exhausted.\n\nStated location: src/pool.rs:56-60\n\n## Question the evidence was gathered to answer\n\nDoes acquire check *n against self.max before incrementing it, or decrement *n before returning Err(PoolError::Exhausted)?\n\n## Evidence gathered from the repository\n\n[E1] DiffHunk from src/pool.rs:41-75\n   41 |     pub fn new(max: usize) -> Self {\n   42 |         Self {\n   43 |             active: Arc::new(Mutex::new(0)),\n   44 |             max,\n   45 |         }\n   46 |     }\n   47 | \n   48 |     /// Number of connections currently leased out.\n   49 |     pub fn active(&self) -> usize {\n   50 |         *self.active.lock().expect(\"pool counter poisoned\")\n   51 |     }\n   52 | \n   53 |     /// Lease a connection, or fail if the pool is at capacity.\n   54 |     pub fn acquire(&self) -> Result<Conn, PoolError> {\n   55 |         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   56 |         *n += 1;\n   57 | \n   58 |         if *n > self.max {\n   59 |             return Err(PoolError::Exhausted);\n   60 |         }\n   61 | \n   62 |         drop(n);\n   63 |         Ok(Conn {\n   64 |             active: Arc::clone(&self.active),\n   65 |             released: false,\n   66 |         })\n   67 |     }\n   68 | }\n   69 | \n   70 | #[cfg(test)]\n   71 | mod tests {\n   72 |     use super::*;\n   73 | \n   74 |     #[test]\n   75 |     fn leases_up_to_the_limit() {\n\n[E2] FileRegion from src/pool.rs:45-75\n   45 |         }\n   46 |     }\n   47 | \n   48 |     /// Number of connections currently leased out.\n   49 |     pub fn active(&self) -> usize {\n   50 |         *self.active.lock().expect(\"pool counter poisoned\")\n   51 |     }\n   52 | \n   53 |     /// Lease a connection, or fail if the pool is at capacity.\n   54 |     pub fn acquire(&self) -> Result<Conn, PoolError> {\n   55 |         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   56 |         *n += 1;\n   57 | \n   58 |         if *n > self.max {\n   59 |             return Err(PoolError::Exhausted);\n   60 |         }\n   61 | \n   62 |         drop(n);\n   63 |         Ok(Conn {\n   64 |             active: Arc::clone(&self.active),\n   65 |             released: false,\n   66 |         })\n   67 |     }\n   68 | }\n   69 | \n   70 | #[cfg(test)]\n   71 | mod tests {\n   72 |     use super::*;\n   73 | \n   74 |     #[test]\n   75 |     fn leases_up_to_the_limit() {\n\n\n\nDoes the evidence support the claim, contradict it, or leave it unsettled?",
+      "response_text": "{\n  \"outcome\": \"Supports\",\n  \"rationale\": \"In `acquire()`, `*n` is incremented by 1 before checking whether `*n > self.max`. When the condition is met, `acquire()` returns `Err(PoolError::Exhausted)` immediately without decrementing `*n`, leaving the counter permanently incremented across failed attempts.\",\n  \"decisive_evidence\": [\n    \"src/pool.rs:56: *n += 1;\",\n    \"src/pool.rs:58-60: if *n > self.max {\\n            return Err(PoolError::Exhausted);\\n        }\"\n  ]\n}",
+      "usage": {
+        "input_tokens": 1323,
+        "output_tokens": 355,
+        "total_tokens": 1678
+      },
+      "latency_ms": 3832,
+      "attempts": 1
+    },
+    {
+      "event": "Verification",
+      "candidate_id": "c01-pool-counter-leak-adv-1",
+      "result": {
+        "outcome": "Supports",
+        "rationale": "In `acquire()`, `*n` is incremented by 1 before checking whether `*n > self.max`. When the condition is met, `acquire()` returns `Err(PoolError::Exhausted)` immediately without decrementing `*n`, leaving the counter permanently incremented across failed attempts.",
+        "decisive_evidence": [
+          "src/pool.rs:56: *n += 1;",
+          "src/pool.rs:58-60: if *n > self.max {\n            return Err(PoolError::Exhausted);\n        }"
+        ]
+      }
+    },
+    {
+      "event": "Decision",
+      "candidate_id": "c01-pool-counter-leak-adv-1",
+      "status": "Verified",
+      "reason": "fresh-context verification found the evidence supports the claim, backed by 1 repository evidence item(s)"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "c01-pool-counter-leak-adv-1",
+      "issue_type": "StateManagement",
+      "severity": "High",
+      "location": {
+        "file": "src/pool.rs",
+        "start_line": 56,
+        "end_line": 60
+      },
+      "claim": "Failed acquire attempts leave the active connection counter permanently incremented, causing the pool to leak permits and eventually become permanently exhausted.",
+      "reasoning": "When `*n > self.max`, `acquire` increments `*n` but returns `Err(PoolError::Exhausted)` without decrementing `*n` or constructing a `Conn` to decrement it on drop. Subsequent releases will not return the counter to zero, artificially inflating the active count and eventually preventing any future permits from being acquired.",
+      "falsification_question": "Does acquire check *n against self.max before incrementing it, or decrement *n before returning Err(PoolError::Exhausted)?",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/pool.rs",
+          "start_line": 41,
+          "end_line": 75,
+          "excerpt": "   41 |     pub fn new(max: usize) -> Self {\n   42 |         Self {\n   43 |             active: Arc::new(Mutex::new(0)),\n   44 |             max,\n   45 |         }\n   46 |     }\n   47 | \n   48 |     /// Number of connections currently leased out.\n   49 |     pub fn active(&self) -> usize {\n   50 |         *self.active.lock().expect(\"pool counter poisoned\")\n   51 |     }\n   52 | \n   53 |     /// Lease a connection, or fail if the pool is at capacity.\n   54 |     pub fn acquire(&self) -> Result<Conn, PoolError> {\n   55 |         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   56 |         *n += 1;\n   57 | \n   58 |         if *n > self.max {\n   59 |             return Err(PoolError::Exhausted);\n   60 |         }\n   61 | \n   62 |         drop(n);\n   63 |         Ok(Conn {\n   64 |             active: Arc::clone(&self.active),\n   65 |             released: false,\n   66 |         })\n   67 |     }\n   68 | }\n   69 | \n   70 | #[cfg(test)]\n   71 | mod tests {\n   72 |     use super::*;\n   73 | \n   74 |     #[test]\n   75 |     fn leases_up_to_the_limit() {",
+          "tool_call_id": "c01-pool-counter-leak-adv-1-claimed-region"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/pool.rs",
+          "start_line": 45,
+          "end_line": 75,
+          "excerpt": "   45 |         }\n   46 |     }\n   47 | \n   48 |     /// Number of connections currently leased out.\n   49 |     pub fn active(&self) -> usize {\n   50 |         *self.active.lock().expect(\"pool counter poisoned\")\n   51 |     }\n   52 | \n   53 |     /// Lease a connection, or fail if the pool is at capacity.\n   54 |     pub fn acquire(&self) -> Result<Conn, PoolError> {\n   55 |         let mut n = self.active.lock().expect(\"pool counter poisoned\");\n   56 |         *n += 1;\n   57 | \n   58 |         if *n > self.max {\n   59 |             return Err(PoolError::Exhausted);\n   60 |         }\n   61 | \n   62 |         drop(n);\n   63 |         Ok(Conn {\n   64 |             active: Arc::clone(&self.active),\n   65 |             released: false,\n   66 |         })\n   67 |     }\n   68 | }\n   69 | \n   70 | #[cfg(test)]\n   71 | mod tests {\n   72 |     use super::*;\n   73 | \n   74 |     #[test]\n   75 |     fn leases_up_to_the_limit() {",
+          "tool_call_id": "c01-pool-counter-leak-adv-1-t1"
+        }
+      ],
+      "verification": {
+        "outcome": "Supports",
+        "rationale": "In `acquire()`, `*n` is incremented by 1 before checking whether `*n > self.max`. When the condition is met, `acquire()` returns `Err(PoolError::Exhausted)` immediately without decrementing `*n`, leaving the counter permanently incremented across failed attempts.",
+        "decisive_evidence": [
+          "src/pool.rs:56: *n += 1;",
+          "src/pool.rs:58-60: if *n > self.max {\n            return Err(PoolError::Exhausted);\n        }"
+        ]
+      },
+      "status": "Verified",
+      "status_reason": "fresh-context verification found the evidence supports the claim, backed by 1 repository evidence item(s)"
+    }
+  ],
+  "usage": {
+    "input_tokens": 5034,
+    "output_tokens": 1778,
+    "total_tokens": 6812
+  },
+  "runtime_ms": 24236,
+  "llm_calls": 5,
+  "tool_calls": 1,
+  "retries": 1
+}

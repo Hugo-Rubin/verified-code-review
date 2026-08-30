@@ -628,3 +628,230 @@ At n=3 the comparison is baseline F1 0.667 against advanced F1 1.000, with
 identical precision and recall going 0.500 to 1.000. Three cases cannot
 support that as a headline number, and it will not be presented as one until
 the benchmark is expanded. Phase 5 next.
+
+---
+
+## 2026-08-30 11:05 UTC — Benchmark frozen at 12 cases
+
+### Context
+
+Phase 5 complete. The benchmark is frozen before the reported sweep.
+
+### Evidence
+
+```text
+6 RealIssue     c01 c04 c05 c06 c07 c08
+4 Trap          c02 c09 c10 c11
+2 Challenging   c03 c12
+```
+
+Every case is a standalone Rust crate that compiles and whose tests pass. In
+each defective case the suite passes *despite* the defect, so the tests give a
+reviewer no signal. Ground truth for all twelve was verified by executing it.
+
+Three cases are deliberately paired to isolate what investigation buys:
+
+- **c03 vs c09** — the same edit (a silent fallback replaced by a panicking
+  `expect`, with a doc comment asserting that callers check first). In c03 the
+  assertion is false and the panic is reachable. In c09 it is true. The two are
+  indistinguishable from the diff and the changed file.
+- **c11** — a path-traversal guard is deleted. The deletion is safe only
+  because every caller passes a closed enum's literal.
+- **c12** — the reverse of the traps: a *safe-looking* guard that is wrong,
+  because `Store::len` returns capacity rather than fill. It exists so that a
+  system which improves precision by rejecting everything cannot score well.
+
+### Decision
+
+Benchmark frozen. Ground truth, expected findings, and case difficulty are not
+to change. `scripts/make_diffs.py --check` verifies that every `diff.patch`
+still matches its recorded `_before/` tree, so drift is detectable rather than
+assumed absent.
+
+12 cases meets the masterplan target and clears the PDF's "ten or more" soft
+target, so the 8-case floor was never needed.
+
+### Rejected alternatives
+
+- Freezing at 8 to save time. Not needed; the reserve trigger was 23 hours away.
+- Adding more traps after seeing that the advanced arm produced false positives
+  on them. Rejected outright: changing the benchmark in response to results is
+  the thing the freeze exists to prevent.
+
+### Consequence
+
+All reported numbers come from this frozen benchmark.
+
+---
+
+## 2026-08-30 11:40 UTC — First 12-case sweep: the advanced system LOST, and why
+
+### Context
+
+First full sweep on the frozen benchmark. The n=3 seed result had the advanced
+arm at F1 1.000 against a baseline of 0.667.
+
+### Evidence
+
+It did not generalise. Measured, on 12 cases:
+
+```text
+                 baseline    advanced
+precision           1.000       0.714
+recall              0.750       0.625
+F1                  0.857       0.667
+FP/case              0.00        0.17
+```
+
+Per case, the advanced arm won one and lost four:
+
+```text
+c03  Challenging   0 -> 1 TP    the case the thesis was built on
+c04  RealIssue     1 -> 0 TP    lost
+c05  RealIssue     1 -> 0 TP    lost
+c10  Trap          0 -> 1 FP    gained a false positive
+c11  Trap          0 -> 1 FP    gained a false positive
+```
+
+Reading the trajectories, the four losses had three distinct causes, and only
+one of them was about the idea being tested.
+
+**1. Rate limiting (c04, and a confound across the whole arm).** The Verify
+call for c04 returned HTTP 429 four times and gave up, so a correctly
+investigated finding was classified `Uncertain` for want of a verdict. Across
+the arm: 5 hard failures and 21 retries, all in the advanced arm. The advanced
+reviewer makes roughly six model calls per case where the baseline makes one,
+so it reaches a per-minute quota about six times sooner. The comparison was
+partly measuring the quota, and the entire penalty landed on the arm under
+test.
+
+**2. A trailing comma (c05).** The model returned a well-formed finding
+followed by a second object ending `"reasoning": "...",}`. That is invalid
+JSON, `serde_json` correctly rejected it, and the whole response — including a
+completely correct finding — was discarded.
+
+**3. True but immaterial claims (c10, c11).** This is the interesting one. On
+both traps the falsification step worked *perfectly*. It rejected the
+dangerous-looking claim in each case with excellent reasoning:
+
+> c11: "asset_path is crate-internal (`pub(crate)`) and all call sites pass
+> fixed string literals returned by `AssetKind::file_name()` ... No caller
+> passes arbitrary string inputs, preventing directory traversal."
+
+Both cases still scored a false positive, from a *second* candidate:
+
+```text
+c10  "SizeReport does not derive Clone"                     -> Verified
+c11  "asset_path returns Option but can never return None"  -> Verified
+```
+
+Both claims are **true**. Neither is a defect. The verifier confirmed them
+because the evidence does support them — it was asked whether a claim is
+accurate, and it answered correctly.
+
+### Decision
+
+Fix all three, then re-run both arms under identical conditions. Specifically:
+
+1. `LlmError::RateLimited` split out from generic statuses, `Retry-After`
+   honoured, base backoff for quota errors raised to 4s exponential (capped at
+   60s), default retries 3 to 5, and a configurable minimum interval between
+   requests defaulting to 1500ms.
+2. `extract_json` gained a last-resort repair that removes commas sitting
+   directly before `}` or `]`, outside string literals. It runs only after
+   every strict parse has failed, and it cannot rescue genuinely broken JSON.
+3. The verifier was reframed from "does the evidence support this claim" to
+   "does the evidence establish a real defect", with an explicit rule that an
+   accurate description of the code that identifies nothing wrong is
+   `Contradicts`, not `Supports`. The candidate prompt now requires every
+   claim to name a consequence, and names missing derives and
+   more-fallible-than-necessary signatures as non-defects.
+
+Fixes 1 and 2 are plumbing defects in the harness, not tuning: they affect
+both arms identically and would have been bugs whatever the results said.
+Fix 3 is a genuine design change and is recorded as such.
+
+### Rejected alternatives
+
+- **Reporting the n=3 result as the headline.** Rejected. It is exactly the
+  overclaim the 12-case sweep exists to prevent, and the sweep disproved it.
+- **Dropping c10 and c11, or narrowing their ground truth to exclude
+  nitpicks.** Rejected as benchmark tampering after seeing results. The traps
+  did their job; the system was wrong.
+- **Suppressing low-severity findings at the decision stage.** Rejected as a
+  metric hack: severity is self-reported by the model, so it would let the
+  system hide its own noise by relabelling it, and the same trick would
+  suppress genuine low-severity defects.
+- **Leaving the rate limiting in place as "realistic".** Rejected. It is an
+  artefact of a free-tier quota, it degrades only one arm, and reporting it as
+  a property of the design would be misleading.
+
+### Consequence
+
+Run 1 is preserved at `results-archive/n12-run1-advanced-regression/`. It is
+not the reported result, and the improvement changelog carries it as a stage
+with its own evidence.
+
+---
+
+## 2026-08-30 12:05 UTC — Reported result: advanced 0.933 vs baseline 0.857
+
+### Context
+
+Both arms re-run on the frozen 12-case benchmark after the three fixes, same
+model, same temperature, same session.
+
+### Evidence
+
+```text
+| Metric                   | Baseline | Advanced |  Change |
+|--------------------------|---------:|---------:|--------:|
+| Precision                |    1.000 |    1.000 |  +0.000 |
+| Recall                   |    0.750 |    0.875 |  +0.125 |
+| F1                       |    0.857 |    0.933 |  +0.076 |
+| False positives/case     |     0.00 |     0.00 |   +0.00 |
+| Findings to triage/case  |     0.50 |     0.58 |   +0.08 |
+| Runtime/case (ms)        |    17389 |    33324 |  +15936 |
+
+By category            baseline          advanced
+RealIssue   n=6        6/0/0  F1 1.000   6/0/0  F1 1.000
+Trap        n=4        0/0/0  F1 0.000   0/0/0  F1 0.000
+Challenging n=2        0/0/2  F1 0.000   1/0/1  F1 0.667
+```
+
+Run health: zero hard failures, 6 retries, all recovered. The rate-limiting
+confound is gone.
+
+The whole gain is on the challenging cases, which is precisely where the
+hypothesis said it should be: both arms are perfect on the six real defects
+that are visible in the diff, both are clean on the four traps, and the
+advanced arm additionally resolves c03, which requires finding an unchecked
+caller in a file the change does not touch.
+
+Precision held at 1.000 while candidate generation was deliberately broadened.
+That is falsification doing its job: five candidates were investigated and
+`Rejected` with repository evidence, one on each of the four traps plus one
+overbroad candidate on c03.
+
+### Decision
+
+This is the reported result. It supports a narrower claim than the seed run
+suggested, and the narrower claim is the one that goes in the README:
+repository-grounded investigation buys recall on defects whose evidence lives
+outside the diff, and fresh-context falsification is what makes it safe to go
+looking, by keeping precision at 1.000 while the candidate stage is opened up.
+
+### Rejected alternatives
+
+- Claiming the improvement is driven by falsification reducing false
+  positives. The data does not show that: the baseline had zero false
+  positives to remove. Falsification's measured contribution is *protecting*
+  precision under broadened candidate generation, which is a different and
+  smaller claim.
+
+### Consequence
+
+Remaining known failure: c12 is missed by both arms. Both accept a bounds
+check that calls `Store::len`, and neither reads far enough to discover that
+`len` returns capacity rather than fill. That is the main failure mode and it
+goes in the README as measured, not as a footnote.

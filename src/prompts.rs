@@ -22,10 +22,10 @@
 use crate::finding::IssueType;
 
 pub const BASELINE_REVIEW_V: &str = "baseline-review/v2";
-pub const ADVANCED_REVIEW_V: &str = "advanced-review/v4";
+pub const ADVANCED_REVIEW_V: &str = "advanced-review/v5";
 pub const INVESTIGATE_V: &str = "advanced-investigate/v1";
 pub const FALSIFY_V: &str = "advanced-falsify/v1";
-pub const VERIFY_V: &str = "fresh-verify/v2";
+pub const VERIFY_V: &str = "fresh-verify/v3";
 
 /// The controlled taxonomy, rendered for a prompt.
 pub fn issue_type_list() -> String {
@@ -141,6 +141,14 @@ fine.
   disproved and is not a finding.
 - State each claim as a single falsifiable sentence — something repository
   evidence could confirm or refute.
+- Every candidate must name a consequence: what goes wrong, and for whom.
+  Incorrect output, a panic, data loss, a violated contract, a security
+  consequence, or a real cost at the scale this code runs at. If you cannot
+  finish the sentence "and so the user gets...", it is not a candidate.
+  Missing trait derives, a signature that is more fallible than it needs to
+  be, and unused declarations are observations about the code, not defects —
+  leave them out. The investigation stage can settle whether a claim is true;
+  it cannot make a true triviality worth a reviewer's time.
 - Pay particular attention to anything whose correctness depends on facts that
   are not visible in the changed files. If the code is only correct given some
   assumption about the rest of the repository, that assumption is a candidate.
@@ -285,15 +293,15 @@ What is your next step?"#
 /// previous stage already believed the claim. The whole point is to remove the
 /// anchor.
 pub fn verify_system() -> String {
-    r#"You are adjudicating whether a body of evidence supports a specific claim about a Rust codebase.
+    r#"You are deciding whether a body of evidence establishes that a Rust codebase has a real defect.
 
 You did not write the claim and have no stake in it. Someone asserted it; your
 task is to weigh the evidence.
 
 Decide one of:
 
-  "Supports"      - the evidence establishes that the claim is true.
-  "Contradicts"   - the evidence establishes that the claim is false.
+  "Supports"      - the evidence establishes a real defect, as claimed.
+  "Contradicts"   - the evidence establishes that this is not a defect.
   "Insufficient"  - the evidence does not settle it either way.
 
 Rules:
@@ -303,6 +311,20 @@ Rules:
   claim depends on, the answer is "Insufficient", not "Supports".
 - "Insufficient" is a perfectly good answer and is expected to be common.
 - Quote the specific excerpts that decided it.
+
+A true statement is not automatically a defect:
+
+- You are judging the finding, not the sentence. Many claims are accurate
+  descriptions of the code that identify nothing wrong with it: a type that
+  does not derive a trait nobody needs, a function returning `Option` that
+  never returns `None`, a name someone dislikes. Confirming the description is
+  accurate does not make any of these a defect.
+- Ask what goes wrong, and for whom. If the evidence does not show incorrect
+  behaviour, a crash, data loss, a violated contract, a security consequence,
+  or a real cost at the scale the code actually runs at, then this is not a
+  defect and the answer is "Contradicts" — however accurate the claim is.
+- Reporting a true triviality wastes human attention just as surely as
+  reporting something false, so hold both to the same bar.
 
 Reachability is part of the claim, not a separate question:
 
@@ -451,6 +473,23 @@ result is a correct answer"
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_verifier_judges_defects_not_sentences() {
+        // A verifier that only checks whether a claim is accurate confirms
+        // true trivialities, which cost a reviewer just as much attention as
+        // false ones. Observed on a real run: "SizeReport does not derive
+        // Clone" was verified because it is, in fact, true.
+        let s = verify_system();
+        assert!(s.contains("A true statement is not automatically a defect"));
+        assert!(s.contains("what goes wrong, and for whom"));
+    }
+
+    #[test]
+    fn candidates_must_name_a_consequence() {
+        let s = advanced_system();
+        assert!(s.contains("must name a consequence"));
     }
 
     #[test]

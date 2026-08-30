@@ -12,6 +12,9 @@ enum Credential {
     Bearer(String),
 }
 
+/// Base backoff for a rate limit when the provider does not advise one.
+const RATE_LIMIT_BASE_BACKOFF_MS: u64 = 4_000;
+
 pub struct VertexClient {
     http: reqwest::Client,
     endpoint: String,
@@ -21,6 +24,10 @@ pub struct VertexClient {
     max_output_tokens: u32,
     timeout: Duration,
     max_retries: u32,
+    /// Minimum gap between requests, to stay under a per-minute quota.
+    min_interval: Duration,
+    /// When the next request is allowed to start.
+    last_request: std::sync::Mutex<Option<Instant>>,
 }
 
 impl VertexClient {
@@ -53,6 +60,8 @@ impl VertexClient {
             max_output_tokens: cfg.max_output_tokens,
             timeout: Duration::from_secs(cfg.timeout_secs),
             max_retries: cfg.max_retries,
+            min_interval: Duration::from_millis(cfg.min_request_interval_ms),
+            last_request: std::sync::Mutex::new(None),
         })
     }
 
@@ -75,10 +84,7 @@ impl VertexClient {
                     if !e.is_retryable() || attempt > self.max_retries {
                         return Err(e);
                     }
-                    // Exponential backoff, capped. Keeps a 429 storm from
-                    // burning the deadline.
-                    let backoff = Duration::from_millis(500u64 << (attempt - 1).min(4));
-                    tokio::time::sleep(backoff).await;
+                    tokio::time::sleep(self.backoff_for(&e, attempt)).await;
                     last_err = Some(e);
                 }
             }
@@ -87,7 +93,54 @@ impl VertexClient {
         Err(last_err.unwrap_or_else(|| LlmError::Transport("retry loop exhausted".into())))
     }
 
+    /// How long to wait before retrying.
+    ///
+    /// A rate limit is not a transient blip: the quota is genuinely spent, and
+    /// retrying 500ms later just spends another unit of it. When the provider
+    /// states a delay, honour it. Otherwise back off far harder than for an
+    /// ordinary transport error.
+    fn backoff_for(&self, err: &LlmError, attempt: u32) -> Duration {
+        if let Some(advised) = err.retry_after() {
+            return advised.min(Duration::from_secs(60));
+        }
+
+        let shift = (attempt - 1).min(5);
+        match err {
+            LlmError::RateLimited { .. } => {
+                Duration::from_millis(RATE_LIMIT_BASE_BACKOFF_MS << shift)
+                    .min(Duration::from_secs(60))
+            }
+            _ => Duration::from_millis(500u64 << shift.min(4)),
+        }
+    }
+
+    /// Hold back until `min_interval` has passed since the previous request.
+    ///
+    /// The advanced reviewer issues several calls per case where the baseline
+    /// issues one, so it meets a per-minute quota roughly six times sooner. An
+    /// unpaced comparison measures the quota as much as it measures the
+    /// systems, and it penalises exactly the arm under test.
+    async fn pace(&self) {
+        if self.min_interval.is_zero() {
+            return;
+        }
+        let wait = {
+            let mut last = self.last_request.lock().expect("pacing clock poisoned");
+            let now = Instant::now();
+            let wait = last
+                .map(|t| self.min_interval.saturating_sub(now.duration_since(t)))
+                .unwrap_or_default();
+            *last = Some(now + wait);
+            wait
+        };
+        if !wait.is_zero() {
+            tokio::time::sleep(wait).await;
+        }
+    }
+
     async fn attempt(&self, req: &LlmRequest) -> Result<(String, Usage), LlmError> {
+        self.pace().await;
+
         let mut generation_config = json!({
             "temperature": self.temperature,
             "maxOutputTokens": self.max_output_tokens,
@@ -121,10 +174,23 @@ impl VertexClient {
         };
 
         let status = resp.status();
+        let retry_after = resp
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse::<u64>().ok());
+
         let text = resp
             .text()
             .await
             .map_err(|e| LlmError::Transport(format!("reading body: {e}")))?;
+
+        if status.as_u16() == 429 {
+            return Err(LlmError::RateLimited {
+                retry_after_secs: retry_after,
+                body: truncate(&text, 400),
+            });
+        }
 
         if !status.is_success() {
             return Err(LlmError::Status {
@@ -324,6 +390,7 @@ mod tests {
             max_output_tokens: 1024,
             timeout_secs: 30,
             max_retries: 1,
+            min_request_interval_ms: 0,
             pricing: None,
         }
     }

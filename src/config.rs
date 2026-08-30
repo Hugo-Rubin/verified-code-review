@@ -63,6 +63,13 @@ pub struct LlmConfig {
     pub timeout_secs: u64,
     /// Retries on transport errors, 5xx, 429, and unparseable responses.
     pub max_retries: u32,
+    /// Minimum gap between requests, in milliseconds.
+    ///
+    /// The advanced reviewer makes several calls per case where the baseline
+    /// makes one, so it reaches a per-minute quota roughly six times sooner.
+    /// Without pacing, a comparison run under quota pressure measures the
+    /// quota as much as the systems, and penalises only the arm under test.
+    pub min_request_interval_ms: u64,
     /// `None` means "operator did not configure pricing"; cost is then
     /// reported as unavailable rather than as zero.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -163,7 +170,8 @@ impl RunConfig {
                 temperature: env_or("VCR_TEMPERATURE", 0.0_f32)?,
                 max_output_tokens: env_or("VCR_MAX_OUTPUT_TOKENS", 8192_u32)?,
                 timeout_secs: env_or("VCR_TIMEOUT_SECS", 180_u64)?,
-                max_retries: env_or("VCR_MAX_RETRIES", 3_u32)?,
+                max_retries: env_or("VCR_MAX_RETRIES", 5_u32)?,
+                min_request_interval_ms: env_or("VCR_MIN_REQUEST_INTERVAL_MS", 1_500_u64)?,
                 pricing,
             },
             match_line_tolerance: env_or("VCR_MATCH_LINE_TOLERANCE", 3_u32)?,
@@ -186,6 +194,7 @@ impl RunConfig {
                 max_output_tokens: 8192,
                 timeout_secs: 30,
                 max_retries: 0,
+                min_request_interval_ms: 0,
                 pricing: None,
             },
             match_line_tolerance: 3,

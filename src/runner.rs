@@ -157,7 +157,10 @@ pub struct Aggregate {
     pub total_output_tokens: u64,
     /// Set when the run used the offline stub, so a reader cannot mistake it
     /// for a measurement.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    ///
+    /// Omitted from the JSON when false to keep real results uncluttered, so
+    /// it needs a default on the way back in — absent means a real run.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub mock_run: bool,
 }
 
@@ -184,10 +187,17 @@ pub struct CategoryBreakdown {
 }
 
 /// Score a completed run against the benchmark's ground truth.
+///
+/// `pricing_override` recomputes cost from the token counts already recorded
+/// in the run. Token usage is measured during the run; turning it into dollars
+/// is arithmetic over published rates, so there is no reason to spend the
+/// model again because the operator learned the price afterwards. `None` falls
+/// back to whatever cost the run itself recorded.
 pub fn evaluate_run(
     benchmark_dir: &Path,
     summary: &RunSummary,
     out_dir: &Path,
+    pricing_override: Option<crate::config::Pricing>,
 ) -> Result<Evaluation> {
     let traj_dir = out_dir.join("trajectories").join(summary.agent.as_str());
     let mut per_case = Vec::new();
@@ -227,14 +237,38 @@ pub fn evaluate_run(
 
     let sum = |f: fn(&CaseRunStats) -> f64| summary.stats.iter().map(f).sum::<f64>();
 
+    // Per-case cost, recomputed from measured tokens when rates are supplied.
+    let case_costs: Vec<Option<f64>> = summary
+        .stats
+        .iter()
+        .map(|s| match pricing_override {
+            Some(p) => Some(
+                (s.input_tokens as f64 / 1_000_000.0) * p.input_usd_per_mtok
+                    + (s.output_tokens as f64 / 1_000_000.0) * p.output_usd_per_mtok,
+            ),
+            None => s.cost_usd,
+        })
+        .collect();
+
     // Cost is aggregated only when every case carried a price; a partial sum
     // would understate it.
-    let mean_cost =
-        if !summary.stats.is_empty() && summary.stats.iter().all(|s| s.cost_usd.is_some()) {
-            Some(summary.stats.iter().filter_map(|s| s.cost_usd).sum::<f64>() / n)
-        } else {
-            None
-        };
+    let mean_cost = if !case_costs.is_empty() && case_costs.iter().all(|c| c.is_some()) {
+        Some(case_costs.iter().filter_map(|c| *c).sum::<f64>() / n)
+    } else {
+        None
+    };
+
+    // Reflect the recomputed cost in the per-case rows too, so the detail and
+    // the aggregate cannot disagree.
+    let per_case_stats: Vec<CaseRunStats> = summary
+        .stats
+        .iter()
+        .zip(&case_costs)
+        .map(|(s, c)| CaseRunStats {
+            cost_usd: *c,
+            ..s.clone()
+        })
+        .collect();
 
     let aggregate = Aggregate {
         agent: summary.agent,
@@ -286,7 +320,7 @@ pub fn evaluate_run(
     let evaluation = Evaluation {
         aggregate,
         per_case,
-        per_case_stats: summary.stats.clone(),
+        per_case_stats,
         by_category,
         line_tolerance: summary.config.match_line_tolerance,
     };
@@ -317,6 +351,52 @@ pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_evaluation_survives_a_json_round_trip() {
+        // `report` reads back what `evaluate` wrote. Fields skipped on the way
+        // out must have a default on the way in, or the comparison table
+        // cannot be produced from real results at all.
+        let agg = Aggregate {
+            agent: AgentKind::Baseline,
+            model: "m".into(),
+            provider: Provider::Vertex,
+            case_count: 12,
+            counts: Counts {
+                true_positives: 6,
+                false_positives: 0,
+                false_negatives: 2,
+            },
+            precision: 1.0,
+            recall: 0.75,
+            f1: 0.857,
+            false_positives_per_case: 0.0,
+            manual_triage_findings_per_case: 0.5,
+            withheld_findings_per_case: 0.0,
+            mean_cost_usd_per_case: None,
+            mean_runtime_ms_per_case: 17389.0,
+            mean_llm_calls_per_case: 1.0,
+            mean_tool_calls_per_case: 0.0,
+            total_input_tokens: 1,
+            total_output_tokens: 2,
+            mock_run: false,
+        };
+        let e = Evaluation {
+            aggregate: agg,
+            per_case: vec![],
+            per_case_stats: vec![],
+            by_category: vec![],
+            line_tolerance: 3,
+        };
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(
+            !json.contains("mock_run"),
+            "a real run should not carry the flag"
+        );
+        let back: Evaluation = serde_json::from_str(&json).unwrap();
+        assert!(!back.aggregate.mock_run);
+        assert_eq!(back.aggregate.case_count, 12);
+    }
 
     #[test]
     fn mock_runs_are_flagged() {

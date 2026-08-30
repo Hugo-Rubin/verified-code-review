@@ -1,0 +1,63 @@
+{
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "provider": "Vertex",
+  "started_at": "2026-08-30T09:55:17.663704200+00:00",
+  "finished_at": "2026-08-30T09:56:38.147868+00:00",
+  "benchmark_dir": "benchmark/cases",
+  "case_count": 3,
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 3
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_read_lines": 200,
+    "max_search_results": 40
+  },
+  "stats": [
+    {
+      "case_id": "c01-pool-counter-leak",
+      "trajectory_id": "4e1e2f0d-c7d8-4c83-8c9c-7b5fa2a4e629",
+      "runtime_ms": 24838,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 5273,
+      "output_tokens": 1917,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c02-shard-index-trap",
+      "trajectory_id": "b6522736-37e9-4c3a-9c74-403900b42373",
+      "runtime_ms": 23720,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 7477,
+      "output_tokens": 1670,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c03-session-touch-context",
+      "trajectory_id": "531efd81-7592-44ce-a5cd-fc1abb48508f",
+      "runtime_ms": 31915,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 3,
+      "input_tokens": 6688,
+      "output_tokens": 2297,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ]
+}

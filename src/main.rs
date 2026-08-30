@@ -196,7 +196,10 @@ fn cmd_evaluate(
     let summary = runner::load_summary(&summary_path)
         .with_context(|| format!("no run found — expected {}", summary_path.display()))?;
 
-    let e = runner::evaluate_run(benchmark, &summary, out)?;
+    // Rates come from the current environment, not from the run, so cost can
+    // be filled in after the fact without spending the model again.
+    let pricing = RunConfig::from_env().ok().and_then(|c| c.llm.pricing);
+    let e = runner::evaluate_run(benchmark, &summary, out, pricing)?;
     print_aggregate(&e.aggregate);
 
     println!("\nBy category");
