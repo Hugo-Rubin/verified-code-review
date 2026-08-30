@@ -22,8 +22,8 @@
 use crate::finding::IssueType;
 
 pub const BASELINE_REVIEW_V: &str = "baseline-review/v2";
-pub const ADVANCED_REVIEW_V: &str = "advanced-review/v5";
-pub const INVESTIGATE_V: &str = "advanced-investigate/v1";
+pub const ADVANCED_REVIEW_V: &str = "advanced-review/v6";
+pub const INVESTIGATE_V: &str = "advanced-investigate/v2";
 pub const FALSIFY_V: &str = "advanced-falsify/v2";
 pub const VERIFY_V: &str = "fresh-verify/v5";
 
@@ -152,6 +152,13 @@ fine.
 - Pay particular attention to anything whose correctness depends on facts that
   are not visible in the changed files. If the code is only correct given some
   assumption about the rest of the repository, that assumption is a candidate.
+- Apply that concretely. Where this change calls something whose definition you
+  cannot see here, ask what it must return or do for this code to be right, and
+  raise that as a candidate stating the assumption. A guard is only as good as
+  the thing it calls; a name suggests what a function does but does not
+  establish it. This is the single most common way a change that looks correct
+  in isolation turns out not to be, and it is precisely what the investigation
+  stage can settle in one lookup.
 - Do not report style preferences, naming, formatting, or missing comments.
 - Avoid vague concerns such as "this looks fragile"; say what would go wrong.
 
@@ -270,6 +277,7 @@ pub fn investigate_user(
     diff: &str,
     history: &str,
     gap: Option<&str>,
+    memory: Option<&str>,
 ) -> String {
     // When an independent check has already looked at the evidence and said
     // what it could not settle, that is the most useful steer available — far
@@ -291,6 +299,23 @@ rather than collecting more of what has already proved insufficient.
         ),
     };
 
+    // Facts already gathered while investigating other candidates in this same
+    // review. Lookups only — no conclusions, so nothing here can anchor this
+    // investigation toward an earlier verdict.
+    let memory_section = match memory {
+        None => String::new(),
+        Some(m) => format!(
+            r#"
+## Already looked up during this review
+
+These are results of earlier tool calls on this repository, recorded so you do
+not have to repeat them. They are lookups, not conclusions.
+
+{m}
+"#
+        ),
+    };
+
     format!(
         r#"## Claim under investigation
 
@@ -307,7 +332,7 @@ Location: {location}
 ```diff
 {diff}
 ```
-{gap_section}
+{gap_section}{memory_section}
 ## Investigation so far
 
 {history}
@@ -536,6 +561,18 @@ result is a correct answer"
         let s = verify_system();
         assert!(s.contains("A true statement is not automatically a defect"));
         assert!(s.contains("what goes wrong, and for whom"));
+    }
+
+    #[test]
+    fn candidates_cover_calls_whose_definition_is_not_visible() {
+        // Measured cause of the only unstable case: the reviewer proposed
+        // *nothing* on c12 in 2 of 3 trials, so there was nothing to
+        // investigate. The guard there calls a method defined in an untouched
+        // file. The rule is general - name the assumption you are making about
+        // code you cannot see - and mentions no benchmark noun.
+        let s = advanced_system("Rust");
+        assert!(s.contains("whose definition you"));
+        assert!(s.contains("A guard is only as good as"));
     }
 
     #[test]

@@ -305,27 +305,31 @@ pub fn variance_across_trials(root: &Path) -> Result<Vec<ArmVariance>> {
             evals.iter().map(|e| f(&e.aggregate)).collect()
         };
 
-        // A case is unstable when its true-positive count differs across
-        // trials.
+        // A case is unstable when either its true-positive or its
+        // false-positive count differs across trials.
+        //
+        // Comparing true positives alone was a real bug: a run whose precision
+        // moved between trials was reported as "every case scored identically",
+        // because the case that gained a false positive kept the same TP count.
         let mut unstable = Vec::new();
         if let Some(first) = evals.first() {
             for case in &first.per_case {
-                let counts: Vec<u32> = evals
+                let counts: Vec<(u32, u32)> = evals
                     .iter()
                     .filter_map(|e| {
                         e.per_case
                             .iter()
                             .find(|c| c.case_id == case.case_id)
-                            .map(|c| c.counts.true_positives)
+                            .map(|c| (c.counts.true_positives, c.counts.false_positives))
                     })
                     .collect();
                 if counts.windows(2).any(|w| w[0] != w[1]) {
                     unstable.push(format!(
-                        "{} (TP per trial: {})",
+                        "{} (TP/FP per trial: {})",
                         case.case_id,
                         counts
                             .iter()
-                            .map(|c| c.to_string())
+                            .map(|(tp, fp)| format!("{tp}/{fp}"))
                             .collect::<Vec<_>>()
                             .join(", ")
                     ));
@@ -437,13 +441,21 @@ pub fn evaluate_run(
         })
         .collect();
 
+    // A run that recorded no tokens at all did not cost nothing — its usage was
+    // never measured. Reporting $0.00000 there would look like a finding.
+    let tokens_recorded = summary
+        .stats
+        .iter()
+        .any(|s| s.input_tokens > 0 || s.output_tokens > 0);
+
     // Cost is aggregated only when every case carried a price; a partial sum
     // would understate it.
-    let mean_cost = if !case_costs.is_empty() && case_costs.iter().all(|c| c.is_some()) {
-        Some(case_costs.iter().filter_map(|c| *c).sum::<f64>() / n)
-    } else {
-        None
-    };
+    let mean_cost =
+        if tokens_recorded && !case_costs.is_empty() && case_costs.iter().all(|c| c.is_some()) {
+            Some(case_costs.iter().filter_map(|c| *c).sum::<f64>() / n)
+        } else {
+            None
+        };
 
     // Reflect the recomputed cost in the per-case rows too, so the detail and
     // the aggregate cannot disagree.
@@ -603,6 +615,30 @@ mod tests {
             stats: vec![],
         };
         assert!(s.is_mock());
+    }
+
+    #[test]
+    fn a_run_with_no_recorded_tokens_reports_no_cost() {
+        // An externally produced run (a second model driven outside the Rust
+        // client) has no token counts. Zero tokens times a real price is
+        // $0.00000, which reads as a measurement rather than as an absence.
+        let stats = [CaseRunStats {
+            case_id: "c".into(),
+            trajectory_id: "t".into(),
+            runtime_ms: 0,
+            llm_calls: 1,
+            tool_calls: 0,
+            retries: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            cost_usd: None,
+            reported_findings: 0,
+            withheld_findings: 0,
+        }];
+        let recorded = stats
+            .iter()
+            .any(|s| s.input_tokens > 0 || s.output_tokens > 0);
+        assert!(!recorded, "no tokens recorded means cost is unavailable");
     }
 
     #[test]

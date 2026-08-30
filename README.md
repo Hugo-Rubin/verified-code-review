@@ -12,34 +12,45 @@ Mean of **3 trials per arm**, same model (`gemini-3.7-flash`), temperature 0.
 
 | Metric | Simple baseline | Agent solution | Change |
 |---|---:|---:|---:|
-| **Primary outcome — finding F1** | 0.857 | **0.917** | **+0.060** |
-| Precision | 1.000 | 0.921 | −0.079 |
-| Recall | 0.750 | **0.917** | **+0.167** |
-| Human time per task (proxy) ¹ | 0.50 findings/case | 0.67 findings/case | +0.17 |
-| **Cost per task** | **$0.0032** | **$0.0147** | ×4.6 |
-| Runtime per task | 6.5 s | 38.8 s | +32.3 s |
+| **Primary outcome — finding F1** | 0.857 | **0.980** | **+0.123** |
+| Precision | 1.000 | 0.963 | −0.037 |
+| Recall | 0.750 | **1.000** | **+0.250** |
+| Human time per task (proxy) ¹ | 0.50 findings/case | 0.69 findings/case | +0.19 |
+| **Cost per task** | **$0.0032** | **$0.0159** | ×5.0 |
+| Runtime per task | 11.1 s | 38.9 s | +27.8 s |
 | Evidence accuracy ² | n/a — gathers none | **1.000** | — |
 
-The advanced arm beat the baseline in **every** trial: its worst F1 (0.875)
-still exceeds the baseline's (0.857, identical in all three runs).
+The advanced arm found **every real defect in every trial** (recall 1.000,
+σ = 0.000) and beat the baseline in all three runs — its worst F1 (0.941) still
+exceeds the baseline's (0.857, identical in all three).
 
 ¹ Manual-triage proxy — findings a human must read and judge. **Not** a direct
 measurement of human review time. A blind stopwatch harness for the real
 measurement ships as `vcr triage`; see [Cost and human time](#cost-and-human-time).
 ² Fraction of cited excerpts that really appear at the lines they cite, checked
-deterministically against the repository. 48–60 citations per run.
+deterministically against the repository, 48–60 citations per run.
 
-**What the falsification step is worth**, measured by switching it off:
+### The whole ladder, measured
 
-| | F1 | Precision | False positives on the 4 traps |
-|---|---:|---:|---|
-| Baseline | 0.857 | 1.000 | 0 |
-| Advanced **without** falsification | 0.725 | 0.619 | **4 of 4, every trial** |
-| Advanced | **0.917** | 0.921 | **0** |
+Every stage switched off in turn, 3 trials each, same benchmark:
 
-Investigation on its own is *worse than the plain baseline*: broadened
-candidate generation floods the reviewer with plausible findings, and every
-trap becomes a false positive. Falsification is what makes the trade pay.
+| Configuration | F1 | Precision | Recall | Cost/case |
+|---|---:|---:|---:|---:|
+| Simple baseline | 0.857 | 1.000 | 0.750 | $0.0032 |
+| Advanced prompt alone (no investigation, no falsification) | 0.742 | 0.607 | 0.958 | $0.0038 |
+| **+ investigation**, no falsification | 0.828 | 0.707 | 1.000 | $0.0112 |
+| **+ falsification** — the full system | **0.980** | 0.963 | 1.000 | $0.0159 |
+
+Read the middle two rows carefully, because they are the result.
+
+**Neither half beats the baseline on its own.** The advanced prompt alone scores
+0.742 — *worse than doing nothing clever*. Adding repository investigation
+lifts it to 0.828, which is still **below** the baseline's 0.857. Only when
+falsification is added does the system reach 0.980.
+
+Investigation supplies the recall (0.750 → 1.000). Falsification is what makes
+that recall affordable, taking precision from 0.707 to 0.963. Remove either and
+you have something worse than the simple prompt you started with.
 
 Full numbers: [`results-trials/`](results-trials/) and [`results/`](results/).
 Full history, including four changes that made things worse and one feature
@@ -367,44 +378,48 @@ on the category axis only — location must still overlap.
 All arms, `gemini-3.7-flash` via Vertex AI, temperature 0, frozen benchmark,
 **3 trials each**. Mean ± sample standard deviation.
 
-| Metric | Baseline | Advanced | Advanced, no falsification |
-|---|---:|---:|---:|
-| Precision | 1.000 ± 0.000 | 0.921 ± 0.069 | 0.619 ± 0.031 |
-| Recall | 0.750 ± 0.000 | **0.917 ± 0.072** | 0.875 ± 0.000 |
-| **F1** | 0.857 ± 0.000 | **0.917 ± 0.036** | 0.725 ± 0.021 |
-| False positives/case | 0.00 | 0.06 | 0.36 |
-| Findings to triage/case | 0.50 | 0.67 | 0.94 |
-| Evidence accuracy | n/a | 1.000 ± 0.000 | 1.000 ± 0.000 |
-| Cost/case | $0.0032 | $0.0147 | $0.0108 |
-| Runtime/case | 6.5 s | 38.8 s | 30.3 s |
+| Metric | Baseline | Prompt alone | + investigation | **Advanced (full)** |
+|---|---:|---:|---:|---:|
+| Precision | 1.000 ± 0.000 | 0.607 ± 0.052 | 0.707 ± 0.035 | **0.963 ± 0.064** |
+| Recall | 0.750 ± 0.000 | 0.958 ± 0.072 | 1.000 ± 0.000 | **1.000 ± 0.000** |
+| **F1** | 0.857 ± 0.000 | 0.742 ± 0.052 | 0.828 ± 0.024 | **0.980 ± 0.034** |
+| False positives/case | 0.00 | 0.42 | 0.28 | 0.03 |
+| Findings to triage/case | 0.50 | 1.06 | 0.94 | 0.69 |
+| Evidence accuracy | n/a | 1.000 | 1.000 | 1.000 ± 0.000 |
+| Cost/case | $0.0032 | $0.0038 | $0.0112 | $0.0159 |
+| Runtime/case | 11.1 s | 8.9 s | 34.0 s | 38.9 s |
 
-By category, for the full system (per trial, out of 3):
+By category, full system, per trial (out of 3):
 
 | Category | n | Baseline TP/FP/FN | Advanced TP/FP/FN |
 |---|---:|---|---|
-| RealIssue | 6 | 6 / 0 / 0 | 6 / 0–1 / 0 |
-| Trap | 4 | 0 / 0 / 0 | 0 / 0 / 0 |
-| Challenging | 2 | 0 / 0 / 2 | **1–2 / 0 / 0–1** |
+| RealIssue | 6 | 6 / 0 / 0 | 6 / 0 / 0 |
+| Trap | 4 | 0 / 0 / 0 | 0 / 0–1 / 0 |
+| Challenging | 2 | 0 / 0 / 2 | **2 / 0 / 0** |
 
-Three things are worth reading carefully.
+Four things are worth reading carefully.
 
 **The gain is entirely on the challenging cases.** Both arms find all six
-defects visible in the diff, and both stay clean on all four traps in every
-trial. The difference is the two cases whose deciding evidence sits in a file
-the change never touches — the baseline misses both, every time, in all three
-runs.
+defects visible in the diff. The difference is the two whose deciding evidence
+sits in a file the change never touches — the baseline misses both, in all
+three runs, and the advanced arm now finds both, in all three runs.
 
-**The baseline is perfectly stable and the advanced arm is not.** The baseline
-scored identically on all twelve cases in all three trials. The advanced arm
-varies on exactly one case, `c12`, which it found in 1 trial of 3. Everything
-else was identical run to run. That single case is the whole of its standard
-deviation, and naming it is more honest than reporting ±0.036 and moving on.
+**Neither half of the design works alone.** The advanced prompt by itself
+scores 0.742, *below* the plain baseline. Adding investigation reaches 0.828,
+still below the baseline. Only the combination clears it. This is the most
+important row in the table and the one we got wrong when reasoning without it.
 
-**Falsification is carrying the result, not investigation.** Switching it off
-while leaving investigation intact does not merely reduce the gain — it drops
-the system *below the baseline*, because all four traps become false positives
-in every trial. The advanced reviewer is deliberately told to propose broadly;
-without something to kill bad candidates, that instruction is actively harmful.
+**The baseline is perfectly stable; the advanced arm nearly is.** The baseline
+scored identically on all twelve cases in all three trials, σ = 0.000 on every
+metric. The advanced arm's recall is also σ = 0.000 — it found every defect
+every time. All of its remaining variance is one case, `c03`, which produced
+one extra false positive in one trial out of three.
+
+**Precision costs more than recall here.** Getting recall to 1.000 was a
+candidate-generation problem and was solved by an instruction. Getting
+precision back to 0.963 afterwards took the entire falsification apparatus —
+four roles, ~6.5 model calls and ~2.5 tool calls per case, and 5× the cost of
+the baseline.
 
 ## Improvement changelog
 
@@ -550,45 +565,56 @@ not just of the evidence. We reframed ours from "does the evidence support this
 claim" to "does the evidence establish a real defect", and two false positives
 disappeared without any change to the investigation that fed it.
 
-**Second take, and the one we got wrong first: neither half of this design
-works without the other, and we can put numbers on it.**
+**Second take: every intermediate version of this system is worse than doing
+nothing clever, and we can put numbers on it.**
 
-Our biggest early win looked like candidate generation. The advanced reviewer
-was proposing **zero** candidates on two of three seed cases because it had
-inherited an instruction saying "an empty result is a correct answer" — right
-for a reviewer whose output is its report, fatal for a stage feeding an
-investigator. Removing it took seed recall from 0.500 to 1.000, and we wrote in
-the changelog that this was the change that mattered most.
+| Configuration | F1 |
+|---|---:|
+| Simple baseline | 0.857 |
+| Advanced prompt alone | **0.742** |
+| + repository investigation | **0.828** |
+| + falsification (full) | **0.980** |
 
-The ablation says otherwise. Switching falsification off while leaving that
-broadened generation in place drops F1 to **0.725 — below the plain baseline's
-0.857** — because all four traps become false positives in every trial. The
-instruction we were so pleased with is, on its own, actively harmful.
+Both middle rows sit *below* the baseline. A reviewer told to propose broadly
+is worse than one told to be careful. Give it repository tools and it is still
+worse. Only the complete pipeline clears the bar, and then by a wide margin.
 
-So the honest version is not "broadening mattered most" but: **telling an agent
-to propose freely is only safe if something can kill what it proposes, and
-building the killer is only worth it if something proposes freely enough to
-need killing.** They are one mechanism. We shipped a changelog claiming
-otherwise and the measurement corrected us, which is the argument for running
-ablations rather than reasoning about your own architecture from the inside.
+That is an uncomfortable shape for incremental development, because it means
+every honest checkpoint on the way to this system would have looked like a
+regression. We shipped a changelog twice claiming to know which change mattered
+most — first candidate generation, then falsification — and the ablations
+corrected us both times. The real answer is that they are one mechanism:
+investigation buys recall (0.750 → 1.000), falsification buys back the
+precision that costs (0.707 → 0.963), and neither survives alone.
 
-**Third, an anti-take.** We also added a feedback loop this sprint: an
-"Insufficient" verdict sends the investigation back for a second, targeted
-look. Good idea, correctly implemented, and across 36 verifications in three
-trials it fired **zero times** — the verifier returned only Supports and
-Contradicts, never Insufficient.
+The generalisable version: **if you can only ship half of a
+propose-then-verify design, ship neither.**
 
-The interesting part is what it took to say that honestly. "Never fired" and
-"is broken" produce identical evidence, so we drove the branch with a scripted
-mock to prove it works when its trigger occurs. Writing that test found a bug:
-the trajectory recorded only the final verdict, so a follow-up would have
-appeared in the record with no visible cause. It had never surfaced because the
+**Third, an anti-take: we built three features on good reasoning and measured
+all three as worthless.**
+
+| Feature | The reasoning | The measurement |
+|---|---|---|
+| Follow-up on "Insufficient" | The verdict names what is missing — go get it | Fired **0** times in 36 verifications |
+| Candidate deduplication | Duplicate reports cost a second triage | Fired **0** times in 3 trials |
+| Within-case memory | Stop re-reading files a sibling candidate opened | Used everywhere; −3% calls, −1% cost, inside noise |
+
+Each was prompted by a real observation in the trajectories. Each seemed
+obviously worth building. All three are correct, tested, and kept — they cost
+nothing idle — and none is claimed as an improvement.
+
+Saying that honestly took more work than building them. "Never fired" and "is
+broken" produce identical evidence, so the follow-up loop had to be driven with
+a scripted mock to prove it works when its trigger occurs. That test found a
+bug: the trajectory recorded only the *final* verdict, so a follow-up would
+have appeared with no visible cause. It had survived precisely because the
 branch had never run.
 
-So: the difference between "a self-correcting agent" and "an agent with an
-unused self-correction branch" is whether someone measured — and the difference
-between "inert" and "broken" is whether someone tested. We report it as inert,
-and we can now defend the word.
+Two lessons we would carry forward. The difference between "a self-correcting
+agent" and "an agent with an unused self-correction branch" is whether someone
+measured. And the difference between "inert" and "broken" is whether someone
+tested — an untested path in an agent is where defects hide, and "it never
+triggers" is exactly when you are least likely to look.
 
 ## Agent trajectories
 

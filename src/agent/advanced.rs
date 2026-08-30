@@ -50,7 +50,19 @@ pub async fn run(case: &Case, client: &LlmClient, cfg: &RunConfig) -> Result<Tra
         });
     }
 
-    let candidates = propose_candidates(case, client, cfg, &mut traj).await;
+    let proposed = propose_candidates(case, client, cfg, &mut traj).await;
+
+    let (candidates, merged) = deduplicate_candidates(proposed, cfg.match_line_tolerance);
+    for (dropped, kept) in &merged {
+        traj.push(TrajectoryEvent::Note {
+            note: format!(
+                "candidate {dropped} describes the same defect as {kept} (same category,                  overlapping lines); merged so it is investigated and reported once"
+            ),
+        });
+    }
+
+    // Facts carried between candidates within this case. Never verdicts.
+    let mut memory = CaseMemory::default();
     let mut findings = Vec::new();
 
     for candidate in candidates {
@@ -91,6 +103,7 @@ pub async fn run(case: &Case, client: &LlmClient, cfg: &RunConfig) -> Result<Tra
             None,
             "",
             first_budget,
+            &mut memory,
         )
         .await;
         traj.push(TrajectoryEvent::EvidenceAssembled {
@@ -185,6 +198,7 @@ pub async fn run(case: &Case, client: &LlmClient, cfg: &RunConfig) -> Result<Tra
                 Some(&gap),
                 "f",
                 follow_up_budget,
+                &mut memory,
             )
             .await;
 
@@ -389,6 +403,94 @@ async fn falsification_question(
 // Stage 3 — investigation
 // --------------------------------------------------------------------------
 
+/// Collapse candidates that describe the same defect.
+///
+/// The reviewer is told to propose broadly, and it sometimes proposes the same
+/// problem twice — once at the guard and once at the call it guards, or the
+/// same check under two adjacent line ranges. Both then get investigated
+/// separately, both get reported, and the evaluator scores one true positive
+/// and one false positive, because telling a reviewer the same thing twice
+/// still costs a second triage.
+///
+/// The rule is deliberately conservative: same file, same `issue_type`, and
+/// overlapping line ranges within the evaluator's own tolerance. Two genuinely
+/// distinct defects that happen to sit near each other under *different*
+/// categories are left alone, and so are same-category defects further apart
+/// than the tolerance. Under-merging costs a false positive; over-merging
+/// would hide a real defect, which is worse.
+///
+/// The survivor is the most specific claim — the narrowest line range — since
+/// that is the one a human can act on with least searching.
+fn deduplicate_candidates(
+    candidates: Vec<CandidateFinding>,
+    tolerance: u32,
+) -> (Vec<CandidateFinding>, Vec<(String, String)>) {
+    let mut kept: Vec<CandidateFinding> = Vec::new();
+    let mut merged: Vec<(String, String)> = Vec::new();
+
+    for candidate in candidates {
+        let duplicate_of = kept.iter_mut().find(|k| {
+            k.issue_type == candidate.issue_type
+                && k.location.overlaps(&candidate.location, tolerance)
+        });
+
+        match duplicate_of {
+            None => kept.push(candidate),
+            Some(existing) => {
+                let existing_span = existing.location.end_line - existing.location.start_line;
+                let candidate_span = candidate.location.end_line - candidate.location.start_line;
+
+                if candidate_span < existing_span {
+                    // The newcomer is more specific; it survives instead.
+                    merged.push((existing.id.clone(), candidate.id.clone()));
+                    *existing = candidate;
+                } else {
+                    merged.push((candidate.id.clone(), existing.id.clone()));
+                }
+            }
+        }
+    }
+
+    (kept, merged)
+}
+
+/// Repository facts gathered earlier in the same review.
+///
+/// Carries **what was looked at and what was found** — never a verdict, never
+/// a conclusion about whether some earlier claim held. Passing judgements
+/// forward would quietly reintroduce the anchor that the fresh-context
+/// verifier exists to remove; passing facts forward just stops the second
+/// candidate re-reading the file the first one already opened.
+#[derive(Default)]
+struct CaseMemory {
+    entries: Vec<String>,
+}
+
+impl CaseMemory {
+    fn record(&mut self, tool: &str, arguments: &serde_json::Value, response: &str, ok: bool) {
+        if !ok {
+            return;
+        }
+        // One line per lookup: enough to recognise a repeat, not enough to
+        // replace actually reading the file.
+        let summary = response.lines().next().unwrap_or("").trim().to_string();
+        let entry = format!("{tool} {arguments} -> {summary}");
+        if !self.entries.contains(&entry) {
+            self.entries.push(entry);
+        }
+    }
+
+    fn render(&self) -> Option<String> {
+        if self.entries.is_empty() {
+            return None;
+        }
+        Some(self.entries.join(
+            "
+",
+        ))
+    }
+}
+
 /// Lines of surrounding context included with the claimed region.
 const CLAIM_CONTEXT_LINES: u32 = 15;
 
@@ -452,6 +554,7 @@ async fn investigate(
     gap: Option<&str>,
     pass: &str,
     budget: u32,
+    memory: &mut CaseMemory,
 ) -> Vec<Evidence> {
     let system = prompts::investigate_system(budget);
     let mut evidence = Vec::new();
@@ -476,6 +579,7 @@ async fn investigate(
                 &history
             },
             gap,
+            memory.render().as_deref(),
         );
 
         let resp = match client
@@ -555,6 +659,8 @@ async fn investigate(
             ok: result.ok,
             duration_ms,
         });
+
+        memory.record(&call.tool, &call.arguments, &result.text, result.ok);
 
         // The refusal text is fed back too, so the model can correct a bad
         // path or an empty search rather than repeating it.
@@ -1103,6 +1209,166 @@ mod tests {
             .any(|e| matches!(e, TrajectoryEvent::HumanCheckpoint { .. })));
         // The stub proposes nothing, so there is nothing to verify.
         assert!(t.final_findings.is_empty());
+    }
+
+    // --- candidate deduplication ---
+
+    fn cand(id: &str, ty: IssueType, file: &str, start: u32, end: u32) -> CandidateFinding {
+        CandidateFinding {
+            id: id.into(),
+            issue_type: ty,
+            severity: Severity::Medium,
+            location: Location::new(file, start, end),
+            claim: format!("claim {id}"),
+            reasoning: String::new(),
+        }
+    }
+
+    #[test]
+    fn overlapping_same_category_candidates_are_merged() {
+        // Observed across trials: the reviewer occasionally reports one defect
+        // twice under the same category at adjacent ranges, costing a false
+        // positive for a second triage of the same thing.
+        let (kept, merged) = deduplicate_candidates(
+            vec![
+                cand("a", IssueType::Validation, "src/order.rs", 26, 28),
+                cand("b", IssueType::Validation, "src/order.rs", 30, 32),
+            ],
+            3,
+        );
+        assert_eq!(kept.len(), 1);
+        assert_eq!(merged.len(), 1);
+    }
+
+    #[test]
+    fn the_most_specific_claim_survives_a_merge() {
+        let (kept, _) = deduplicate_candidates(
+            vec![
+                cand("wide", IssueType::Correctness, "a.rs", 10, 40),
+                cand("tight", IssueType::Correctness, "a.rs", 20, 22),
+            ],
+            3,
+        );
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].id, "tight", "the narrower range is more actionable");
+    }
+
+    #[test]
+    fn different_categories_are_never_merged() {
+        // Two genuinely distinct defects can sit on the same lines. Merging
+        // them would hide one, which is worse than a duplicate report.
+        let (kept, merged) = deduplicate_candidates(
+            vec![
+                cand("a", IssueType::Validation, "a.rs", 10, 12),
+                cand("b", IssueType::Concurrency, "a.rs", 10, 12),
+            ],
+            3,
+        );
+        assert_eq!(kept.len(), 2);
+        assert!(merged.is_empty());
+    }
+
+    #[test]
+    fn distant_same_category_candidates_are_kept_apart() {
+        let (kept, _) = deduplicate_candidates(
+            vec![
+                cand("a", IssueType::Testing, "a.rs", 10, 12),
+                cand("b", IssueType::Testing, "a.rs", 200, 202),
+            ],
+            3,
+        );
+        assert_eq!(kept.len(), 2);
+    }
+
+    #[test]
+    fn candidates_in_different_files_are_kept_apart() {
+        let (kept, _) = deduplicate_candidates(
+            vec![
+                cand("a", IssueType::Testing, "a.rs", 10, 12),
+                cand("b", IssueType::Testing, "b.rs", 10, 12),
+            ],
+            3,
+        );
+        assert_eq!(kept.len(), 2);
+    }
+
+    #[test]
+    fn deduplication_preserves_a_single_candidate() {
+        let (kept, merged) =
+            deduplicate_candidates(vec![cand("a", IssueType::Testing, "a.rs", 1, 1)], 3);
+        assert_eq!(kept.len(), 1);
+        assert!(merged.is_empty());
+    }
+
+    // --- within-case memory ---
+
+    #[test]
+    fn memory_records_successful_lookups_only() {
+        let mut m = CaseMemory::default();
+        m.record(
+            "search",
+            &serde_json::json!({"pattern": "x"}),
+            "2 matches
+foo",
+            true,
+        );
+        m.record(
+            "read",
+            &serde_json::json!({"file": "missing.rs"}),
+            "could not read",
+            false,
+        );
+        let rendered = m.render().unwrap();
+        assert!(rendered.contains("search"));
+        assert!(
+            !rendered.contains("could not read"),
+            "refusals are not facts"
+        );
+    }
+
+    #[test]
+    fn memory_does_not_repeat_an_identical_lookup() {
+        let mut m = CaseMemory::default();
+        for _ in 0..3 {
+            m.record(
+                "search",
+                &serde_json::json!({"pattern": "x"}),
+                "2 matches",
+                true,
+            );
+        }
+        assert_eq!(m.render().unwrap().lines().count(), 1);
+    }
+
+    #[test]
+    fn memory_is_empty_until_something_is_looked_up() {
+        assert!(CaseMemory::default().render().is_none());
+    }
+
+    #[test]
+    fn memory_carries_lookups_not_verdicts() {
+        // The whole point: facts may cross between candidates, conclusions may
+        // not, or the fresh verifier stops being fresh.
+        let mut m = CaseMemory::default();
+        m.record(
+            "read",
+            &serde_json::json!({"file": "src/router.rs"}),
+            "src/router.rs lines 1-40 of 80:",
+            true,
+        );
+        let rendered = m.render().unwrap();
+        for verdict in [
+            "Supports",
+            "Contradicts",
+            "Insufficient",
+            "Verified",
+            "Rejected",
+        ] {
+            assert!(
+                !rendered.contains(verdict),
+                "memory leaked a verdict: {verdict}"
+            );
+        }
     }
 
     // --- the self-correction loop ---

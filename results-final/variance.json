@@ -1,0 +1,299 @@
+[
+  {
+    "arm": "advanced",
+    "model": "gemini-3.7-flash",
+    "trials": 3,
+    "metrics": [
+      {
+        "metric": "precision",
+        "trials": 3,
+        "mean": 0.9629629629629629,
+        "min": 0.8888888888888888,
+        "max": 1.0,
+        "stdev": 0.06415002990995845
+      },
+      {
+        "metric": "recall",
+        "trials": 3,
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "stdev": 0.0
+      },
+      {
+        "metric": "f1",
+        "trials": 3,
+        "mean": 0.9803921568627451,
+        "min": 0.9411764705882352,
+        "max": 1.0,
+        "stdev": 0.03396178054056629
+      },
+      {
+        "metric": "false_positives_per_case",
+        "trials": 3,
+        "mean": 0.027777777777777776,
+        "min": 0.0,
+        "max": 0.08333333333333333,
+        "stdev": 0.048112522432468816
+      },
+      {
+        "metric": "findings_to_triage_per_case",
+        "trials": 3,
+        "mean": 0.6944444444444443,
+        "min": 0.6666666666666666,
+        "max": 0.75,
+        "stdev": 0.048112522432468836
+      },
+      {
+        "metric": "evidence_accuracy",
+        "trials": 3,
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "stdev": 0.0
+      },
+      {
+        "metric": "cost_usd_per_case",
+        "trials": 3,
+        "mean": 0.015869291666666663,
+        "min": 0.014927874999999998,
+        "max": 0.0174195625,
+        "stdev": 0.0013528319173550666
+      },
+      {
+        "metric": "runtime_ms_per_case",
+        "trials": 3,
+        "mean": 38943.02777777778,
+        "min": 33046.416666666664,
+        "max": 45992.833333333336,
+        "stdev": 6549.79535533434
+      }
+    ],
+    "unstable_cases": [
+      "c03-session-touch-context (TP/FP per trial: 1/0, 1/0, 1/1)"
+    ]
+  },
+  {
+    "arm": "advanced-candidates-only",
+    "model": "gemini-3.7-flash",
+    "trials": 3,
+    "metrics": [
+      {
+        "metric": "precision",
+        "trials": 3,
+        "mean": 0.6071428571428571,
+        "min": 0.5714285714285714,
+        "max": 0.6666666666666666,
+        "stdev": 0.0518916540897699
+      },
+      {
+        "metric": "recall",
+        "trials": 3,
+        "mean": 0.9583333333333334,
+        "min": 0.875,
+        "max": 1.0,
+        "stdev": 0.07216878364870323
+      },
+      {
+        "metric": "f1",
+        "trials": 3,
+        "mean": 0.7424242424242425,
+        "min": 0.7000000000000001,
+        "max": 0.8,
+        "stdev": 0.05169309730070297
+      },
+      {
+        "metric": "false_positives_per_case",
+        "trials": 3,
+        "mean": 0.4166666666666667,
+        "min": 0.3333333333333333,
+        "max": 0.5,
+        "stdev": 0.08333333333333334
+      },
+      {
+        "metric": "findings_to_triage_per_case",
+        "trials": 3,
+        "mean": 1.0555555555555556,
+        "min": 1.0,
+        "max": 1.1666666666666667,
+        "stdev": 0.09622504486493767
+      },
+      {
+        "metric": "evidence_accuracy",
+        "trials": 3,
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "stdev": 0.0
+      },
+      {
+        "metric": "cost_usd_per_case",
+        "trials": 3,
+        "mean": 0.0037809583333333337,
+        "min": 0.003678875,
+        "max": 0.003879500000000001,
+        "stdev": 0.00010035938027077214
+      },
+      {
+        "metric": "runtime_ms_per_case",
+        "trials": 3,
+        "mean": 8915.97222222222,
+        "min": 8185.0,
+        "max": 9835.666666666666,
+        "stdev": 841.3603086558581
+      }
+    ],
+    "unstable_cases": [
+      "c03-session-touch-context (TP/FP per trial: 1/1, 1/0, 1/0)",
+      "c06-dedup-quadratic (TP/FP per trial: 1/0, 0/0, 1/0)",
+      "c11-asset-path-check-trap (TP/FP per trial: 0/2, 0/2, 0/1)"
+    ]
+  },
+  {
+    "arm": "advanced-no-falsification",
+    "model": "gemini-3.7-flash",
+    "trials": 3,
+    "metrics": [
+      {
+        "metric": "precision",
+        "trials": 3,
+        "mean": 0.7070707070707071,
+        "min": 0.6666666666666666,
+        "max": 0.7272727272727273,
+        "stdev": 0.034990925405431896
+      },
+      {
+        "metric": "recall",
+        "trials": 3,
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "stdev": 0.0
+      },
+      {
+        "metric": "f1",
+        "trials": 3,
+        "mean": 0.8280701754385965,
+        "min": 0.8,
+        "max": 0.8421052631578948,
+        "stdev": 0.024309485018510567
+      },
+      {
+        "metric": "false_positives_per_case",
+        "trials": 3,
+        "mean": 0.27777777777777773,
+        "min": 0.25,
+        "max": 0.3333333333333333,
+        "stdev": 0.0481125224324688
+      },
+      {
+        "metric": "findings_to_triage_per_case",
+        "trials": 3,
+        "mean": 0.9444444444444443,
+        "min": 0.9166666666666666,
+        "max": 1.0,
+        "stdev": 0.048112522432468836
+      },
+      {
+        "metric": "evidence_accuracy",
+        "trials": 3,
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "stdev": 0.0
+      },
+      {
+        "metric": "cost_usd_per_case",
+        "trials": 3,
+        "mean": 0.011218208333333332,
+        "min": 0.010197437499999998,
+        "max": 0.011792499999999996,
+        "stdev": 0.0008863203875727347
+      },
+      {
+        "metric": "runtime_ms_per_case",
+        "trials": 3,
+        "mean": 34012.805555555555,
+        "min": 27083.083333333332,
+        "max": 43025.75,
+        "stdev": 8172.944159327255
+      }
+    ],
+    "unstable_cases": [
+      "c10-chunk-total-overflow-trap (TP/FP per trial: 0/1, 0/0, 0/1)",
+      "c11-asset-path-check-trap (TP/FP per trial: 0/0, 0/1, 0/1)"
+    ]
+  },
+  {
+    "arm": "baseline",
+    "model": "gemini-3.7-flash",
+    "trials": 3,
+    "metrics": [
+      {
+        "metric": "precision",
+        "trials": 3,
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "stdev": 0.0
+      },
+      {
+        "metric": "recall",
+        "trials": 3,
+        "mean": 0.75,
+        "min": 0.75,
+        "max": 0.75,
+        "stdev": 0.0
+      },
+      {
+        "metric": "f1",
+        "trials": 3,
+        "mean": 0.8571428571428571,
+        "min": 0.8571428571428571,
+        "max": 0.8571428571428571,
+        "stdev": 0.0
+      },
+      {
+        "metric": "false_positives_per_case",
+        "trials": 3,
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "stdev": 0.0
+      },
+      {
+        "metric": "findings_to_triage_per_case",
+        "trials": 3,
+        "mean": 0.5,
+        "min": 0.5,
+        "max": 0.5,
+        "stdev": 0.0
+      },
+      {
+        "metric": "evidence_accuracy",
+        "trials": 3,
+        "mean": 1.0,
+        "min": 1.0,
+        "max": 1.0,
+        "stdev": 0.0
+      },
+      {
+        "metric": "cost_usd_per_case",
+        "trials": 3,
+        "mean": 0.0032168749999999997,
+        "min": 0.003146875,
+        "max": 0.0033112500000000004,
+        "stdev": 0.00008485511549105364
+      },
+      {
+        "metric": "runtime_ms_per_case",
+        "trials": 3,
+        "mean": 11126.194444444443,
+        "min": 5441.75,
+        "max": 21772.083333333332,
+        "stdev": 9226.694691270863
+      }
+    ],
+    "unstable_cases": []
+  }
+]

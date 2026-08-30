@@ -1,0 +1,142 @@
+{
+  "trajectory_id": "c4c665f5-69c1-4196-ab4f-7adc06997423",
+  "case_id": "c03-session-touch-context",
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-30T20:38:19.073949600+00:00",
+  "finished_at": "2026-08-30T20:38:29.126328700+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "CandidatesOnly"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "ABLATION: candidates-only — this run deliberately disables part of the pipeline and is                  not the full system"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "advanced-review/v6",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nYou are producing CANDIDATE findings, not final ones. Nothing you write here\nreaches a human directly. Each candidate is investigated against the actual\nrepository and then independently adjudicated, and only what survives is\nreported. A candidate that turns out to be wrong costs almost nothing. A real\ndefect you never raised is never checked at all.\n\nSo err toward proposing. Raise anything a careful reviewer would want confirmed\nbefore approving this change, including things you expect will turn out to be\nfine.\n\n- Anchor each candidate to a specific file and line range.\n- State each claim as something that can actually happen, not as a\n  conditional. Write \"callers can reach this with an empty list, and it will\n  panic\", not \"this will panic if the list is empty\" — the second is true of\n  the code whether or not the situation ever arises, so it cannot be\n  disproved and is not a finding.\n- State each claim as a single falsifiable sentence — something repository\n  evidence could confirm or refute.\n- Every candidate must name a consequence: what goes wrong, and for whom.\n  Incorrect output, a panic, data loss, a violated contract, a security\n  consequence, or a real cost at the scale this code runs at. If you cannot\n  finish the sentence \"and so the user gets...\", it is not a candidate.\n  Missing trait derives, a signature that is more fallible than it needs to\n  be, and unused declarations are observations about the code, not defects —\n  leave them out. The investigation stage can settle whether a claim is true;\n  it cannot make a true triviality worth a reviewer's time.\n- Pay particular attention to anything whose correctness depends on facts that\n  are not visible in the changed files. If the code is only correct given some\n  assumption about the rest of the repository, that assumption is a candidate.\n- Apply that concretely. Where this change calls something whose definition you\n  cannot see here, ask what it must return or do for this code to be right, and\n  raise that as a candidate stating the assumption. A guard is only as good as\n  the thing it calls; a name suggests what a function does but does not\n  establish it. This is the single most common way a change that looks correct\n  in isolation turns out not to be, and it is precisely what the investigation\n  stage can settle in one lookup.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Avoid vague concerns such as \"this looks fragile\"; say what would go wrong.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nReturn {\"findings\": []} only if there is genuinely nothing worth checking.\n\nUnder-proposing is the expensive mistake at this stage. Include a candidate\neven when you suspect it is fine, and in particular whenever the code's\ncorrectness depends on something you cannot see in the changed files — a\ncaller, a constructor, an invariant asserted in a comment, a value's origin.\nThose are the candidates the investigation stage exists to settle, and it can\nonly settle the ones you raise.",
+      "user": "## Change under review\n\n`SessionStore::touch` previously ignored unknown session ids silently. Since callers are expected to establish that the session exists before recording activity, the silent no-op was hiding mistakes rather than preventing them. The lookup is now unwrapped and the contract is stated in the doc comment.\n\n## Diff\n\n```diff\n--- a/src/store.rs\n+++ b/src/store.rs\n@@ -47,11 +47,12 @@\n         self.sessions.is_empty()\n     }\n \n-    /// Record activity on a session. Does nothing when the session is unknown.\n+    /// Record activity on a session.\n+    ///\n+    /// Callers check `contains` first, so the session is known to be present.\n     pub fn touch(&mut self, id: &SessionId, now: u64) {\n-        if let Some(session) = self.sessions.get_mut(id) {\n-            session.last_seen = now;\n-        }\n+        let session = self.sessions.get_mut(id).unwrap();\n+        session.last_seen = now;\n     }\n \n     /// Drop every session whose last activity is older than `cutoff`.\n\n```\n\n## Current contents of the changed files\n\n\n### src/store.rs\n\n```rust\n    1 | //! In-memory session storage.\n    2 | \n    3 | use std::collections::HashMap;\n    4 | \n    5 | pub type SessionId = String;\n    6 | \n    7 | #[derive(Debug, Clone, PartialEq, Eq)]\n    8 | pub struct Session {\n    9 |     pub id: SessionId,\n   10 |     pub user: String,\n   11 |     /// Monotonic tick of the last observed activity.\n   12 |     pub last_seen: u64,\n   13 | }\n   14 | \n   15 | #[derive(Default)]\n   16 | pub struct SessionStore {\n   17 |     sessions: HashMap<SessionId, Session>,\n   18 | }\n   19 | \n   20 | impl SessionStore {\n   21 |     pub fn new() -> Self {\n   22 |         Self::default()\n   23 |     }\n   24 | \n   25 |     pub fn insert(&mut self, session: Session) {\n   26 |         self.sessions.insert(session.id.clone(), session);\n   27 |     }\n   28 | \n   29 |     pub fn contains(&self, id: &SessionId) -> bool {\n   30 |         self.sessions.contains_key(id)\n   31 |     }\n   32 | \n   33 |     pub fn get(&self, id: &SessionId) -> Option<&Session> {\n   34 |         self.sessions.get(id)\n   35 |     }\n   36 | \n   37 |     /// Drop a session. Returns whether one was present.\n   38 |     pub fn remove(&mut self, id: &SessionId) -> bool {\n   39 |         self.sessions.remove(id).is_some()\n   40 |     }\n   41 | \n   42 |     pub fn len(&self) -> usize {\n   43 |         self.sessions.len()\n   44 |     }\n   45 | \n   46 |     pub fn is_empty(&self) -> bool {\n   47 |         self.sessions.is_empty()\n   48 |     }\n   49 | \n   50 |     /// Record activity on a session.\n   51 |     ///\n   52 |     /// Callers check `contains` first, so the session is known to be present.\n   53 |     pub fn touch(&mut self, id: &SessionId, now: u64) {\n   54 |         let session = self.sessions.get_mut(id).unwrap();\n   55 |         session.last_seen = now;\n   56 |     }\n   57 | \n   58 |     /// Drop every session whose last activity is older than `cutoff`.\n   59 |     pub fn expire_before(&mut self, cutoff: u64) -> usize {\n   60 |         let before = self.sessions.len();\n   61 |         self.sessions.retain(|_, s| s.last_seen >= cutoff);\n   62 |         before - self.sessions.len()\n   63 |     }\n   64 | }\n   65 | \n   66 | #[cfg(test)]\n   67 | mod tests {\n   68 |     use super::*;\n   69 | \n   70 |     fn session(id: &str, last_seen: u64) -> Session {\n   71 |         Session {\n   72 |             id: id.to_string(),\n   73 |             user: \"u\".to_string(),\n   74 |             last_seen,\n   75 |         }\n   76 |     }\n   77 | \n   78 |     #[test]\n   79 |     fn touch_updates_last_seen() {\n   80 |         let mut store = SessionStore::new();\n   81 |         store.insert(session(\"a\", 1));\n   82 |         if store.contains(&\"a\".to_string()) {\n   83 |             store.touch(&\"a\".to_string(), 99);\n   84 |         }\n   85 |         assert_eq!(store.get(&\"a\".to_string()).unwrap().last_seen, 99);\n   86 |     }\n   87 | \n   88 |     #[test]\n   89 |     fn expire_drops_stale_sessions() {\n   90 |         let mut store = SessionStore::new();\n   91 |         store.insert(session(\"a\", 1));\n   92 |         store.insert(session(\"b\", 10));\n   93 |         assert_eq!(store.expire_before(5), 1);\n   94 |         assert_eq!(store.len(), 1);\n   95 |     }\n   96 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"ApiContract\",\n      \"severity\": \"Medium\",\n      \"file\": \"src/store.rs\",\n      \"start_line\": 53,\n      \"end_line\": 56,\n      \"claim\": \"Callers passing an unverified or expired session ID to `SessionStore::touch` will trigger a panic on `unwrap()`.\",\n      \"reasoning\": \"`touch` is part of the public API and previously handled missing session IDs safely without panicking. Requiring callers to ensure presence via a separate `contains` check is unenforced at compile time, causing runtime panics if any caller omits the pre-check or relies on the previous non-panicking behavior.\"\n    },\n    {\n      \"issue_type\": \"Performance\",\n      \"severity\": \"Low\",\n      \"file\": \"src/store.rs\",\n      \"start_line\": 52,\n      \"end_line\": 56,\n      \"claim\": \"Requiring callers to call `contains` before `touch` forces two hash table lookups for every session update instead of one.\",\n      \"reasoning\": \"Calling `contains` followed by `touch` calculates the hash and traverses the bucket chain twice. Returning a `bool` or keeping the internal `if let Some(...)` pattern allows callers to perform the lookup and update in a single map access.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 2336,
+        "output_tokens": 1115,
+        "total_tokens": 3451
+      },
+      "latency_ms": 10051,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c03-session-touch-context-adv-1",
+        "issue_type": "ApiContract",
+        "severity": "Medium",
+        "location": {
+          "file": "src/store.rs",
+          "start_line": 53,
+          "end_line": 56
+        },
+        "claim": "Callers passing an unverified or expired session ID to `SessionStore::touch` will trigger a panic on `unwrap()`.",
+        "reasoning": "`touch` is part of the public API and previously handled missing session IDs safely without panicking. Requiring callers to ensure presence via a separate `contains` check is unenforced at compile time, causing runtime panics if any caller omits the pre-check or relies on the previous non-panicking behavior."
+      }
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c03-session-touch-context-adv-2",
+        "issue_type": "Performance",
+        "severity": "Low",
+        "location": {
+          "file": "src/store.rs",
+          "start_line": 52,
+          "end_line": 56
+        },
+        "claim": "Requiring callers to call `contains` before `touch` forces two hash table lookups for every session update instead of one.",
+        "reasoning": "Calling `contains` followed by `touch` calculates the hash and traverses the bucket chain twice. Returning a `bool` or keeping the internal `if let Some(...)` pattern allows callers to perform the lookup and update in a single map access."
+      }
+    },
+    {
+      "event": "Decision",
+      "candidate_id": "c03-session-touch-context-adv-1",
+      "status": "Verified",
+      "reason": "ablation candidates-only: reported without investigation or                          verification"
+    },
+    {
+      "event": "Decision",
+      "candidate_id": "c03-session-touch-context-adv-2",
+      "status": "Verified",
+      "reason": "ablation candidates-only: reported without investigation or                          verification"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "2 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "c03-session-touch-context-adv-1",
+      "issue_type": "ApiContract",
+      "severity": "Medium",
+      "location": {
+        "file": "src/store.rs",
+        "start_line": 53,
+        "end_line": 56
+      },
+      "claim": "Callers passing an unverified or expired session ID to `SessionStore::touch` will trigger a panic on `unwrap()`.",
+      "reasoning": "`touch` is part of the public API and previously handled missing session IDs safely without panicking. Requiring callers to ensure presence via a separate `contains` check is unenforced at compile time, causing runtime panics if any caller omits the pre-check or relies on the previous non-panicking behavior.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "ablation candidates-only"
+    },
+    {
+      "id": "c03-session-touch-context-adv-2",
+      "issue_type": "Performance",
+      "severity": "Low",
+      "location": {
+        "file": "src/store.rs",
+        "start_line": 52,
+        "end_line": 56
+      },
+      "claim": "Requiring callers to call `contains` before `touch` forces two hash table lookups for every session update instead of one.",
+      "reasoning": "Calling `contains` followed by `touch` calculates the hash and traverses the bucket chain twice. Returning a `bool` or keeping the internal `if let Some(...)` pattern allows callers to perform the lookup and update in a single map access.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "ablation candidates-only"
+    }
+  ],
+  "usage": {
+    "input_tokens": 2336,
+    "output_tokens": 1115,
+    "total_tokens": 3451
+  },
+  "cost_usd": 0.00593325,
+  "runtime_ms": 10052,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

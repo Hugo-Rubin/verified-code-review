@@ -1289,3 +1289,101 @@ succeeded, so renaming recovered them without re-spending.
 Still outstanding: the blind stopwatch harness is built and documented but no
 session has been run, so human review time in the headline table remains a
 labelled proxy.
+
+---
+
+## 2026-08-30 20:35 UTC — Sprint 3: the full ablation ladder, and three features worth nothing
+
+### Context
+
+Five items were requested: fix the c12 instability, complete the ablation
+ladder, add within-case memory, add candidate deduplication, and check a second
+model without provisioning another API.
+
+### Evidence
+
+**c12's root cause was not verification.** The advanced reviewer proposed *zero*
+candidates on it in 2 of 3 trials, so nothing was ever investigated. Its Python
+twin p03 failed identically, and so did the c10 trap — meaning "0 false
+positives on traps" had partly been earned by never challenging them.
+
+`advanced-review/v6` adds a general rule: where the change calls something whose
+definition is not visible, state what it must do for the code to be right and
+raise that as a candidate. No benchmark noun appears in it, and a test enforces
+that. Recall went 0.750 to **1.000 with σ = 0.000**.
+
+**The complete ladder**, 3 trials each, all at the final configuration:
+
+```text
+                                   P       R       F1      $/case
+baseline                        1.000   0.750   0.857     0.0032
+advanced prompt alone           0.607   0.958   0.742     0.0038
+  + investigation               0.707   1.000   0.828     0.0112
+  + falsification (full)        0.963   1.000   0.980     0.0159
+```
+
+Both intermediate configurations score **below the baseline**.
+
+**Cross-model.** The baseline's exact prompts were exported from the recorded
+trajectories and given byte-identical to Claude Sonnet 5, whose answers were
+scored by the same deterministic evaluator. Result: **12/12 per-case agreement**
+with Gemini, same F1 0.857, same `issue_type` on all six matches.
+
+**Three features earned nothing.**
+
+```text
+follow-up on Insufficient   fired 0 times in 36 verifications
+candidate deduplication     fired 0 times in 3 trials
+within-case memory          used on all 12 cases; -3% calls, -1% cost
+```
+
+### Decision
+
+Keep v6. Keep all three inert features, reported as inert.
+
+Explicitly **not** attributing the precision improvement (0.926 → 0.963 between
+the v6 and final sweeps) to deduplication. Deduplication never ran. With
+σ = 0.064 on precision across three trials, 0.037 is inside noise, and the two
+sweeps are indistinguishable on that metric. Writing "deduplication improved
+precision" would have been a plausible, checkable, false claim — and it is
+exactly the kind this project exists to argue against.
+
+Two tooling bugs fixed, both of which had been hiding real information:
+
+1. `variance` compared only true positives, so a run whose precision moved
+   between trials reported "every case scored identically". That was false.
+   Corrected, it immediately surfaced the duplicate-finding instability on c03
+   and c08 that motivated deduplication in the first place.
+2. Cost was computed as tokens × price with no check that tokens were ever
+   recorded, so the externally produced Sonnet run reported `$0.00000` — a
+   fabricated-looking measurement of "free" where the truth is "not measured".
+   A run with no recorded tokens now reports cost as unavailable.
+
+### Rejected alternatives
+
+- **Crediting dedup or memory for the precision gain.** Rejected: dedup never
+  executed, and memory's effect is inside noise.
+- **Removing the three inert features.** Rejected: they are correct, tested,
+  cost nothing idle, and deleting them would delete the finding. That three
+  well-motivated components all earned nothing is more useful than the
+  components.
+- **Tuning the benchmark so dedup would fire.** Benchmark tampering with extra
+  steps.
+- **Running the advanced arm on Sonnet.** Rejected on validity grounds:
+  reproducing a multi-turn tool loop outside the Rust orchestrator means
+  re-implementing the thing under test, so any difference could come from the
+  re-implementation. Scope is stated as "the problem generalises across models;
+  the solution is measured on one".
+- **Putting the Sonnet cost estimate in a results table.** Rejected: its tokens
+  were never measured. The estimate lives in prose that labels every line
+  MEASURED or ESTIMATE.
+
+### Consequence
+
+Final reported configuration: `advanced-review/v6`, `advanced-falsify/v2`,
+`advanced-investigate/v2`, `fresh-verify/v5`, with deduplication and within-case
+memory enabled but measured as inert. F1 0.980 ± 0.034 against a baseline of
+0.857 ± 0.000, recall 1.000 with zero variance.
+
+Outstanding: the blind stopwatch session has still not been run, so human review
+time in the headline table remains a labelled proxy.

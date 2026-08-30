@@ -1,0 +1,63 @@
+{
+  "trajectory_id": "4d907e5e-6a52-4443-a75d-116134232d46",
+  "case_id": "c02-shard-index-trap",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-30T21:03:50.099186800+00:00",
+  "finished_at": "2026-08-30T21:03:55.598629400+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\nA new `health` module reports the total shard count, the id of the coordinator shard, and how many shards are currently unhealthy. The first shard acts as the coordinator by convention. The module is exported from the crate root.\n\n## Diff\n\n```diff\n--- /dev/null\r\n+++ b/src/health.rs\r\n@@ -0,0 +1,56 @@\r\n+//! Health reporting for a router's shard set.\r\n+\r\n+use crate::router::Router;\r\n+\r\n+#[derive(Debug, PartialEq, Eq)]\r\n+pub struct Summary {\r\n+    /// Total number of shards.\r\n+    pub total: usize,\r\n+    /// Id of the coordinator shard.\r\n+    pub coordinator: String,\r\n+    /// How many shards are currently unhealthy.\r\n+    pub unhealthy: usize,\r\n+}\r\n+\r\n+impl Summary {\r\n+    /// True when every shard is reporting healthy.\r\n+    pub fn all_healthy(&self) -> bool {\r\n+        self.unhealthy == 0\r\n+    }\r\n+}\r\n+\r\n+/// Summarise the health of `router`'s shards.\r\n+///\r\n+/// The first shard acts as the coordinator by convention.\r\n+pub fn summary(router: &Router) -> Summary {\r\n+    let shards = router.shards();\r\n+\r\n+    Summary {\r\n+        total: shards.len(),\r\n+        coordinator: shards[0].id().to_string(),\r\n+        unhealthy: shards.iter().filter(|s| !s.is_healthy()).count(),\r\n+    }\r\n+}\r\n+\r\n+#[cfg(test)]\r\n+mod tests {\r\n+    use super::*;\r\n+    use crate::shard::Shard;\r\n+\r\n+    #[test]\r\n+    fn reports_the_first_shard_as_coordinator() {\r\n+        let r = Router::new(vec![Shard::new(\"a\"), Shard::new(\"b\")]).unwrap();\r\n+        let s = summary(&r);\r\n+        assert_eq!(s.coordinator, \"a\");\r\n+        assert_eq!(s.total, 2);\r\n+        assert!(s.all_healthy());\r\n+    }\r\n+\r\n+    #[test]\r\n+    fn counts_unhealthy_shards() {\r\n+        let mut down = Shard::new(\"b\");\r\n+        down.set_healthy(false);\r\n+        let r = Router::new(vec![Shard::new(\"a\"), down]).unwrap();\r\n+        assert_eq!(summary(&r).unhealthy, 1);\r\n+    }\r\n+}\r\n--- a/src/lib.rs\r\n+++ b/src/lib.rs\r\n@@ -1,7 +1,9 @@\r\n //! A minimal sharded routing crate.\r\n \r\n+pub mod health;\r\n pub mod router;\r\n pub mod shard;\r\n \r\n+pub use health::{summary, Summary};\r\n pub use router::{Router, RouterError};\r\n pub use shard::Shard;\r\n\n```\n\n## Current contents of the changed files\n\n\n### src/health.rs\n\n```rust\n    1 | //! Health reporting for a router's shard set.\n    2 | \n    3 | use crate::router::Router;\n    4 | \n    5 | #[derive(Debug, PartialEq, Eq)]\n    6 | pub struct Summary {\n    7 |     /// Total number of shards.\n    8 |     pub total: usize,\n    9 |     /// Id of the coordinator shard.\n   10 |     pub coordinator: String,\n   11 |     /// How many shards are currently unhealthy.\n   12 |     pub unhealthy: usize,\n   13 | }\n   14 | \n   15 | impl Summary {\n   16 |     /// True when every shard is reporting healthy.\n   17 |     pub fn all_healthy(&self) -> bool {\n   18 |         self.unhealthy == 0\n   19 |     }\n   20 | }\n   21 | \n   22 | /// Summarise the health of `router`'s shards.\n   23 | ///\n   24 | /// The first shard acts as the coordinator by convention.\n   25 | pub fn summary(router: &Router) -> Summary {\n   26 |     let shards = router.shards();\n   27 | \n   28 |     Summary {\n   29 |         total: shards.len(),\n   30 |         coordinator: shards[0].id().to_string(),\n   31 |         unhealthy: shards.iter().filter(|s| !s.is_healthy()).count(),\n   32 |     }\n   33 | }\n   34 | \n   35 | #[cfg(test)]\n   36 | mod tests {\n   37 |     use super::*;\n   38 |     use crate::shard::Shard;\n   39 | \n   40 |     #[test]\n   41 |     fn reports_the_first_shard_as_coordinator() {\n   42 |         let r = Router::new(vec![Shard::new(\"a\"), Shard::new(\"b\")]).unwrap();\n   43 |         let s = summary(&r);\n   44 |         assert_eq!(s.coordinator, \"a\");\n   45 |         assert_eq!(s.total, 2);\n   46 |         assert!(s.all_healthy());\n   47 |     }\n   48 | \n   49 |     #[test]\n   50 |     fn counts_unhealthy_shards() {\n   51 |         let mut down = Shard::new(\"b\");\n   52 |         down.set_healthy(false);\n   53 |         let r = Router::new(vec![Shard::new(\"a\"), down]).unwrap();\n   54 |         assert_eq!(summary(&r).unhealthy, 1);\n   55 |     }\n   56 | }\n```\n\n### src/lib.rs\n\n```rust\n    1 | //! A minimal sharded routing crate.\n    2 | \n    3 | pub mod health;\n    4 | pub mod router;\n    5 | pub mod shard;\n    6 | \n    7 | pub use health::{summary, Summary};\n    8 | pub use router::{Router, RouterError};\n    9 | pub use shard::Shard;\n```\n",
+      "response_text": "{\n  \"findings\": []\n}",
+      "usage": {
+        "input_tokens": 1793,
+        "output_tokens": 583,
+        "total_tokens": 2376
+      },
+      "latency_ms": 5498,
+      "attempts": 1
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "0 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [],
+  "usage": {
+    "input_tokens": 1793,
+    "output_tokens": 583,
+    "total_tokens": 2376
+  },
+  "cost_usd": 0.003531,
+  "runtime_ms": 5499,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

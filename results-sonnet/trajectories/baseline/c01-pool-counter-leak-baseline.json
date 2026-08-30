@@ -1,0 +1,79 @@
+{
+  "trajectory_id": "d7424c9e-c56c-4130-9743-1a67e4e1aa97",
+  "case_id": "c01-pool-counter-leak",
+  "agent": "Baseline",
+  "model": "claude-sonnet-5",
+  "started_at": "2026-08-30T20:37:39.134057+00:00",
+  "finished_at": "2026-08-30T20:37:39.134057+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "claude-sonnet-5",
+      "location": "external",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 0,
+      "min_request_interval_ms": 0
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "externally produced baseline run: model claude-sonnet-5"
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c01-pool-counter-leak-base-1",
+        "issue_type": "ResourceManagement",
+        "severity": "High",
+        "location": {
+          "file": "src/pool.rs",
+          "start_line": 55,
+          "end_line": 60
+        },
+        "claim": "When acquire() fails with PoolError::Exhausted, the active counter has already been incremented and is never decremented back, permanently leaking pool capacity.",
+        "reasoning": "The increment now happens before the capacity check, and the early return on the Exhausted branch does not undo it; since no Conn is created on that path, neither release() nor Drop ever runs to correct the count, so every failed acquire() call permanently reduces the pool's usable capacity by one."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "c01-pool-counter-leak-base-1",
+      "issue_type": "ResourceManagement",
+      "severity": "High",
+      "location": {
+        "file": "src/pool.rs",
+        "start_line": 55,
+        "end_line": 60
+      },
+      "claim": "When acquire() fails with PoolError::Exhausted, the active counter has already been incremented and is never decremented back, permanently leaking pool capacity.",
+      "reasoning": "The increment now happens before the capacity check, and the early return on the Exhausted branch does not undo it; since no Conn is created on that path, neither release() nor Drop ever runs to correct the count, so every failed acquire() call permanently reduces the pool's usable capacity by one.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "runtime_ms": 0,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

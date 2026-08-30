@@ -1,0 +1,75 @@
+{
+  "trajectory_id": "e412bc7a-e39a-46c8-a6a6-7f03a4771985",
+  "case_id": "c11-asset-path-check-trap",
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-30T21:23:34.427692300+00:00",
+  "finished_at": "2026-08-30T21:23:42.771441300+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "NoFalsification"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "ABLATION: no-falsification — this run deliberately disables part of the pipeline and is                  not the full system"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "advanced-review/v6",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nYou are producing CANDIDATE findings, not final ones. Nothing you write here\nreaches a human directly. Each candidate is investigated against the actual\nrepository and then independently adjudicated, and only what survives is\nreported. A candidate that turns out to be wrong costs almost nothing. A real\ndefect you never raised is never checked at all.\n\nSo err toward proposing. Raise anything a careful reviewer would want confirmed\nbefore approving this change, including things you expect will turn out to be\nfine.\n\n- Anchor each candidate to a specific file and line range.\n- State each claim as something that can actually happen, not as a\n  conditional. Write \"callers can reach this with an empty list, and it will\n  panic\", not \"this will panic if the list is empty\" — the second is true of\n  the code whether or not the situation ever arises, so it cannot be\n  disproved and is not a finding.\n- State each claim as a single falsifiable sentence — something repository\n  evidence could confirm or refute.\n- Every candidate must name a consequence: what goes wrong, and for whom.\n  Incorrect output, a panic, data loss, a violated contract, a security\n  consequence, or a real cost at the scale this code runs at. If you cannot\n  finish the sentence \"and so the user gets...\", it is not a candidate.\n  Missing trait derives, a signature that is more fallible than it needs to\n  be, and unused declarations are observations about the code, not defects —\n  leave them out. The investigation stage can settle whether a claim is true;\n  it cannot make a true triviality worth a reviewer's time.\n- Pay particular attention to anything whose correctness depends on facts that\n  are not visible in the changed files. If the code is only correct given some\n  assumption about the rest of the repository, that assumption is a candidate.\n- Apply that concretely. Where this change calls something whose definition you\n  cannot see here, ask what it must return or do for this code to be right, and\n  raise that as a candidate stating the assumption. A guard is only as good as\n  the thing it calls; a name suggests what a function does but does not\n  establish it. This is the single most common way a change that looks correct\n  in isolation turns out not to be, and it is precisely what the investigation\n  stage can settle in one lookup.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Avoid vague concerns such as \"this looks fragile\"; say what would go wrong.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nReturn {\"findings\": []} only if there is genuinely nothing worth checking.\n\nUnder-proposing is the expensive mistake at this stage. Include a candidate\neven when you suspect it is fine, and in particular whenever the code's\ncorrectness depends on something you cannot see in the changed files — a\ncaller, a constructor, an invariant asserted in a comment, a value's origin.\nThose are the candidates the investigation stage exists to settle, and it can\nonly settle the ones you raise.",
+      "user": "## Change under review\n\n`asset_path` rejected names containing `..`, a path separator, or an empty string. Those names cannot occur given how the function is called, so the check was removed and the calling contract written into the doc comment instead.\n\n## Diff\n\n```diff\n--- a/src/assets.rs\n+++ b/src/assets.rs\n@@ -25,10 +25,11 @@\n }\n \n /// Resolve `name` inside the asset root.\n+///\n+/// Callers pass a name obtained from `AssetKind::file_name`, which returns one\n+/// of a fixed set of literals, so the name cannot contain a path separator or\n+/// a parent-directory component.\n pub(crate) fn asset_path(root: &Path, name: &str) -> Option<PathBuf> {\n-    if name.is_empty() || name.contains(\"..\") || name.contains('/') || name.contains('\\\\') {\n-        return None;\n-    }\n     Some(root.join(name))\n }\n \n\n```\n\n## Current contents of the changed files\n\n\n### src/assets.rs\n\n```rust\n    1 | //! Static asset resolution.\n    2 | //!\n    3 | //! Crate-internal: `asset_path` is not exported from the crate root, so every\n    4 | //! call site lives in this crate.\n    5 | \n    6 | use std::path::{Path, PathBuf};\n    7 | \n    8 | /// The assets this service serves. A closed set, fixed at compile time.\n    9 | #[derive(Debug, Clone, Copy, PartialEq, Eq)]\n   10 | pub enum AssetKind {\n   11 |     Stylesheet,\n   12 |     Favicon,\n   13 |     Logo,\n   14 | }\n   15 | \n   16 | impl AssetKind {\n   17 |     /// The on-disk file name for this asset.\n   18 |     pub fn file_name(&self) -> &'static str {\n   19 |         match self {\n   20 |             AssetKind::Stylesheet => \"app.css\",\n   21 |             AssetKind::Favicon => \"favicon.ico\",\n   22 |             AssetKind::Logo => \"logo.svg\",\n   23 |         }\n   24 |     }\n   25 | }\n   26 | \n   27 | /// Resolve `name` inside the asset root.\n   28 | ///\n   29 | /// Callers pass a name obtained from `AssetKind::file_name`, which returns one\n   30 | /// of a fixed set of literals, so the name cannot contain a path separator or\n   31 | /// a parent-directory component.\n   32 | pub(crate) fn asset_path(root: &Path, name: &str) -> Option<PathBuf> {\n   33 |     Some(root.join(name))\n   34 | }\n   35 | \n   36 | #[cfg(test)]\n   37 | mod tests {\n   38 |     use super::*;\n   39 | \n   40 |     #[test]\n   41 |     fn resolves_under_the_root() {\n   42 |         let p = asset_path(Path::new(\"/srv/assets\"), AssetKind::Logo.file_name()).unwrap();\n   43 |         assert!(p.ends_with(\"logo.svg\"));\n   44 |     }\n   45 | \n   46 |     #[test]\n   47 |     fn every_kind_has_a_plain_file_name() {\n   48 |         for kind in [AssetKind::Stylesheet, AssetKind::Favicon, AssetKind::Logo] {\n   49 |             let n = kind.file_name();\n   50 |             assert!(!n.contains('/'));\n   51 |             assert!(!n.contains('\\\\'));\n   52 |             assert!(!n.contains(\"..\"));\n   53 |         }\n   54 |     }\n   55 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Validation\",\n      \"severity\": \"High\",\n      \"file\": \"src/assets.rs\",\n      \"start_line\": \"32\",\n      \"end_line\": \"34\",\n      \"claim\": \"Callers across the crate can pass arbitrary or untrusted string slices to `asset_path`, allowing path traversal outside the asset root.\",\n      \"reasoning\": \"`asset_path` accepts any `&str` rather than being strongly typed to `AssetKind`, but it no longer validates against path traversal sequences like `..` or path separators. If any crate caller forwards user-supplied asset names, malicious paths will escape the root directory and potentially expose sensitive files.\",\n      \"cost_analysis\": \"Investigating caller call sites across the crate will quickly confirm if any call site passes dynamic/untrusted strings.\"\n    },\n    {\n      \"issue_type\": \"ApiContract\",\n      \"severity\": \"Low\",\n      \"file\": \"src/assets.rs\",\n      \"start_line\": \"32\",\n      \"end_line\": \"34\",\n      \"claim\": \"`asset_path` returns an `Option<PathBuf>` that is unconditionally `Some`, misleading callers into expecting fallible validation.\",\n      \"reasoning\": \"Since all validation was removed, the function always wraps the joined path in `Some(...)`. Callers may rely on `asset_path` returning `None` on invalid or non-asset inputs for error handling.\",\n      \"cost_analysis\": \"Checking call sites will verify whether any caller checks for `None` expecting path validation.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 1814,
+        "output_tokens": 578,
+        "total_tokens": 2392
+      },
+      "latency_ms": 8343,
+      "attempts": 1
+    },
+    {
+      "event": "Note",
+      "note": "finding[0] dropped: invalid type: string \"34\", expected u32"
+    },
+    {
+      "event": "Note",
+      "note": "finding[1] dropped: invalid type: string \"34\", expected u32"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "0 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [],
+  "usage": {
+    "input_tokens": 1814,
+    "output_tokens": 578,
+    "total_tokens": 2392
+  },
+  "cost_usd": 0.003528,
+  "runtime_ms": 8343,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

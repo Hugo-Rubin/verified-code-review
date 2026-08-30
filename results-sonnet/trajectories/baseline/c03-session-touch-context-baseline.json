@@ -1,0 +1,47 @@
+{
+  "trajectory_id": "2b604f64-334f-431d-bcc8-13a34270c5ae",
+  "case_id": "c03-session-touch-context",
+  "agent": "Baseline",
+  "model": "claude-sonnet-5",
+  "started_at": "2026-08-30T20:37:39.134057+00:00",
+  "finished_at": "2026-08-30T20:37:39.134057+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "claude-sonnet-5",
+      "location": "external",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 0,
+      "min_request_interval_ms": 0
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "externally produced baseline run: model claude-sonnet-5"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "0 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [],
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "runtime_ms": 0,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

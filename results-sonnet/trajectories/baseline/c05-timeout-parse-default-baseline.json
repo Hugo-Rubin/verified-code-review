@@ -1,0 +1,79 @@
+{
+  "trajectory_id": "df42d6e0-7794-4da9-b554-ccb38f02dd4e",
+  "case_id": "c05-timeout-parse-default",
+  "agent": "Baseline",
+  "model": "claude-sonnet-5",
+  "started_at": "2026-08-30T20:37:39.134057+00:00",
+  "finished_at": "2026-08-30T20:37:39.134057+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "claude-sonnet-5",
+      "location": "external",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 0,
+      "min_request_interval_ms": 0
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "externally produced baseline run: model claude-sonnet-5"
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c05-timeout-parse-default-base-1",
+        "issue_type": "ErrorHandling",
+        "severity": "High",
+        "location": {
+          "file": "src/config.rs",
+          "start_line": 19,
+          "end_line": 24
+        },
+        "claim": "When the configured timeout string fails to parse, request_timeout silently falls back to 0, which the module documents as meaning \"wait forever\", instead of falling back to the safe DEFAULT_TIMEOUT_SECS.",
+        "reasoning": "The previous implementation surfaced a parse failure as ConfigError::NotANumber; the new version swallows it with unwrap_or(0), and per the doc comment on NO_TIMEOUT a value of zero disables the deadline entirely, so any malformed or typo'd config value now silently produces an unbounded timeout instead of the intended 30-second default."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "c05-timeout-parse-default-base-1",
+      "issue_type": "ErrorHandling",
+      "severity": "High",
+      "location": {
+        "file": "src/config.rs",
+        "start_line": 19,
+        "end_line": 24
+      },
+      "claim": "When the configured timeout string fails to parse, request_timeout silently falls back to 0, which the module documents as meaning \"wait forever\", instead of falling back to the safe DEFAULT_TIMEOUT_SECS.",
+      "reasoning": "The previous implementation surfaced a parse failure as ConfigError::NotANumber; the new version swallows it with unwrap_or(0), and per the doc comment on NO_TIMEOUT a value of zero disables the deadline entirely, so any malformed or typo'd config value now silently produces an unbounded timeout instead of the intended 30-second default.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "runtime_ms": 0,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

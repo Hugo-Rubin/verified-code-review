@@ -1,0 +1,79 @@
+{
+  "trajectory_id": "a3c5056c-aa32-4382-a7a4-7404f1bf5de8",
+  "case_id": "c04-counter-lost-update",
+  "agent": "Baseline",
+  "model": "claude-sonnet-5",
+  "started_at": "2026-08-30T20:37:39.134057+00:00",
+  "finished_at": "2026-08-30T20:37:39.134057+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "claude-sonnet-5",
+      "location": "external",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 0,
+      "min_request_interval_ms": 0
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "externally produced baseline run: model claude-sonnet-5"
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c04-counter-lost-update-base-1",
+        "issue_type": "Concurrency",
+        "severity": "High",
+        "location": {
+          "file": "src/counters.rs",
+          "start_line": 30,
+          "end_line": 43
+        },
+        "claim": "record() reads and writes the counter through two separate lock acquisitions, so concurrent calls for the same key can race and lose updates.",
+        "reasoning": "Counters is documented as shared across worker threads, but between releasing the lock after the get() and re-acquiring it for insert(), another thread can record the same key, and its increment is overwritten by this thread's stale current + 1, losing that update; the previous entry-API version incremented atomically under a single lock hold."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "c04-counter-lost-update-base-1",
+      "issue_type": "Concurrency",
+      "severity": "High",
+      "location": {
+        "file": "src/counters.rs",
+        "start_line": 30,
+        "end_line": 43
+      },
+      "claim": "record() reads and writes the counter through two separate lock acquisitions, so concurrent calls for the same key can race and lose updates.",
+      "reasoning": "Counters is documented as shared across worker threads, but between releasing the lock after the get() and re-acquiring it for insert(), another thread can record the same key, and its increment is overwritten by this thread's stale current + 1, losing that update; the previous entry-API version incremented atomically under a single lock hold.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "runtime_ms": 0,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

@@ -1,0 +1,79 @@
+{
+  "trajectory_id": "10aa2f9d-9978-44df-abb7-a1c7445b2595",
+  "case_id": "c06-dedup-quadratic",
+  "agent": "Baseline",
+  "model": "claude-sonnet-5",
+  "started_at": "2026-08-30T20:37:39.134057+00:00",
+  "finished_at": "2026-08-30T20:37:39.134057+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "claude-sonnet-5",
+      "location": "external",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 0,
+      "min_request_interval_ms": 0
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "externally produced baseline run: model claude-sonnet-5"
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c06-dedup-quadratic-base-1",
+        "issue_type": "Performance",
+        "severity": "High",
+        "location": {
+          "file": "src/dedup.rs",
+          "start_line": 7,
+          "end_line": 17
+        },
+        "claim": "Replacing the HashSet membership check with out.contains(&id) turns unique_ids from O(n) into O(n^2) in the number of ids.",
+        "reasoning": "The module doc states batches routinely carry 100,000 to 500,000 ids on the hot path, and Vec::contains is a linear scan, so for a batch with many unique ids this becomes hundreds of billions of comparisons instead of a constant-time hash lookup per element."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "c06-dedup-quadratic-base-1",
+      "issue_type": "Performance",
+      "severity": "High",
+      "location": {
+        "file": "src/dedup.rs",
+        "start_line": 7,
+        "end_line": 17
+      },
+      "claim": "Replacing the HashSet membership check with out.contains(&id) turns unique_ids from O(n) into O(n^2) in the number of ids.",
+      "reasoning": "The module doc states batches routinely carry 100,000 to 500,000 ids on the hot path, and Vec::contains is a linear scan, so for a batch with many unique ids this becomes hundreds of billions of comparisons instead of a constant-time hash lookup per element.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "runtime_ms": 0,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

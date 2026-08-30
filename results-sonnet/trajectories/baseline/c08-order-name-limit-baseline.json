@@ -1,0 +1,79 @@
+{
+  "trajectory_id": "170ddda6-36db-4c10-89dc-61c9deca0a6b",
+  "case_id": "c08-order-name-limit",
+  "agent": "Baseline",
+  "model": "claude-sonnet-5",
+  "started_at": "2026-08-30T20:37:39.134057+00:00",
+  "finished_at": "2026-08-30T20:37:39.134057+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "claude-sonnet-5",
+      "location": "external",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 0,
+      "min_request_interval_ms": 0
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "externally produced baseline run: model claude-sonnet-5"
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c08-order-name-limit-base-1",
+        "issue_type": "Validation",
+        "severity": "High",
+        "location": {
+          "file": "src/order.rs",
+          "start_line": 26,
+          "end_line": 28
+        },
+        "claim": "The name length check now compares against MAX_QUANTITY (1000) instead of MAX_NAME_LEN (64), so names far longer than the database column allows pass validation.",
+        "reasoning": "MAX_NAME_LEN is documented as matching the `orders.name` VARCHAR(64) column, but the condition was changed to `order.name.len() > MAX_QUANTITY as usize`, so a name of up to 1000 characters is accepted by validate() and would fail or be rejected at the database insert instead of being caught here."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "c08-order-name-limit-base-1",
+      "issue_type": "Validation",
+      "severity": "High",
+      "location": {
+        "file": "src/order.rs",
+        "start_line": 26,
+        "end_line": 28
+      },
+      "claim": "The name length check now compares against MAX_QUANTITY (1000) instead of MAX_NAME_LEN (64), so names far longer than the database column allows pass validation.",
+      "reasoning": "MAX_NAME_LEN is documented as matching the `orders.name` VARCHAR(64) column, but the condition was changed to `order.name.len() > MAX_QUANTITY as usize`, so a name of up to 1000 characters is accepted by validate() and would fail or be rejected at the database insert instead of being caught here.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "runtime_ms": 0,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

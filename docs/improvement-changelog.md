@@ -85,89 +85,72 @@ without re-spending. `Trajectory::arm()` now builds the name, with tests.
 
 ## Final comparison
 
-All arms, same model (`gemini-3.7-flash` via Vertex AI), temperature 0, frozen
-12-case benchmark, **3 trials each**. Mean ± sample standard deviation.
+All arms, `gemini-3.7-flash` via Vertex AI, temperature 0, frozen 12-case
+benchmark, **3 trials each**. Mean ± sample standard deviation. Artifacts in
+[`results-final/`](../results-final/).
 
-| Metric | Baseline | Advanced | Change | Advanced, no falsification |
+| Metric | Baseline | Prompt alone | + investigation | **Advanced (full)** |
 |---|---:|---:|---:|---:|
-| Precision | 1.000 ± 0.000 | 0.921 ± 0.069 | −0.079 | 0.619 ± 0.031 |
-| Recall | 0.750 ± 0.000 | **0.917 ± 0.072** | **+0.167** | 0.875 ± 0.000 |
-| **F1** | 0.857 ± 0.000 | **0.917 ± 0.036** | **+0.060** | 0.725 ± 0.021 |
-| False positives/case | 0.00 | 0.06 | +0.06 | 0.36 |
-| Findings to triage/case ¹ | 0.50 | 0.67 | +0.17 | 0.94 |
-| Evidence accuracy ² | n/a | 1.000 ± 0.000 | — | 1.000 ± 0.000 |
-| **Cost/case** | **$0.0032** | **$0.0147** | ×4.6 | $0.0108 |
-| Runtime/case | 6.5 s | 38.8 s | +32.3 s | 30.3 s |
+| Precision | 1.000 ± 0.000 | 0.607 ± 0.052 | 0.707 ± 0.035 | **0.963 ± 0.064** |
+| Recall | 0.750 ± 0.000 | 0.958 ± 0.072 | 1.000 ± 0.000 | **1.000 ± 0.000** |
+| **F1** | 0.857 ± 0.000 | 0.742 ± 0.052 | 0.828 ± 0.024 | **0.980 ± 0.034** |
+| False positives/case | 0.00 | 0.42 | 0.28 | 0.03 |
+| Findings to triage/case ¹ | 0.50 | 1.06 | 0.94 | 0.69 |
+| Evidence accuracy ² | n/a | 1.000 | 1.000 | 1.000 ± 0.000 |
+| Cost/case | $0.0032 | $0.0038 | $0.0112 | $0.0159 |
+| Runtime/case | 11.1 s | 8.9 s | 34.0 s | 38.9 s |
 
-¹ A manual-triage proxy: how many findings a human must read and judge. **Not**
-a direct measurement of human review time. `vcr triage` implements the direct
-blind measurement; no session has been run, so the proxy stands.
+¹ A manual-triage proxy, not a stopwatch. `vcr triage` implements the direct
+blind measurement; no session has been run.
 
 ² Fraction of cited excerpts that really appear at the lines they cite, checked
-deterministically against the repository. 48–60 citations per advanced run.
-Zero mismatches were observed in any run, in any arm, in either language.
+deterministically. Zero mismatches in any run, any arm, either language.
 
-By case category, full system, per trial (out of 3):
+By category, full system, per trial:
 
 | Category | n | Baseline TP/FP/FN | Advanced TP/FP/FN |
 |---|---:|---|---|
-| RealIssue | 6 | 6 / 0 / 0 | 6 / 0–1 / 0 |
-| Trap | 4 | 0 / 0 / 0 | 0 / 0 / 0 |
-| Challenging | 2 | 0 / 0 / 2 | **1–2 / 0 / 0–1** |
+| RealIssue | 6 | 6 / 0 / 0 | 6 / 0 / 0 |
+| Trap | 4 | 0 / 0 / 0 | 0 / 0–1 / 0 |
+| Challenging | 2 | 0 / 0 / 2 | **2 / 0 / 0** |
 
-Three observations the numbers support and the single-run version did not.
-
-**The advanced arm won every trial.** Its worst F1 (0.875) still beats the
-baseline's (0.857), and the baseline scored *identically on all twelve cases in
-all three trials* — σ = 0.000 on every metric. This is a small benchmark, but
-the ordering was never in doubt across runs.
-
-**Its variance is one case, not general noise.** `c12-slot-guard-capacity` was
-found in 1 trial of 3; every other case scored the same every time. Reporting
-"F1 0.917 ± 0.036" alone would obscure that the instability is a single
-identifiable case, not diffuse jitter.
-
-**The gain is entirely on the challenging cases.** Both arms resolve all six
-defects visible in the diff and stay clean on all four traps, in every trial.
-The difference is the two cases whose deciding evidence lives in a file the
-change never touches — the baseline misses both, in all three runs.
+**Recall is 1.000 with σ = 0.000** — every real defect, every trial, including
+both cases the baseline never finds. All remaining variance is one case,
+`c03`, which produced one extra false positive in one trial of three.
 
 ---
 
 ## Which change contributed most
 
-**We answered this wrong the first time, and the ablation corrected us.**
+**We answered this wrong twice before the ablations settled it.**
 
-The original answer was "broadening candidate generation (A2), and it is not
-close" — reasoning that nothing downstream can investigate a candidate that was
-never raised, and that the change took seed recall from 0.500 to 1.000. That
-reasoning is sound and the conclusion was still wrong.
+The first answer was "broadening candidate generation". The second, after the
+first ablation, was "falsification". Both were too simple. The full ladder:
 
-Switching falsification off while leaving broadened generation in place:
+| Configuration | F1 | vs baseline |
+|---|---:|---|
+| Simple baseline | 0.857 | — |
+| Advanced prompt alone | 0.742 | **−0.115** |
+| + repository investigation | 0.828 | **−0.029** |
+| + falsification (full) | **0.980** | **+0.123** |
 
-| | F1 | Precision | Recall | FP on the 4 traps |
-|---|---:|---:|---:|---|
-| Baseline | 0.857 | 1.000 | 0.750 | 0 |
-| Advanced **without** falsification | **0.725** | 0.619 | 0.875 | **4 of 4, every trial** |
-| Advanced | **0.917** | 0.921 | 0.917 | **0** |
+**Every intermediate configuration is worse than the baseline.** The prompt
+alone is worse. The prompt plus investigation is still worse. Only the complete
+pipeline beats it, and it beats it by a wide margin.
 
-Broadened candidate generation, on its own, produces a system **worse than the
-plain baseline**. Every trap becomes a false positive in every trial. The
-instruction we credited with the improvement is actively harmful without
-something to kill what it proposes.
+Falsification is the largest single step (+0.152 F1) and is the component the
+result depends on. But it is worth nothing on its own — it exists to reject bad
+candidates, and without broadened generation and investigation there are no
+candidates and no evidence to reject them with. The three are one mechanism.
 
-So the honest answer is that the question is malformed. **Broadening and
-falsification are one mechanism, not two changes to be ranked.** Telling an
-agent to propose freely is only safe if something can reject what it proposes;
-building the rejector is only worth its cost if something proposes freely
-enough to need it. Each half alone scores below the baseline; together they
-score 0.060 above it.
+The measurable division of labour:
 
-This is the argument for running ablations rather than reasoning about your own
-architecture from the inside. We had a plausible story, it was consistent with
-every number we had, and it was wrong.
+- **Investigation buys recall**: 0.750 → 1.000, by reaching evidence outside
+  the diff.
+- **Falsification buys back the precision that costs**: 0.707 → 0.963.
 
----
+Neither is optional, and neither is sufficient. That is a less quotable answer
+than "X mattered most", and it is what the numbers say.
 
 ## The experiment we removed
 
@@ -185,6 +168,42 @@ keeps the first half and drops the second, and is the only version that gets
 both the challenging cases *and* the real defects.
 
 Artifacts: [`results-archive/n12-run3-verify-v4-overrejected/`](../results-archive/n12-run3-verify-v4-overrejected/).
+
+## Sprint 3 — the last capability gap, and three features that earned nothing
+
+| Stage | What was tried and why | Evidence | Decision |
+|---|---|---|---|
+| **v6 — name your assumptions about code you cannot see** ✅ | `c12` was the only unstable case, and the cause was not verification: the reviewer proposed **zero candidates** on it in 2 of 3 trials, so there was nothing to investigate. Its Python twin `p03` failed the same way, and so did the `c10` trap. The fix is a general rule with no benchmark nouns in it — where the change calls something whose definition is not visible, state what it must do for the code to be right, and raise that as a candidate. | **Recall 0.750 → 1.000, σ = 0.000.** F1 0.917 → 0.980. It also made the traps *harder*: `c10` had not been challenged at all in 2 of 3 earlier trials, so "0 false positives on traps" now means more than it did. | Kept. |
+| **Full ablation ladder** | Every stage switched off in turn, 3 trials each, all at the final configuration. | prompt alone **0.742** · + investigation **0.828** · + falsification **0.980** · baseline 0.857. | Kept as the central evidence. Both intermediate rows sit *below* the baseline. |
+| **Candidate deduplication** ❌ | Across trials the reviewer occasionally reported one defect twice under the same category at adjacent ranges, costing a false positive for a second triage of the same thing. Conservative merge: same file, same `issue_type`, overlapping within the evaluator's tolerance, narrowest claim survives. | **Fired zero times** across 3 trials. The duplicates it was built for did not recur in these runs. | Kept, reported as inert. Six unit tests prove it merges what it should and refuses to merge different categories, distant ranges, or different files. |
+| **Within-case memory** ❌ | Each candidate investigated independently, so a second candidate re-read files the first had already opened. Memory carries **lookups, never verdicts** — passing conclusions forward would reintroduce the anchor the fresh verifier exists to remove. | **Used on all 12 cases**, 91 investigate turns received prior lookups. Effect: model calls 6.72 → 6.53/case (−3%), cost $0.01602 → $0.01587 (−1%). | Kept, reported as no measurable benefit. Both figures are inside run-to-run noise. |
+
+**Do not attribute the precision improvement to either feature.** Precision
+moved 0.926 → 0.963 between the v6 sweep and the final sweep, and it is
+tempting to credit deduplication. Deduplication **never ran**. With σ = 0.064
+on precision across three trials, a change of 0.037 is comfortably inside
+noise, and the honest reading is that the two sweeps are indistinguishable on
+precision.
+
+### Three features, three nothings
+
+Counting the follow-up loop, this project has now added three components on
+sound reasoning and measured all three as contributing nothing:
+
+| Feature | Reasoning | Measured |
+|---|---|---|
+| Follow-up on "Insufficient" | A verdict of *insufficient* names what is missing; go get it | Fired 0 times in 36 verifications |
+| Candidate deduplication | Duplicate reports cost a second triage | Fired 0 times in 3 trials |
+| Within-case memory | Stop re-reading files a sibling candidate opened | Used everywhere; −3% calls, −1% cost |
+
+All three are correct, tested, and kept — they cost nothing when idle and would
+plausibly matter on a different benchmark. None is claimed as an improvement.
+
+The pattern is the lesson. Every one of these was justified by a real
+observation in the trajectories, and every one seemed obviously worth building.
+The single component that *does* carry the result — falsification, worth +0.152
+F1 on its own — is the one we nearly cut early on, when the seed benchmark
+suggested candidate generation was the whole story.
 
 ## The experiment that did nothing
 
@@ -255,19 +274,31 @@ measurement to justify the code.
 | `results-archive/n12-run2-verify-v3/` | 12 | + rate-limit, JSON and materiality fixes | 0.857 | 0.933 |
 | `results-archive/n12-run3-verify-v4-overrejected/` | 12 | + comments-are-not-evidence ❌ | 0.857 | 0.857 |
 | `results/` | 12 | v5, comments weighed by checkability (single run) | 0.857 | 0.941 |
-| `results-trials/t1..t3/` | 12 | **final: v5, 3 trials per arm** | **0.857** | **0.917 mean** |
+| `results-trials/t1..t3/` | 12 | v5, 3 trials per arm | 0.857 | 0.917 mean |
 | `results-trials/t1..t3/` | 12 | ablation: no falsification ❌ | 0.857 | 0.725 mean |
+| `results-trials-v6/t1..t3/` | 12 | v6, assumptions about unseen code | 0.857 | 0.961 mean |
+| `results-trials-v6/t1..t3/` | 12 | ablation: candidates only ❌ | 0.857 | 0.787 mean |
+| `results-final/t1..t3/` | 12 | **final: v6 + dedup + memory, 3 trials** | **0.857** | **0.980 mean** |
+| `results-final/t1..t3/` | 12 | ablation: no falsification ❌ | 0.857 | 0.828 mean |
+| `results-final/t1..t3/` | 12 | ablation: candidates only ❌ | 0.857 | 0.742 mean |
 | `results-pilot/` | 3 | Python pilot (separate benchmark) | 0.000 | 0.500 |
+| `results-sonnet/` | 12 | cross-model: baseline on Claude Sonnet 5 | 0.857 | — |
 
 Nothing has been removed from this table. The ❌ rows are changes that made the
 system worse; they were reverted, refined, or — in the ablation's case — run
 deliberately to find out what a stage was worth.
 
-Note the last two rows of the Rust benchmark. `results/` is the single run that
-produced the 0.941 figure quoted in earlier drafts of this document;
-`results-trials/` is three trials of the same configuration, whose mean is
-0.917 and whose range is 0.875–0.941. **The single run was the best of three.**
-The reported headline is the mean, not that run.
+Two things this table records that a summary would hide.
+
+**A single run flattered us once already.** `results/` produced 0.941 and was
+quoted in earlier drafts of this document. Three trials of that same
+configuration average 0.917, range 0.875–0.941 — the single run was the best of
+three. Every headline figure here is now a mean over three trials.
+
+**The cross-model row has no advanced figure, deliberately.** Only the baseline
+was run on Sonnet 5; reproducing the advanced arm's multi-turn tool loop
+outside the Rust orchestrator would mean re-implementing the thing under test.
+See [`cross-model.md`](cross-model.md).
 
 ---
 
