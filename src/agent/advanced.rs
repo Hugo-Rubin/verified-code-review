@@ -52,7 +52,7 @@ pub async fn run(case: &Case, client: &LlmClient, cfg: &RunConfig) -> Result<Tra
 
     let proposed = propose_candidates(case, client, cfg, &mut traj).await;
 
-    let (candidates, merged) = deduplicate_candidates(proposed, cfg.match_line_tolerance);
+    let (candidates, merged) = deduplicate_candidates(proposed);
     for (dropped, kept) in &merged {
         traj.push(TrajectoryEvent::Note {
             note: format!(
@@ -413,17 +413,40 @@ async fn falsification_question(
 /// still costs a second triage.
 ///
 /// The rule is deliberately conservative: same file, same `issue_type`, and
-/// overlapping line ranges within the evaluator's own tolerance. Two genuinely
-/// distinct defects that happen to sit near each other under *different*
-/// categories are left alone, and so are same-category defects further apart
-/// than the tolerance. Under-merging costs a false positive; over-merging
-/// would hide a real defect, which is worse.
+/// line ranges that **genuinely overlap**. Two distinct defects that happen to
+/// sit near each other are left alone, and so are same-category defects under
+/// different categories. Under-merging costs a false positive; over-merging
+/// hides a real defect, which is worse.
 ///
 /// The survivor is the most specific claim — the narrowest line range — since
 /// that is the one a human can act on with least searching.
+///
+/// # Why the overlap is strict
+///
+/// This function originally reused `cfg.match_line_tolerance`, the evaluator's
+/// ±3 slack. That was a category error, and it took a replay over every
+/// archived run to see it. The tolerance exists to forgive an off-by-a-line in
+/// a location *estimate* while scoring. Deciding that two claims are the same
+/// claim is a different question, and it must not borrow that slack.
+///
+/// Replayed across all 19 archived runs, the tolerant rule fires 5 times and
+/// **not one of those firings is a duplicate**. Every one is this pair, in
+/// `c08-order-name-limit`:
+///
+/// ```text
+/// Validation  src/order.rs:26-28   order.name  checked against MAX_QUANTITY
+/// Validation  src/order.rs:30-32   order.notes checked against MAX_NAME_LEN
+/// ```
+///
+/// Two different fields, two different defects, both in the ground truth. They
+/// are joined only because 28 + 3 >= 30. Merging them would have converted two
+/// true positives into one true positive and one false negative.
+///
+/// So the feature was not merely inert. Every firing it would ever have had
+/// was wrong, and it escaped notice because a later change to candidate
+/// generation stopped producing that pair. See `vcr replay-dedup`.
 fn deduplicate_candidates(
     candidates: Vec<CandidateFinding>,
-    tolerance: u32,
 ) -> (Vec<CandidateFinding>, Vec<(String, String)>) {
     let mut kept: Vec<CandidateFinding> = Vec::new();
     let mut merged: Vec<(String, String)> = Vec::new();
@@ -431,7 +454,8 @@ fn deduplicate_candidates(
     for candidate in candidates {
         let duplicate_of = kept.iter_mut().find(|k| {
             k.issue_type == candidate.issue_type
-                && k.location.overlaps(&candidate.location, tolerance)
+                // Tolerance 0: ranges must actually intersect.
+                && k.location.overlaps(&candidate.location, 0)
         });
 
         match duplicate_of {
@@ -1226,29 +1250,68 @@ mod tests {
 
     #[test]
     fn overlapping_same_category_candidates_are_merged() {
-        // Observed across trials: the reviewer occasionally reports one defect
-        // twice under the same category at adjacent ranges, costing a false
-        // positive for a second triage of the same thing.
-        let (kept, merged) = deduplicate_candidates(
-            vec![
-                cand("a", IssueType::Validation, "src/order.rs", 26, 28),
-                cand("b", IssueType::Validation, "src/order.rs", 30, 32),
-            ],
-            3,
-        );
+        // A real duplicate: the same claim stated over two ranges that
+        // genuinely intersect.
+        let (kept, merged) = deduplicate_candidates(vec![
+            cand("a", IssueType::Validation, "src/order.rs", 26, 30),
+            cand("b", IssueType::Validation, "src/order.rs", 28, 32),
+        ]);
         assert_eq!(kept.len(), 1);
         assert_eq!(merged.len(), 1);
     }
 
     #[test]
-    fn the_most_specific_claim_survives_a_merge() {
-        let (kept, _) = deduplicate_candidates(
-            vec![
-                cand("wide", IssueType::Correctness, "a.rs", 10, 40),
-                cand("tight", IssueType::Correctness, "a.rs", 20, 22),
-            ],
-            3,
+    fn adjacent_but_non_overlapping_candidates_are_never_merged() {
+        // This is the literal geometry from `c08-order-name-limit`, and it is
+        // the only shape the tolerant version of this rule ever fired on --
+        // 5 times across 19 archived runs, wrongly every time.
+        //
+        //   src/order.rs:26-28   order.name  checked against MAX_QUANTITY
+        //   src/order.rs:30-32   order.notes checked against MAX_NAME_LEN
+        //
+        // Two fields, two defects, both in the ground truth. The earlier
+        // version of this test asserted these SHOULD merge, which is how the
+        // bug survived: the test encoded the defect it was meant to catch.
+        let (kept, merged) = deduplicate_candidates(vec![
+            cand("name", IssueType::Validation, "src/order.rs", 26, 28),
+            cand("notes", IssueType::Validation, "src/order.rs", 30, 32),
+        ]);
+        assert_eq!(
+            kept.len(),
+            2,
+            "merging these turns two true positives into one true positive              and one false negative"
         );
+        assert!(merged.is_empty());
+    }
+
+    #[test]
+    fn candidates_touching_at_a_single_line_are_merged() {
+        // 20-25 and 25-30 share line 25, so they are talking about the same
+        // code. This is the boundary the strict rule draws.
+        let (kept, _) = deduplicate_candidates(vec![
+            cand("a", IssueType::Correctness, "a.rs", 20, 25),
+            cand("b", IssueType::Correctness, "a.rs", 25, 30),
+        ]);
+        assert_eq!(kept.len(), 1);
+    }
+
+    #[test]
+    fn candidates_one_line_apart_are_kept_apart() {
+        // 20-24 and 25-30 share nothing. One line of slack would have merged
+        // them; that slack belongs to the evaluator, not to this function.
+        let (kept, _) = deduplicate_candidates(vec![
+            cand("a", IssueType::Correctness, "a.rs", 20, 24),
+            cand("b", IssueType::Correctness, "a.rs", 25, 30),
+        ]);
+        assert_eq!(kept.len(), 2);
+    }
+
+    #[test]
+    fn the_most_specific_claim_survives_a_merge() {
+        let (kept, _) = deduplicate_candidates(vec![
+            cand("wide", IssueType::Correctness, "a.rs", 10, 40),
+            cand("tight", IssueType::Correctness, "a.rs", 20, 22),
+        ]);
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].id, "tight", "the narrower range is more actionable");
     }
@@ -1257,45 +1320,36 @@ mod tests {
     fn different_categories_are_never_merged() {
         // Two genuinely distinct defects can sit on the same lines. Merging
         // them would hide one, which is worse than a duplicate report.
-        let (kept, merged) = deduplicate_candidates(
-            vec![
-                cand("a", IssueType::Validation, "a.rs", 10, 12),
-                cand("b", IssueType::Concurrency, "a.rs", 10, 12),
-            ],
-            3,
-        );
+        let (kept, merged) = deduplicate_candidates(vec![
+            cand("a", IssueType::Validation, "a.rs", 10, 12),
+            cand("b", IssueType::Concurrency, "a.rs", 10, 12),
+        ]);
         assert_eq!(kept.len(), 2);
         assert!(merged.is_empty());
     }
 
     #[test]
     fn distant_same_category_candidates_are_kept_apart() {
-        let (kept, _) = deduplicate_candidates(
-            vec![
-                cand("a", IssueType::Testing, "a.rs", 10, 12),
-                cand("b", IssueType::Testing, "a.rs", 200, 202),
-            ],
-            3,
-        );
+        let (kept, _) = deduplicate_candidates(vec![
+            cand("a", IssueType::Testing, "a.rs", 10, 12),
+            cand("b", IssueType::Testing, "a.rs", 200, 202),
+        ]);
         assert_eq!(kept.len(), 2);
     }
 
     #[test]
     fn candidates_in_different_files_are_kept_apart() {
-        let (kept, _) = deduplicate_candidates(
-            vec![
-                cand("a", IssueType::Testing, "a.rs", 10, 12),
-                cand("b", IssueType::Testing, "b.rs", 10, 12),
-            ],
-            3,
-        );
+        let (kept, _) = deduplicate_candidates(vec![
+            cand("a", IssueType::Testing, "a.rs", 10, 12),
+            cand("b", IssueType::Testing, "b.rs", 10, 12),
+        ]);
         assert_eq!(kept.len(), 2);
     }
 
     #[test]
     fn deduplication_preserves_a_single_candidate() {
         let (kept, merged) =
-            deduplicate_candidates(vec![cand("a", IssueType::Testing, "a.rs", 1, 1)], 3);
+            deduplicate_candidates(vec![cand("a", IssueType::Testing, "a.rs", 1, 1)]);
         assert_eq!(kept.len(), 1);
         assert!(merged.is_empty());
     }

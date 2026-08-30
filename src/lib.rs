@@ -16,6 +16,7 @@ pub mod eval;
 pub mod finding;
 pub mod llm;
 pub mod prompts;
+pub mod replay;
 pub mod repo;
 pub mod runner;
 pub mod tools;

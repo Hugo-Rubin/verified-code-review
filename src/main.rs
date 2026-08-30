@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use verified_code_reviewer::{
     bench,
     config::{Ablation, RunConfig},
+    replay,
     runner::{self, Aggregate},
     trajectory::AgentKind,
 };
@@ -123,6 +124,19 @@ enum Command {
         #[arg(long, default_value = "unnamed-reviewer")]
         reviewer: String,
     },
+    /// Replay the deduplication rule over recorded runs.
+    ///
+    /// Reads artifacts only; calls no model. Reports how often the rule would
+    /// merge two candidates, and separates the merges that rest on genuinely
+    /// overlapping line ranges from those that rest only on the evaluator's
+    /// matching tolerance.
+    ReplayDedup {
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// The evaluator's matching tolerance, for the comparison arm.
+        #[arg(long, default_value_t = 3)]
+        tolerance: u32,
+    },
     /// Summarise spread across repeated trials.
     ///
     /// Expects `<root>/<trial>/evaluation-<arm>.json`, i.e. one subdirectory
@@ -155,6 +169,7 @@ async fn main() -> Result<()> {
         } => cmd_evaluate(agent.into(), &benchmark, &out, ablation.into()),
         Command::Report { out } => cmd_report(&out),
         Command::Variance { root } => cmd_variance(&root),
+        Command::ReplayDedup { root, tolerance } => replay::report(&root, tolerance),
         Command::Triage {
             benchmark,
             out,
