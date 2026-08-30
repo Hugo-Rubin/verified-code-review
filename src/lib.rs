@@ -18,4 +18,5 @@ pub mod llm;
 pub mod prompts;
 pub mod repo;
 pub mod runner;
+pub mod tools;
 pub mod trajectory;

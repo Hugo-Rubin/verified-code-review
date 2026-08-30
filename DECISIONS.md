@@ -503,3 +503,128 @@ record and must reach the README:
 
 Phase 5 expansion will therefore weight toward traps and context-dependent
 cases, so that both halves of the hypothesis get a fair test.
+
+---
+
+## 2026-08-30 10:05 UTC — Phase 4: advanced loop built, and three iterations on it
+
+### Context
+
+The full pipeline is in place: candidate → falsification question →
+investigation with repository tools → fresh-context verification → a status
+assigned by Rust. Four measured iterations followed, on the same three seed
+cases, same model, same temperature. All four are recorded here because two of
+them made things worse.
+
+### Evidence
+
+```text
+iteration                                   P      R      F1     FP/case
+E0  baseline (direct review)              1.000  0.500  0.667    0.00
+A1  advanced, candidates as-is            1.000  0.500  0.667    0.00
+A2  + broadened candidate generation      1.000  1.000  1.000    0.00
+A3  + claimed region seeded as evidence   0.500  1.000  0.667    0.67
+A4  + reachability standard               1.000  1.000  1.000    0.00
+```
+
+**A1 — the pipeline ran, but only on one case.** The full loop worked
+beautifully on c01: candidate, falsification question, a `read` of pool.rs,
+fresh verification returning Supports, status Verified with evidence. But c02
+and c03 produced *zero candidates*, so there was nothing to investigate. Tool
+calls averaged 0.33 per case. The bottleneck was not verification, it was that
+the advanced reviewer had nothing to verify.
+
+Cause: both arms shared one JSON contract that ended with "An empty result is a
+correct answer when the code is sound." For the baseline that is right. For a
+stage whose entire purpose is to hand a worklist to an investigator, it
+suppresses exactly the uncertain candidates the pipeline exists to resolve.
+
+**A2 — split the closing instruction.** The baseline keeps "silence is
+correct"; the advanced candidate stage is told that under-proposing is the
+expensive mistake, and to raise anything whose correctness depends on facts not
+visible in the changed files. Recall went 0.500 to 1.000.
+
+**A3 — seeded the claimed region as evidence, and it backfired.** In A2, c02
+was withheld as `Uncertain` for a bad reason: the verifier said the evidence
+was insufficient because it had never been shown `health.rs`, the file the
+claim was about. Fixing that looked obviously right, so the orchestrator began
+seeding the claimed region into the evidence package.
+
+It made things worse. Precision fell 1.000 to 0.500 and c02 became a false
+positive. Shown the code, the verifier confirmed the claim:
+
+> "If `router` were to contain no shards (resulting in an empty slice), direct
+> indexing at index 0 in Rust triggers an out-of-bounds panic."
+
+That is true, and useless. The candidate was phrased as a conditional — "will
+panic **if** the router contains no shards" — and a conditional about a
+mechanism is true whether or not the condition can ever hold. The investigation
+had already read `router.rs` and seen the non-empty invariant; the verifier
+simply never asked whether the triggering state was reachable.
+
+c03 also picked up a second false positive: a `Performance` candidate about
+redundant hash lookups in `on_request`. The observation is correct but is not
+in ground truth, so it scores as a false positive — which is the intended
+behaviour, since it is exactly the low-value noise that costs a reviewer triage
+time.
+
+**A4 — fixed the standard rather than reverting the change.** Reverting would
+have restored F1 1.000, but on a system whose only correct clearing had been
+luck. Instead the verifier prompt now states that reachability is part of the
+claim: confirming the mechanism settles only half, and code that misbehaves
+only in a state it can never occupy is not a defect — evidence that the state
+is prevented *contradicts* the claim. The candidate prompt was matched, asking
+for claims about what can happen rather than conditionals.
+
+c02 then cleared for the right reason, as `Rejected` rather than merely
+uncertain:
+
+> "The sole constructor `Router::new` rejects empty inputs with
+> `RouterError::NoShards`, the field is private, and mutating operations
+> preserve the element count. Because a `Router` with no shards is unreachable
+> by construction, calling `summary` on a router with no shards cannot occur."
+>
+> decisive evidence: src/router.rs:27-32, src/router.rs:46-54
+
+And c03 reached the ground-truth mechanism rather than guessing at it. It
+searched for `touch(`, read `src/handler.rs`, and identified `on_heartbeat` at
+lines 42-44 as the caller that omits the `contains` check — which is precisely
+what makes the panic reachable.
+
+### Decision
+
+Keep A4. Keep the seeded claimed region from A3 despite its having caused a
+regression: the regression was the verifier's standard, not the evidence, and
+the standard is now fixed. Evidence that the claimed region is not doing the
+work on its own: it is tagged `DiffHunk`, and `concrete_evidence_count`
+excludes that kind, so a candidate still cannot reach `Verified` without at
+least one thing the investigation actually retrieved.
+
+Recorded as a general finding, not a benchmark artifact: **a claim phrased as a
+conditional cannot be falsified.** "X will panic if Y" is true of the code
+regardless of whether Y is reachable, so a verifier that checks mechanisms will
+confirm it every time. Falsification only does work when the claim asserts
+something that can be shown not to happen.
+
+### Rejected alternatives
+
+- **Reverting the seeded evidence to restore F1 1.000.** Rejected: A2's F1
+  1.000 depended on c02 being withheld because the verifier could not see the
+  file it was judging. That is a lucky miss, not a working falsification step,
+  and it would have collapsed the moment the evidence gap closed.
+- **Counting the seeded region toward the evidence gate.** Rejected: every
+  candidate would clear the gate for free and the gate would stop meaning
+  anything. Regression-tested in both directions.
+- **Adding a rule that panics behind an invariant are safe.** Rejected as
+  benchmark-specific coaching. The reachability standard is a general property
+  of code review and names no pattern.
+- **Removing the c03 `Performance` finding from the false-positive count.**
+  Rejected: it is a true observation of low value that a human still has to
+  read and dismiss. Counting it is the point of the triage metric.
+
+### Consequence
+
+At n=3 the comparison is baseline F1 0.667 against advanced F1 1.000, with
+identical precision and recall going 0.500 to 1.000. Three cases cannot
+support that as a headline number, and it will not be presented as one until
+the benchmark is expanded. Phase 5 next.

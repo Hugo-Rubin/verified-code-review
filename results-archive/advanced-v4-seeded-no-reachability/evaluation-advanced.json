@@ -1,0 +1,170 @@
+{
+  "aggregate": {
+    "agent": "Advanced",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 3,
+    "counts": {
+      "true_positives": 2,
+      "false_positives": 2,
+      "false_negatives": 0
+    },
+    "precision": 0.5,
+    "recall": 1.0,
+    "f1": 0.6666666666666666,
+    "false_positives_per_case": 0.6666666666666666,
+    "manual_triage_findings_per_case": 1.3333333333333333,
+    "withheld_findings_per_case": 0.0,
+    "mean_runtime_ms_per_case": 53986.666666666664,
+    "mean_llm_calls_per_case": 7.0,
+    "mean_tool_calls_per_case": 2.0,
+    "total_input_tokens": 23866,
+    "total_output_tokens": 7870
+  },
+  "per_case": [
+    {
+      "case_id": "c01-pool-counter-leak",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "c01-pool-counter-leak-adv-1",
+          "expected_id": "c01-f1",
+          "location": "src/pool.rs:56-60",
+          "issue_type": "ResourceManagement"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "c02-shard-index-trap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [
+        {
+          "prediction_id": "c02-shard-index-trap-adv-1",
+          "location": "src/health.rs:25-33",
+          "issue_type": "Correctness",
+          "claim": "The summary function will panic on an out-of-bounds index if the router contains no shards."
+        }
+      ],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "c03-session-touch-context",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "c03-session-touch-context-adv-1",
+          "expected_id": "c03-f1",
+          "location": "src/store.rs:53-56",
+          "issue_type": "ErrorHandling"
+        }
+      ],
+      "unmatched_predictions": [
+        {
+          "prediction_id": "c03-session-touch-context-adv-2",
+          "location": "src/store.rs:53-56",
+          "issue_type": "Performance",
+          "claim": "Requiring callers to check `contains` before `touch` causes redundant hash table lookups."
+        }
+      ],
+      "missed": [],
+      "withheld": 0
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "c01-pool-counter-leak",
+      "trajectory_id": "d6503b42-b444-4f37-a093-9fafd8e2f9f2",
+      "runtime_ms": 27238,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 5017,
+      "output_tokens": 2133,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c02-shard-index-trap",
+      "trajectory_id": "2de5b063-19cf-4de7-8c9c-fabe83592ed2",
+      "runtime_ms": 27672,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 7196,
+      "output_tokens": 2212,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c03-session-touch-context",
+      "trajectory_id": "d68686c9-6f21-4991-a65f-a06b2853185a",
+      "runtime_ms": 107050,
+      "llm_calls": 11,
+      "tool_calls": 4,
+      "retries": 2,
+      "input_tokens": 11653,
+      "output_tokens": 3525,
+      "reported_findings": 2,
+      "withheld_findings": 0
+    }
+  ],
+  "by_category": [
+    {
+      "category": "RealIssue",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "category": "Trap",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666
+    }
+  ],
+  "line_tolerance": 3
+}

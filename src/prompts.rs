@@ -5,17 +5,27 @@
 //! it. Change the text, bump the version.
 //!
 //! The baseline prompt is written to be *good*. Handicapping it would make the
-//! comparison meaningless, so it gets the same model, the same output schema,
-//! and an explicit instruction to avoid speculation — everything a competent
-//! prompt author would do. The only thing it does not get is repository tools.
+//! comparison meaningless, so it gets the same model, the same task, the same
+//! JSON contract, the same view of the diff and changed files, and an explicit
+//! instruction to avoid speculation — everything a competent prompt author
+//! would do. The only thing it does not get is repository tools.
+//!
+//! The two arms do differ in one instruction, deliberately: the baseline is
+//! told that an empty answer is correct when the code is sound, while the
+//! advanced reviewer is told to err toward proposing. That is not a resource
+//! advantage, it is the design under test. The baseline's output IS its
+//! report, so confidence is the right bar. The advanced reviewer's output is a
+//! worklist for an investigation stage that can settle uncertainty against the
+//! repository, so the right bar there is "worth checking". Both are scored on
+//! the same thing: what a human is finally shown.
 
 use crate::finding::IssueType;
 
 pub const BASELINE_REVIEW_V: &str = "baseline-review/v2";
-pub const ADVANCED_REVIEW_V: &str = "advanced-review/v2";
+pub const ADVANCED_REVIEW_V: &str = "advanced-review/v4";
 pub const INVESTIGATE_V: &str = "advanced-investigate/v1";
 pub const FALSIFY_V: &str = "advanced-falsify/v1";
-pub const VERIFY_V: &str = "fresh-verify/v1";
+pub const VERIFY_V: &str = "fresh-verify/v2";
 
 /// The controlled taxonomy, rendered for a prompt.
 pub fn issue_type_list() -> String {
@@ -26,7 +36,10 @@ pub fn issue_type_list() -> String {
         .join("\n")
 }
 
-fn finding_schema() -> String {
+/// The shared JSON contract. `closing` differs between the two arms because
+/// they are answering different questions: the baseline is asked what it would
+/// report, the advanced reviewer is asked what is worth checking.
+fn finding_schema_with(closing: &str) -> String {
     format!(
         r#"Return JSON of exactly this shape and nothing else:
 
@@ -47,9 +60,40 @@ fn finding_schema() -> String {
 Valid issue_type values:
 {}
 
-If the change contains no real defect, return {{"findings": []}}. An empty
+{}"#,
+        issue_type_list(),
+        closing
+    )
+}
+
+/// Baseline closing: an empty answer is a correct answer.
+fn baseline_schema() -> String {
+    finding_schema_with(
+        r#"If the change contains no real defect, return {"findings": []}. An empty
 result is a correct answer when the code is sound."#,
-        issue_type_list()
+    )
+}
+
+/// Advanced closing: these are candidates, and under-proposing is the
+/// expensive mistake.
+///
+/// The baseline is asked what it would put in front of a human, so silence is
+/// the right answer when it is not confident. The advanced reviewer is asked
+/// what deserves checking, and every candidate is investigated against the
+/// repository and independently adjudicated before anything reaches a human —
+/// so a wrong candidate is cheap and a missed one is not. Telling this stage
+/// that an empty answer is correct suppresses exactly the uncertain candidates
+/// the pipeline exists to resolve.
+fn advanced_schema() -> String {
+    finding_schema_with(
+        r#"Return {"findings": []} only if there is genuinely nothing worth checking.
+
+Under-proposing is the expensive mistake at this stage. Include a candidate
+even when you suspect it is fine, and in particular whenever the code's
+correctness depends on something you cannot see in the changed files — a
+caller, a constructor, an invariant asserted in a comment, a value's origin.
+Those are the candidates the investigation stage exists to settle, and it can
+only settle the ones you raise."#,
     )
 }
 
@@ -69,7 +113,7 @@ Be precise and be selective:
 - Do not invent a defect to have something to say.
 
 {}"#,
-        finding_schema()
+        baseline_schema()
     )
 }
 
@@ -79,22 +123,32 @@ pub fn advanced_system() -> String {
     format!(
         r#"You are an experienced Rust reviewer examining a proposed change before it merges.
 
-You are producing CANDIDATE findings, not final ones. Each candidate will be
-investigated against the repository and then independently checked, so a
-candidate that turns out to be wrong costs little. What costs a lot is missing
-a real defect entirely.
+You are producing CANDIDATE findings, not final ones. Nothing you write here
+reaches a human directly. Each candidate is investigated against the actual
+repository and then independently adjudicated, and only what survives is
+reported. A candidate that turns out to be wrong costs almost nothing. A real
+defect you never raised is never checked at all.
 
-Propose every plausible defect in this change. For each, state the claim as a
-single falsifiable sentence — something that repository evidence could confirm
-or refute.
+So err toward proposing. Raise anything a careful reviewer would want confirmed
+before approving this change, including things you expect will turn out to be
+fine.
 
 - Anchor each candidate to a specific file and line range.
+- State each claim as something that can actually happen, not as a
+  conditional. Write "callers can reach this with an empty list, and it will
+  panic", not "this will panic if the list is empty" — the second is true of
+  the code whether or not the situation ever arises, so it cannot be
+  disproved and is not a finding.
+- State each claim as a single falsifiable sentence — something repository
+  evidence could confirm or refute.
+- Pay particular attention to anything whose correctness depends on facts that
+  are not visible in the changed files. If the code is only correct given some
+  assumption about the rest of the repository, that assumption is a candidate.
 - Do not report style preferences, naming, formatting, or missing comments.
-- Prefer claims about behaviour, stated as something that either happens or
-  does not, over vague concerns such as "this looks fragile".
+- Avoid vague concerns such as "this looks fragile"; say what would go wrong.
 
 {}"#,
-        finding_schema()
+        advanced_schema()
     )
 }
 
@@ -163,8 +217,9 @@ one tool call or declare the investigation complete.
 
 Available tools:
 
-  search      {{"pattern": "<literal substring or regex>", "glob": "<optional path filter, e.g. src/**/*.rs>"}}
-              Returns matching lines with file and line number.
+  search      {{"pattern": "<literal substring>", "glob": "<optional path filter, e.g. src/**/*.rs>"}}
+              Case-sensitive literal substring match, not a regular
+              expression. Returns matching lines with file and line number.
 
   read        {{"file": "<repository-relative path>", "start_line": <int>, "end_line": <int>}}
               Returns the requested line range with line numbers.
@@ -249,6 +304,21 @@ Rules:
 - "Insufficient" is a perfectly good answer and is expected to be common.
 - Quote the specific excerpts that decided it.
 
+Reachability is part of the claim, not a separate question:
+
+- Most claims depend on the code reaching some state — a collection being
+  empty, a key being absent, a number being out of range, a caller passing a
+  particular value. Confirming that the code WOULD misbehave in that state
+  settles only half of it.
+- Code that would misbehave in a state it can never actually be in is not a
+  defect. If the evidence shows the state is prevented — by a constructor, a
+  guard, a type, or an invariant every mutation preserves — then the evidence
+  CONTRADICTS the claim, however faithfully the mechanism was described.
+- So do not answer "Supports" merely because the described mechanism is real.
+  Answer "Supports" only when the evidence also shows the triggering state is
+  reachable. If the evidence settles the mechanism but leaves reachability
+  open, that is "Insufficient".
+
 Return JSON of exactly this shape:
 
 {
@@ -285,19 +355,46 @@ mod tests {
 
     #[test]
     fn schema_lists_every_issue_type() {
-        let s = finding_schema();
-        for t in IssueType::ALL {
-            assert!(s.contains(t.as_str()), "schema omits {t}");
+        for s in [baseline_schema(), advanced_schema()] {
+            for t in IssueType::ALL {
+                assert!(s.contains(t.as_str()), "schema omits {t}");
+            }
         }
     }
 
     #[test]
-    fn baseline_and_advanced_share_the_output_schema() {
-        // Fair comparison requires identical output contracts; only the
-        // surrounding guidance differs.
-        let schema = finding_schema();
-        assert!(baseline_system().contains(&schema));
-        assert!(advanced_system().contains(&schema));
+    fn baseline_and_advanced_share_the_output_contract() {
+        // Fair comparison requires an identical JSON shape and an identical
+        // taxonomy, so both arms are parsed and scored the same way. Only the
+        // closing guidance differs, and that difference is the design under
+        // test rather than a resource advantage.
+        let shape = [
+            "\"issue_type\"",
+            "\"severity\"",
+            "\"file\"",
+            "\"start_line\"",
+            "\"end_line\"",
+            "\"claim\"",
+            "\"reasoning\"",
+        ];
+        for prompt in [baseline_system(), advanced_system()] {
+            for field in shape {
+                assert!(prompt.contains(field), "missing {field} from the contract");
+            }
+            for t in IssueType::ALL {
+                assert!(prompt.contains(t.as_str()), "missing issue type {t}");
+            }
+        }
+    }
+
+    #[test]
+    fn only_the_baseline_is_told_that_silence_is_correct() {
+        assert!(baseline_system().contains(
+            "An empty
+result is a correct answer"
+        ));
+        assert!(!advanced_system().contains("is a correct answer"));
+        assert!(advanced_system().contains("Under-proposing is the expensive mistake"));
     }
 
     #[test]
