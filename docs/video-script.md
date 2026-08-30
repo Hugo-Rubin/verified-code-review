@@ -1,6 +1,6 @@
 # Solution video — script and shot list
 
-Target: **5:00 maximum**. The plan below runs to 4:50, leaving margin.
+Target: **5:00 maximum**. The plan below runs to 4:55, leaving margin.
 
 Everything on screen exists in the repository. No slides are needed beyond the
 two tables, both of which the CLI prints.
@@ -149,7 +149,7 @@ Read the verdict:
 
 ---
 
-## 3:00 – 3:40 · The measured comparison
+## 3:00 – 3:45 · The measured comparison
 
 **Show:** live terminal.
 
@@ -161,35 +161,49 @@ cargo run --quiet --bin vcr -- report --out results
 > plausible false positives, two where the evidence lives outside the diff.
 > Same model, same temperature, same cases for both arms.
 >
-> F1: 0.857 to 0.941. Recall: 0.75 to 1.0 — it now finds every real defect,
-> including both the baseline missed. Precision drops from 1.0 to 0.889: one
-> false positive, a design nitpick.
+> Three trials of each arm, because one run is a sample, not a measurement.
 >
-> It costs about six times the tokens and thirty extra seconds a case. That's
-> the honest trade.
+> F1: 0.857 to 0.917 on average. Recall 0.75 to 0.917. The advanced arm won
+> every single trial — its worst run still beats the baseline's best.
+>
+> And the baseline was perfectly stable: identical on all twelve cases in all
+> three runs. The advanced arm varies on exactly one case. We name it rather
+> than hiding behind a standard deviation.
+>
+> Cost: a third of a cent per file, to one and a half cents. About four and a
+> half times more. That's the honest trade.
 
 **Show:** the by-category table.
 
 > All of the gain is on the challenging cases. Both arms are perfect on defects
 > visible in the diff and clean on all four traps.
 >
-> And scoring is fully deterministic — no LLM judges anything. Ground truth for
-> every case was verified by *executing* it.
+> Scoring is fully deterministic — no LLM judges anything. Ground truth for
+> every case was verified by *executing* it. And every citation the system
+> produces is checked against the repository: 1.000 evidence accuracy, sixty
+> cited excerpts, zero mismatches.
 
 ---
 
-## 3:40 – 4:20 · Changelog and the change that mattered most
+## 3:45 – 4:20 · The ablation, and the claim it overturned
 
-**Show:** `docs/improvement-changelog.md`.
+**Show:** the ablation table in the changelog.
 
-> The biggest single win wasn't the clever part. Early on, the advanced
-> reviewer produced *zero* candidates on two of three cases — because both arms
-> shared an instruction saying "an empty result is a correct answer." Right for
-> a reviewer whose output is its report. Fatal for a stage feeding an
-> investigator. Splitting that one instruction took recall from 0.5 to 1.0.
+> We thought we knew which change mattered most. We wrote it down. We were
+> wrong, and the ablation is what caught us.
 >
-> Verification machinery is worthless downstream of a generator that's been
-> told to keep quiet.
+> Our story was that broadening candidate generation was the win — early on the
+> reviewer proposed *zero* candidates on two of three cases, because it had
+> inherited an instruction saying "an empty result is a correct answer." Right
+> for a reviewer. Fatal for a stage feeding an investigator.
+>
+> So we switched falsification off and left that broadening in place. F1 drops
+> to 0.725 — **below the plain baseline.** All four traps become false
+> positives, in every trial.
+>
+> Broadening on its own makes the system worse. The two changes aren't two
+> improvements to be ranked; they're one mechanism. Telling an agent to propose
+> freely is only safe if something can kill what it proposes.
 
 **Show:** the n=12 rows.
 
@@ -200,7 +214,7 @@ cargo run --quiet --bin vcr -- report --out results
 
 ---
 
-## 4:20 – 4:40 · The experiment we removed
+## 4:20 – 4:42 · One experiment removed, one that did nothing
 
 **Show:** the `fresh-verify/v4` row.
 
@@ -215,10 +229,17 @@ cargo run --quiet --bin vcr -- report --out results
 > The fix was narrower: a comment about something the repository can check is a
 > claim, go read the call sites. A comment about the outside world is the best
 > evidence you have.
+>
+> And one that did nothing at all. We added a feedback loop: when the verifier
+> says the evidence is insufficient, send the investigation back for another
+> targeted look. Good idea, correctly built. It fired **zero times** — across
+> thirty-six verifications the verifier never once said "insufficient." We're
+> reporting it as inert rather than as a feature, because the difference
+> between those two words is whether anyone counted.
 
 ---
 
-## 4:40 – 4:50 · Hot take and limitation
+## 4:42 – 4:55 · Hot take and limitation
 
 > Our hot take: **falsification filters for truth, not for significance — and
 > most of what a code reviewer should suppress is true.**
@@ -229,9 +250,11 @@ cargo run --quiet --bin vcr -- report --out results
 > true?" — and that is almost never the question that matters. We changed it to
 > "does this establish a real defect", and both disappeared.
 >
-> Limitation: twelve cases, one run per arm, one model. Search is
+> Limitations: twelve cases, three trials, one model. Search is
 > literal-substring, so trait objects and macro-generated call paths are blind
-> spots. Treat the direction as the result, not the third decimal place.
+> spots. Human review time in the table is still a labelled proxy — the blind
+> stopwatch harness is built and documented, not yet run. Treat the direction
+> as the result, not the third decimal place.
 
 ---
 

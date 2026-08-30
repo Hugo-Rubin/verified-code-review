@@ -4,26 +4,47 @@ An LLM code reviewer for Rust changes that investigates its own candidate
 findings against the repository, then tries to **disprove** them in a fresh
 reasoning context before deciding whether a human should ever see them.
 
-On a frozen 12-case benchmark it finds **every** real defect, including the two
-whose deciding evidence lives in files the change does not touch, while staying
-clean on all four false-positive traps.
+On a frozen 12-case benchmark it recovers the defects a direct reviewer misses
+— the ones whose deciding evidence lives in files the change does not touch —
+while staying clean on all four false-positive traps.
+
+Mean of **3 trials per arm**, same model (`gemini-3.7-flash`), temperature 0.
 
 | Metric | Simple baseline | Agent solution | Change |
 |---|---:|---:|---:|
-| **Primary outcome — finding F1** | 0.857 | **0.941** | **+0.084** |
-| Precision | 1.000 | 0.889 | −0.111 |
-| Recall | 0.750 | **1.000** | **+0.250** |
-| Human time per task (proxy) ¹ | 0.50 findings/case | 0.75 findings/case | +0.25 |
-| Cost per task ² | 1,544 in / 532 out tokens | 9,468 in / 2,598 out tokens | ×6.1 / ×4.9 |
-| Runtime per task | 6.2 s | 38.8 s | +32.6 s |
+| **Primary outcome — finding F1** | 0.857 | **0.917** | **+0.060** |
+| Precision | 1.000 | 0.921 | −0.079 |
+| Recall | 0.750 | **0.917** | **+0.167** |
+| Human time per task (proxy) ¹ | 0.50 findings/case | 0.67 findings/case | +0.17 |
+| **Cost per task** | **$0.0032** | **$0.0147** | ×4.6 |
+| Runtime per task | 6.5 s | 38.8 s | +32.3 s |
+| Evidence accuracy ² | n/a — gathers none | **1.000** | — |
 
-¹ Manual-triage proxy — the number of findings a human must read and judge.
-This is **not** a direct measurement of human review time.
-² Measured token counts. Dollar cost is reported only when rates are
-configured; see [Cost](#cost).
+The advanced arm beat the baseline in **every** trial: its worst F1 (0.875)
+still exceeds the baseline's (0.857, identical in all three runs).
 
-Full numbers: [`results/`](results/). Full history including three changes that
-made things worse: [`docs/improvement-changelog.md`](docs/improvement-changelog.md).
+¹ Manual-triage proxy — findings a human must read and judge. **Not** a direct
+measurement of human review time. A blind stopwatch harness for the real
+measurement ships as `vcr triage`; see [Cost and human time](#cost-and-human-time).
+² Fraction of cited excerpts that really appear at the lines they cite, checked
+deterministically against the repository. 48–60 citations per run.
+
+**What the falsification step is worth**, measured by switching it off:
+
+| | F1 | Precision | False positives on the 4 traps |
+|---|---:|---:|---|
+| Baseline | 0.857 | 1.000 | 0 |
+| Advanced **without** falsification | 0.725 | 0.619 | **4 of 4, every trial** |
+| Advanced | **0.917** | 0.921 | **0** |
+
+Investigation on its own is *worse than the plain baseline*: broadened
+candidate generation floods the reviewer with plausible findings, and every
+trap becomes a false positive. Falsification is what makes the trade pay.
+
+Full numbers: [`results-trials/`](results-trials/) and [`results/`](results/).
+Full history, including four changes that made things worse and one feature
+that did nothing at all:
+[`docs/improvement-changelog.md`](docs/improvement-changelog.md).
 
 ---
 
@@ -343,37 +364,54 @@ on the category axis only — location must still overlap.
 
 ## Results
 
-Both arms, `gemini-3.7-flash` via Vertex AI, temperature 0, same session,
-frozen benchmark.
+All arms, `gemini-3.7-flash` via Vertex AI, temperature 0, frozen benchmark,
+**3 trials each**. Mean ± sample standard deviation.
 
-| Metric | Baseline | Advanced | Change |
+| Metric | Baseline | Advanced | Advanced, no falsification |
 |---|---:|---:|---:|
-| Precision | 1.000 | 0.889 | −0.111 |
-| Recall | 0.750 | **1.000** | **+0.250** |
-| **F1** | 0.857 | **0.941** | **+0.084** |
-| False positives/case | 0.00 | 0.08 | +0.08 |
-| Findings to triage/case | 0.50 | 0.75 | +0.25 |
-| Runtime/case | 6.2 s | 38.8 s | +32.6 s |
-| Model calls/case | 1.00 | 7.08 | ×7.1 |
-| Tool calls/case | 0.00 | 2.58 | — |
+| Precision | 1.000 ± 0.000 | 0.921 ± 0.069 | 0.619 ± 0.031 |
+| Recall | 0.750 ± 0.000 | **0.917 ± 0.072** | 0.875 ± 0.000 |
+| **F1** | 0.857 ± 0.000 | **0.917 ± 0.036** | 0.725 ± 0.021 |
+| False positives/case | 0.00 | 0.06 | 0.36 |
+| Findings to triage/case | 0.50 | 0.67 | 0.94 |
+| Evidence accuracy | n/a | 1.000 ± 0.000 | 1.000 ± 0.000 |
+| Cost/case | $0.0032 | $0.0147 | $0.0108 |
+| Runtime/case | 6.5 s | 38.8 s | 30.3 s |
+
+By category, for the full system (per trial, out of 3):
 
 | Category | n | Baseline TP/FP/FN | Advanced TP/FP/FN |
 |---|---:|---|---|
-| RealIssue | 6 | 6 / 0 / 0 | 6 / 1 / 0 |
+| RealIssue | 6 | 6 / 0 / 0 | 6 / 0–1 / 0 |
 | Trap | 4 | 0 / 0 / 0 | 0 / 0 / 0 |
-| Challenging | 2 | 0 / 0 / 2 | **2 / 0 / 0** |
+| Challenging | 2 | 0 / 0 / 2 | **1–2 / 0 / 0–1** |
 
-The entire gain is on the challenging cases. Both arms find every defect
-visible in the diff and both stay clean on all four traps. The advanced arm
-additionally resolves the two cases whose evidence lives elsewhere, and pays
-one false positive for it — a design nitpick about the notes length limit
-in c08.
+Three things are worth reading carefully.
+
+**The gain is entirely on the challenging cases.** Both arms find all six
+defects visible in the diff, and both stay clean on all four traps in every
+trial. The difference is the two cases whose deciding evidence sits in a file
+the change never touches — the baseline misses both, every time, in all three
+runs.
+
+**The baseline is perfectly stable and the advanced arm is not.** The baseline
+scored identically on all twelve cases in all three trials. The advanced arm
+varies on exactly one case, `c12`, which it found in 1 trial of 3. Everything
+else was identical run to run. That single case is the whole of its standard
+deviation, and naming it is more honest than reporting ±0.036 and moving on.
+
+**Falsification is carrying the result, not investigation.** Switching it off
+while leaving investigation intact does not merely reduce the gain — it drops
+the system *below the baseline*, because all four traps become false positives
+in every trial. The advanced reviewer is deliberately told to propose broadly;
+without something to kill bad candidates, that instruction is actively harmful.
 
 ## Improvement changelog
 
 [`docs/improvement-changelog.md`](docs/improvement-changelog.md) — every
-meaningful iteration with its evidence, including the three changes that made
-the system worse and what they taught us. Nothing has been removed from it.
+meaningful iteration with its evidence, including the four changes that made
+the system worse, the one that did nothing at all, and what each taught us.
+Nothing has been removed from it.
 
 The short version: the advanced arm **lost** to the baseline on its first
 12-case sweep (F1 0.667 vs 0.857), and the seed-phase result that had looked
@@ -440,16 +478,22 @@ commands, required configuration, expected output, runtime, and cost.
 
 ## Limitations
 
-- **Twelve cases is small.** Differences of one or two findings move F1
-  noticeably. Treat the direction as the result, not the third decimal place.
-- **Single run per arm.** LLM output is nondeterministic even at temperature 0.
-  Between two runs the advanced arm's handling of c03 and c12 swapped
-  completely. No error bars; multiple trials were not run.
-- **Synthetic benchmark.** The cases are realistic in shape and were verified
-  by execution, but they are small crates written for this project, not
-  harvested from real pull requests.
-- **Human review time is a proxy.** Findings-to-triage per case, not a
-  stopwatch.
+- **Twelve cases is small.** One finding moves F1 by roughly 0.03–0.06. Treat
+  the direction as the result, not the third decimal place.
+- **Three trials, not thirty.** Enough to show the baseline is perfectly stable
+  and that the advanced arm's spread comes from a single case (`c12`), but far
+  too few for a confidence interval. The arms were not run interleaved, so a
+  drift in provider behaviour between arms would be invisible.
+- **Synthetic benchmark.** The cases are realistic in shape and every
+  ground-truth claim was verified by execution, but they are small crates
+  written for this project, not harvested from real pull requests. They were
+  also written by the same person who built the reviewer, which is a bias no
+  amount of care removes.
+- **Human review time is still a proxy in the headline table.** A blind
+  stopwatch harness (`vcr triage`) is implemented and documented, but the
+  reported figure remains findings-to-triage per case until a session is run.
+- **The falsification ablation is the only one measured.** `no-followup` and
+  `candidates-only` are implemented but were not run across trials.
 - **Textual investigation only.** `search` is literal-substring. Dynamic
   dispatch, trait objects, re-exports, aliasing, macro-generated call paths and
   deep indirection are blind spots. Every trap here is resolvable by reading
@@ -458,6 +502,10 @@ commands, required configuration, expected output, runtime, and cost.
   wrong only in combination has no representation in the schema.
 - **One model, one provider.** Everything here is `gemini-3.7-flash` on Vertex
   AI. Nothing has been checked for generalisation across models.
+- **One language, plus a three-case pilot.** The measured benchmark is Rust.
+  A Python pilot exists ([`docs/pilot-python.md`](docs/pilot-python.md)) and
+  shows the same pattern, but three cases and one run establish nothing on
+  their own.
 
 ## Main failure mode
 
@@ -502,12 +550,35 @@ not just of the evidence. We reframed ours from "does the evidence support this
 claim" to "does the evidence establish a real defect", and two false positives
 disappeared without any change to the investigation that fed it.
 
-Second, smaller take: our biggest single win was not the clever part. It was
-noticing that the advanced reviewer proposed **zero** candidates on two of
-three seed cases because it had inherited an instruction saying "an empty
-result is a correct answer" — right for a reviewer, fatal for a stage feeding
-an investigator. Verification machinery is worthless downstream of a generator
-that has been told to keep quiet.
+**Second take, and the one we got wrong first: neither half of this design
+works without the other, and we can put numbers on it.**
+
+Our biggest early win looked like candidate generation. The advanced reviewer
+was proposing **zero** candidates on two of three seed cases because it had
+inherited an instruction saying "an empty result is a correct answer" — right
+for a reviewer whose output is its report, fatal for a stage feeding an
+investigator. Removing it took seed recall from 0.500 to 1.000, and we wrote in
+the changelog that this was the change that mattered most.
+
+The ablation says otherwise. Switching falsification off while leaving that
+broadened generation in place drops F1 to **0.725 — below the plain baseline's
+0.857** — because all four traps become false positives in every trial. The
+instruction we were so pleased with is, on its own, actively harmful.
+
+So the honest version is not "broadening mattered most" but: **telling an agent
+to propose freely is only safe if something can kill what it proposes, and
+building the killer is only worth it if something proposes freely enough to
+need killing.** They are one mechanism. We shipped a changelog claiming
+otherwise and the measurement corrected us, which is the argument for running
+ablations rather than reasoning about your own architecture from the inside.
+
+**Third, an anti-take.** We also added a feedback loop this sprint: an
+"Insufficient" verdict sends the investigation back for a second, targeted
+look. It is a good idea, it is correctly implemented, and across 36
+verifications in three trials it fired **zero times** — the verifier returned
+only Supports and Contradicts, never Insufficient. It is reported here as
+inert rather than as a feature, because the difference between those two
+descriptions is whether anyone measured.
 
 ## Agent trajectories
 
@@ -532,24 +603,55 @@ repository and writes JSON. Every run ends with an explicit `HumanCheckpoint`
 event recording what is being handed over and reaffirming that a human decides.
 Findings are advisory output for a qualified reviewer.
 
-## Cost
+## Cost and human time
 
-Token usage is measured for every request and recorded per case. Dollar cost is
-reported **only** when rates are supplied in `.env`:
+### Cost
+
+Measured, at $0.75/Mtok input and $3.75/Mtok output:
+
+| | Cost/case | Whole 12-case sweep |
+|---|---:|---:|
+| Baseline | $0.0032 | $0.038 |
+| Advanced | $0.0147 | $0.176 |
+| Advanced, no falsification | $0.0108 | $0.130 |
+
+The advanced arm costs **4.6× the baseline**, which buys +0.167 recall and
++0.060 F1. At roughly 1.5 cents a file that is a trade most teams would take,
+but it is a real cost and it scales with the number of files in a pull request,
+not with the number of defects.
+
+Token usage is recorded for every request. Dollar cost is reported **only**
+when rates are supplied in `.env`:
 
 ```bash
-VCR_PRICE_INPUT_USD_PER_MTOK=<your rate>
-VCR_PRICE_OUTPUT_USD_PER_MTOK=<your rate>
+VCR_PRICE_INPUT_USD_PER_MTOK=0.75
 ```
 
-Set both or neither — half-configured pricing is a startup error, and absent
-pricing is reported as "unavailable" rather than as zero. The project does not
-guess at prices. Because cost is recomputed from recorded token counts,
-`vcr evaluate` fills it in after the fact with no re-run and no further spend.
+Set both rates or neither — half-configured pricing is a startup error, and
+absent pricing is reported as "unavailable" rather than as zero. The project
+does not guess at prices. Cost is recomputed from recorded token counts at
+evaluation time, so rates can be supplied after a run with no re-run and no
+further spend.
 
-Per case: baseline 1,544 input / 532 output tokens; advanced 9,468 input /
-2,598 output. Whole 12-case sweep: 132,141 input / 37,565 output tokens across
-both arms.
+### Human time
+
+The headline table reports **findings to triage per case**, a labelled proxy.
+The direct measurement ships as a blind stopwatch harness:
+
+```bash
+cargo run --quiet --bin vcr -- triage --arms baseline,advanced --reviewer your-name
+```
+
+Findings from both arms are pooled, shuffled with a recorded seed, and shown
+one at a time with no indication of which system produced them and no access to
+ground truth. Only the claim and its location are shown — not the evidence, not
+the verifier's verdict — which deliberately understates the advanced system's
+benefit and is what keeps the arms indistinguishable. Every session file
+records that limitation alongside its numbers.
+
+The proxy is not a bad stand-in here, because the two arms differ mostly in
+*how many* findings reach a human: 0.50/case for the baseline against
+0.67/case for the advanced arm, and 0.94/case with falsification switched off.
 
 ## Dependencies
 

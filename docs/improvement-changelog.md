@@ -1,7 +1,8 @@
 # Improvement Changelog
 
 How the Verified Code Reviewer got from a direct-prompt baseline to its final
-configuration, including the three changes that made it worse.
+configuration, including the four changes that made it worse and the one that
+did nothing at all.
 
 Every row was measured with the same deterministic evaluator. Rows marked
 **n=3** ran against the three seed cases before the benchmark was expanded;
@@ -60,66 +61,111 @@ inspection.
 
 ---
 
+## Sprint 2 — measuring instead of asserting (n = 12, 3 trials)
+
+Everything above rests on single runs. This stage replaced assertions with
+measurements and, in two places, showed the assertions were wrong.
+
+| Stage | What was tried and why | Evidence | Decision |
+|---|---|---|---|
+| **Cost accounting** | Token rates supplied, so cost per case became reportable. Computed from already-recorded token counts at evaluation time, so rates can be added after a run with no further spend. | Baseline **$0.0032/case**, advanced **$0.0147/case** (×4.6). Whole 12-case sweep: $0.038 vs $0.176. | Kept. |
+| **Evidence accuracy** | The system claims every excerpt is verbatim repository content at a cited location. That claim is checkable, so `eval::audit_evidence` re-reads each cited file and compares line by line. Deterministic, no model. | **1.000** in every run, across 48–60 cited excerpts per advanced run, and 17/17 on Python. Zero mismatches ever observed. | Kept. The number is only meaningful reported alongside `checkable`, so both are printed. |
+| **Repeated trials** | One run is a sample. Three trials per arm, with `vcr variance` reporting spread *and naming the cases that move*. | Baseline **identical on all 12 cases in all 3 trials** (σ = 0.000 on every metric). Advanced F1 0.917 ± 0.036, range 0.875–0.941, with **all** of that spread coming from one case (`c12`, found in 1 trial of 3). | Kept. The headline figures are now means over 3 trials, not single runs. |
+| **Falsification ablation** | `--ablation no-falsification` keeps investigation and removes the falsification question and fresh verifier. Any candidate with evidence is reported. | **F1 0.725 ± 0.021, precision 0.619 — below the baseline's 0.857.** All 4 traps became false positives in all 3 trials. | Kept as the decisive measurement. It overturned our "which change mattered most" answer. |
+| **Feedback loop: re-investigate on "Insufficient"** ❌ | An `Insufficient` verdict is a statement of what is missing, so feed it back into one more targeted investigation instead of giving up. Good idea, correctly implemented, bounded to one extra pass. | **Fired zero times.** Across 36 verifications in 3 trials the verifier returned only `Supports` (24) and `Contradicts` (12) — never `Insufficient`. | **Kept in the code, reported as inert.** It costs nothing when it does not fire and would matter on a benchmark with thinner evidence, but it contributed nothing here and is not claimed as an improvement. |
+| **Language support + Python pilot** | `case.json` gains an optional `language`, threaded into the reviewer prompts and source fences. The verifier is language-neutral, and a test asserts it names no language. Three Python cases, ground truth verified by execution, in a **separate** benchmark so the frozen Rust one is untouched. | Baseline **F1 0.000** — found nothing on any of the three. Advanced **F1 0.500**, cleared the trap by rejecting both candidates on repository evidence, evidence accuracy 1.000. | Kept as a pilot. Three cases and one run; not a headline figure. See [`pilot-python.md`](pilot-python.md). |
+| **Blind stopwatch harness** | `vcr triage` replaces the findings-to-triage proxy with a real measurement: findings pooled across arms, shuffled with a recorded seed, shown without saying which system produced them. | Implemented and tested; no session run yet, so the headline table still reports the proxy. | Kept. The proxy remains labelled as a proxy. |
+
+One bug worth recording because it nearly cost a result: ablation trajectories
+were named from the *agent* rather than the *arm*, so a `no-falsification` run
+wrote `<case>-advanced.json` while the evaluator looked for
+`<case>-advanced-no-falsification.json` and could not score the run at all. The
+runs had succeeded; only the filenames were wrong, so renaming recovered them
+without re-spending. `Trajectory::arm()` now builds the name, with tests.
+
 ## Final comparison
 
-Both arms, same model (`gemini-3.7-flash` via Vertex AI), temperature 0, same
-session, frozen 12-case benchmark.
+All arms, same model (`gemini-3.7-flash` via Vertex AI), temperature 0, frozen
+12-case benchmark, **3 trials each**. Mean ± sample standard deviation.
 
-| Metric | Baseline | Advanced | Change |
-|---|---:|---:|---:|
-| Precision | 1.000 | 0.889 | −0.111 |
-| Recall | 0.750 | **1.000** | **+0.250** |
-| **F1** | 0.857 | **0.941** | **+0.084** |
-| False positives/case | 0.00 | 0.08 | +0.08 |
-| Findings to triage/case ¹ | 0.50 | 0.75 | +0.25 |
-| Runtime/case | 6.2 s | 38.8 s | +32.6 s |
-| Input tokens/case | 1,544 | 9,468 | ×6.1 |
-| Output tokens/case | 532 | 2,598 | ×4.9 |
-| Model calls/case | 1.00 | 7.08 | ×7.1 |
-| Tool calls/case | 0.00 | 2.58 | — |
-| Cost/case | see note ² | see note ² | — |
+| Metric | Baseline | Advanced | Change | Advanced, no falsification |
+|---|---:|---:|---:|---:|
+| Precision | 1.000 ± 0.000 | 0.921 ± 0.069 | −0.079 | 0.619 ± 0.031 |
+| Recall | 0.750 ± 0.000 | **0.917 ± 0.072** | **+0.167** | 0.875 ± 0.000 |
+| **F1** | 0.857 ± 0.000 | **0.917 ± 0.036** | **+0.060** | 0.725 ± 0.021 |
+| False positives/case | 0.00 | 0.06 | +0.06 | 0.36 |
+| Findings to triage/case ¹ | 0.50 | 0.67 | +0.17 | 0.94 |
+| Evidence accuracy ² | n/a | 1.000 ± 0.000 | — | 1.000 ± 0.000 |
+| **Cost/case** | **$0.0032** | **$0.0147** | ×4.6 | $0.0108 |
+| Runtime/case | 6.5 s | 38.8 s | +32.3 s | 30.3 s |
 
 ¹ A manual-triage proxy: how many findings a human must read and judge. **Not**
-a direct measurement of human review time.
+a direct measurement of human review time. `vcr triage` implements the direct
+blind measurement; no session has been run, so the proxy stands.
 
-² Token counts above are measured. Cost is reported only when token rates are
-configured in `.env`; the project does not invent prices. Once
-`VCR_PRICE_INPUT_USD_PER_MTOK` and `VCR_PRICE_OUTPUT_USD_PER_MTOK` are set,
-`vcr evaluate` recomputes cost from the token counts already recorded — no
-re-run and no further spend required.
+² Fraction of cited excerpts that really appear at the lines they cite, checked
+deterministically against the repository. 48–60 citations per advanced run.
+Zero mismatches were observed in any run, in any arm, in either language.
 
-By case category:
+By case category, full system, per trial (out of 3):
 
 | Category | n | Baseline TP/FP/FN | Advanced TP/FP/FN |
 |---|---:|---|---|
-| RealIssue | 6 | 6 / 0 / 0 | 6 / 1 / 0 |
+| RealIssue | 6 | 6 / 0 / 0 | 6 / 0–1 / 0 |
 | Trap | 4 | 0 / 0 / 0 | 0 / 0 / 0 |
-| Challenging | 2 | 0 / 0 / 2 | **2 / 0 / 0** |
+| Challenging | 2 | 0 / 0 / 2 | **1–2 / 0 / 0–1** |
 
-The whole gain is on the challenging cases — precisely where the hypothesis
-said it should be. Both arms find every defect that is visible in the diff and
-both stay clean on all four traps. The advanced arm additionally resolves the
-two cases whose deciding evidence lives in a file the change does not touch,
-and pays for it with one false positive: a design nitpick about the notes
-length limit in c08.
+Three observations the numbers support and the single-run version did not.
+
+**The advanced arm won every trial.** Its worst F1 (0.875) still beats the
+baseline's (0.857), and the baseline scored *identically on all twelve cases in
+all three trials* — σ = 0.000 on every metric. This is a small benchmark, but
+the ordering was never in doubt across runs.
+
+**Its variance is one case, not general noise.** `c12-slot-guard-capacity` was
+found in 1 trial of 3; every other case scored the same every time. Reporting
+"F1 0.917 ± 0.036" alone would obscure that the instability is a single
+identifiable case, not diffuse jitter.
+
+**The gain is entirely on the challenging cases.** Both arms resolve all six
+defects visible in the diff and stay clean on all four traps, in every trial.
+The difference is the two cases whose deciding evidence lives in a file the
+change never touches — the baseline misses both, in all three runs.
 
 ---
 
 ## Which change contributed most
 
-**Broadening candidate generation (A2), and it is not close.** Nothing
-downstream can investigate a candidate that was never raised, and the original
-advanced arm produced zero candidates on two of three seed cases. That single
-change moved seed recall from 0.500 to 1.000.
+**We answered this wrong the first time, and the ablation corrected us.**
 
-But it is only safe because of what surrounds it. Broadening candidates on its
-own floods the pipeline with plausible-looking claims. What makes the trade pay
-is that five of them were investigated and **rejected on repository evidence**
-in the final run — one on each of the four traps, plus an overbroad candidate
-on c03 — so precision stayed at 0.889 rather than collapsing.
+The original answer was "broadening candidate generation (A2), and it is not
+close" — reasoning that nothing downstream can investigate a candidate that was
+never raised, and that the change took seed recall from 0.500 to 1.000. That
+reasoning is sound and the conclusion was still wrong.
 
-The honest framing: investigation supplies the recall, falsification pays for
-it.
+Switching falsification off while leaving broadened generation in place:
+
+| | F1 | Precision | Recall | FP on the 4 traps |
+|---|---:|---:|---:|---|
+| Baseline | 0.857 | 1.000 | 0.750 | 0 |
+| Advanced **without** falsification | **0.725** | 0.619 | 0.875 | **4 of 4, every trial** |
+| Advanced | **0.917** | 0.921 | 0.917 | **0** |
+
+Broadened candidate generation, on its own, produces a system **worse than the
+plain baseline**. Every trap becomes a false positive in every trial. The
+instruction we credited with the improvement is actively harmful without
+something to kill what it proposes.
+
+So the honest answer is that the question is malformed. **Broadening and
+falsification are one mechanism, not two changes to be ranked.** Telling an
+agent to propose freely is only safe if something can reject what it proposes;
+building the rejector is only worth its cost if something proposes freely
+enough to need it. Each half alone scores below the baseline; together they
+score 0.060 above it.
+
+This is the argument for running ablations rather than reasoning about your own
+architecture from the inside. We had a plausible story, it was consistent with
+every number we had, and it was wrong.
 
 ---
 
@@ -140,6 +186,32 @@ both the challenging cases *and* the real defects.
 
 Artifacts: [`results-archive/n12-run3-verify-v4-overrejected/`](../results-archive/n12-run3-verify-v4-overrejected/).
 
+## The experiment that did nothing
+
+**The "Insufficient" feedback loop.**
+
+An `Insufficient` verdict is not a dead end — it is a statement of what is
+missing. So the orchestrator gained a bounded self-correction step: take the
+verifier's stated gap, run one more targeted investigation against it, and
+re-adjudicate the fuller evidence package in a fresh context again.
+
+It is a good idea and it is correctly implemented. It also fired **zero times**.
+
+Across 36 verifications in three trials the verifier returned `Supports` 24
+times and `Contradicts` 12 times. It never once said `Insufficient`, so the
+branch was never reachable. The `no-followup` ablation would be bit-identical
+to the full system on this benchmark, which is why it was not spent on.
+
+We kept the code and are reporting it as inert. It costs nothing when it does
+not fire, and it would plausibly matter on a benchmark where evidence is
+thinner or tool budgets tighter. But it contributed exactly nothing here, and
+the difference between "a self-correcting agent" and "an agent with an unused
+self-correction branch" is whether someone counted.
+
+The tempting move — nudging the verifier to say `Insufficient` more often so
+the feature would have something to do — was not made. That is tuning the
+measurement to justify the code.
+
 ---
 
 ## Every measured run
@@ -154,10 +226,20 @@ Artifacts: [`results-archive/n12-run3-verify-v4-overrejected/`](../results-archi
 | `results-archive/n12-run1-advanced-regression/` | 12 | A4 on the frozen benchmark ❌ | 0.857 | 0.667 |
 | `results-archive/n12-run2-verify-v3/` | 12 | + rate-limit, JSON and materiality fixes | 0.857 | 0.933 |
 | `results-archive/n12-run3-verify-v4-overrejected/` | 12 | + comments-are-not-evidence ❌ | 0.857 | 0.857 |
-| `results/` | 12 | **final: v5, comments weighed by checkability** | **0.857** | **0.941** |
+| `results/` | 12 | v5, comments weighed by checkability (single run) | 0.857 | 0.941 |
+| `results-trials/t1..t3/` | 12 | **final: v5, 3 trials per arm** | **0.857** | **0.917 mean** |
+| `results-trials/t1..t3/` | 12 | ablation: no falsification ❌ | 0.857 | 0.725 mean |
+| `results-pilot/` | 3 | Python pilot (separate benchmark) | 0.000 | 0.500 |
 
-Nothing has been removed from this table. The three ❌ rows are changes that
-made the system worse and were reverted or refined.
+Nothing has been removed from this table. The ❌ rows are changes that made the
+system worse; they were reverted, refined, or — in the ablation's case — run
+deliberately to find out what a stage was worth.
+
+Note the last two rows of the Rust benchmark. `results/` is the single run that
+produced the 0.941 figure quoted in earlier drafts of this document;
+`results-trials/` is three trials of the same configuration, whose mean is
+0.917 and whose range is 0.875–0.941. **The single run was the best of three.**
+The reported headline is the mean, not that run.
 
 ---
 
@@ -168,13 +250,30 @@ prompts, model configuration, tool limits, the evaluator, and the line
 tolerance are all fixed, but repeated runs may produce small differences in
 output and therefore in metrics.
 
-Two observations from the runs above make this concrete. Between run 2 and run
-3 the advanced arm's handling of c03 and c12 swapped: one run verified the c03
-panic and missed c12, the next did the reverse. And run 2's advanced arm
-rejected the correct c03 finding while an earlier n=3 run had verified it under
-similar prompts.
+This has now been measured rather than warned about. Three trials per arm on
+the frozen benchmark:
 
-The reported figures come from a single run of each arm, both executed in the
-same session on the frozen benchmark. Multiple trials per configuration would
-give error bars and were not run; that is a real limitation of this evaluation
-and is stated as such rather than smoothed over.
+| Arm | F1 mean | range | σ | cases that moved |
+|---|---:|---|---:|---|
+| Baseline | 0.857 | 0.857–0.857 | 0.000 | none — identical on all 12, all 3 trials |
+| Advanced | 0.917 | 0.875–0.941 | 0.036 | `c12` only (found in 1 of 3) |
+| Advanced, no falsification | 0.725 | 0.700–0.737 | 0.021 | none |
+
+Two things follow.
+
+**The baseline is deterministic in practice.** Twelve cases, three runs,
+identical every time, σ = 0.000 on every metric. Whatever nondeterminism the
+provider has at temperature 0, it did not change a single scored outcome for a
+one-call-per-case reviewer.
+
+**The advanced arm's spread is one case, not diffuse noise.** All of its
+variance comes from `c12-slot-guard-capacity`. Reporting σ alone would suggest
+general instability; naming the case is more useful and more honest. The
+earlier c03/c12 swap observed between single runs was the same phenomenon seen
+without enough samples to localise it.
+
+Three trials is still few. It is enough to establish that the advanced arm beat
+the baseline in every run — its worst F1, 0.875, exceeds the baseline's 0.857 —
+and not enough for a confidence interval. The arms were also run sequentially
+rather than interleaved, so a drift in provider behaviour between arms would
+not be visible here.

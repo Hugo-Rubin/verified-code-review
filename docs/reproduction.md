@@ -7,12 +7,13 @@ against the frozen benchmark with a deterministic evaluator, and printed the
 comparison table from the README.
 
 **Approximate cost:** one full sweep of both arms is ~132k input and ~38k
-output tokens. On a typical Flash-class price that is well under one US dollar;
-compute the exact figure for your rates with the numbers in
-[Expected output](#expected-output).
+output tokens. At $0.75/Mtok in and $3.75/Mtok out — the rates these results
+were measured at — that is **$0.21**: $0.038 for the baseline and $0.176 for
+the advanced arm. The optional 3-trial sweep is roughly $1.10.
 
 **Approximate runtime:** ~11 minutes wall clock for both arms (3.5 min +
-7.5 min), plus a first-time Rust build of ~1 minute.
+7.5 min), plus a first-time Rust build of ~1 minute. The 3-trial sweep takes
+~46 minutes.
 
 ---
 
@@ -60,7 +61,7 @@ works from the project root without adjusting `PATH`.
 
 ## 4. Run the test suite
 
-Nothing here needs an API key or network access — 174 tests covering the
+Nothing here needs an API key or network access — 196 tests covering the
 metrics, the ground-truth matcher, benchmark loading, path-traversal
 prevention, malformed-response handling, and the verification state machine.
 
@@ -68,7 +69,7 @@ prevention, malformed-response handling, and the verification state machine.
 cargo test
 ```
 
-Expected: 171 passed in the library suite and 3 in the binary suite, 0 failed.
+Expected: 193 passed in the library suite and 3 in the binary suite, 0 failed.
 
 ```bash
 cargo clippy --all-targets -- -D warnings
@@ -165,7 +166,7 @@ config      OK
   model     gemini-3.7-flash
   location  global
   auth      ApiKey
-  pricing   NOT SET — cost per case will be reported as unavailable
+  pricing   $0.7500/Mtok in, $3.7500/Mtok out
   tolerance ±3 lines
 
 benchmark   12 case(s) in benchmark/cases
@@ -320,7 +321,8 @@ See [`pilot-python.md`](pilot-python.md).
 
 ## Expected output
 
-The reported run produced:
+A single run of each arm produces a table like this. Ours (the run stored in
+`results/`) gave:
 
 ```
 | Metric                       |   Baseline |   Advanced |     Change |
@@ -328,36 +330,51 @@ The reported run produced:
 | Precision                    |      1.000 |      0.889 |     -0.111 |
 | Recall                       |      0.750 |      1.000 |     +0.250 |
 | F1                           |      0.857 |      0.941 |     +0.084 |
-| False positives/case         |       0.00 |       0.08 |      +0.08 |
-| Findings to triage/case      |       0.50 |       0.75 |      +0.25 |
+| Evidence accuracy            |      0.000 |      1.000 |     +1.000 |
 | Runtime/case (ms)            |       6208 |      38841 |     +32633 |
 ```
 
-Per category:
+**Do not read that F1 as the result.** It is one sample, and it happened to be
+the best of the three we ran. The reported figures are means over 3 trials:
+
+| Arm | F1 mean | range | σ | cost/case |
+|---|---:|---|---:|---:|
+| Baseline | 0.857 | 0.857–0.857 | 0.000 | $0.0032 |
+| Advanced | **0.917** | 0.875–0.941 | 0.036 | $0.0147 |
+| Advanced, no falsification | 0.725 | 0.700–0.737 | 0.021 | $0.0108 |
+
+Per category, full system, per trial:
 
 | Category | n | Baseline TP/FP/FN | Advanced TP/FP/FN |
 |---|---:|---|---|
-| RealIssue | 6 | 6 / 0 / 0 | 6 / 1 / 0 |
+| RealIssue | 6 | 6 / 0 / 0 | 6 / 0–1 / 0 |
 | Trap | 4 | 0 / 0 / 0 | 0 / 0 / 0 |
-| Challenging | 2 | 0 / 0 / 2 | 2 / 0 / 0 |
+| Challenging | 2 | 0 / 0 / 2 | 1–2 / 0 / 0–1 |
 
-Token usage for the sweep:
+Token usage per 12-case sweep:
 
 | | Input | Output |
 |---|---:|---:|
-| Baseline (12 cases) | 18,530 | 6,388 |
-| Advanced (12 cases) | 113,611 | 31,177 |
+| Baseline | ~18,500 | ~6,400 |
+| Advanced | ~114,000 | ~31,000 |
 
 ### You will probably not match these exactly
 
-LLM output is nondeterministic even at temperature 0. Expect the *direction* to
-reproduce — the advanced arm ahead on recall and F1, both arms clean on the
-traps — while individual cases vary. In our own runs the advanced arm's
-handling of c03 and c12 swapped completely between two consecutive runs.
+LLM output is nondeterministic even at temperature 0. What should reproduce is
+the *ordering*: the advanced arm ahead on recall and F1, both arms clean on all
+four traps, the baseline missing both challenging cases.
 
-Treat a difference of one finding as noise. Treat the advanced arm scoring
-*below* the baseline as a signal to check the trajectories for `LlmFailure`
-events before concluding anything: that is what rate limiting looks like.
+Useful calibration from our three trials:
+
+- The **baseline was perfectly stable** — identical on all twelve cases in all
+  three runs. If yours varies, something differs in your configuration.
+- The **advanced arm varied on exactly one case**, `c12-slot-guard-capacity`,
+  found in 1 trial of 3. Expect that one to move.
+- Treat a difference of one finding as noise. One finding is worth roughly
+  0.03–0.06 F1 on a benchmark this size.
+- Treat the advanced arm scoring *below* the baseline as a signal to check the
+  trajectories for `LlmFailure` events before concluding anything. That is what
+  rate limiting looks like, and it cost us an entire comparison once.
 
 ## What gets written
 

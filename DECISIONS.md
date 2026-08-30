@@ -1085,3 +1085,207 @@ session by agreement with the human, and are named here so they are not lost:
 Token pricing will be supplied by the human, after which `vcr evaluate` fills
 in cost per case from the already-recorded token counts with no further model
 spend.
+
+---
+
+## 2026-08-30 15:50 UTC — Sprint 2 design decisions: measurement instruments
+
+### Context
+
+With pricing supplied by the human, cost per case is now reported. This entry
+records the design of four measurement instruments built in this sprint,
+before any of them produced numbers, so the designs cannot be read as having
+been chosen to fit results.
+
+### Decision 1 — Evidence accuracy is checked, not asserted
+
+The system claims every evidence excerpt is verbatim repository content at a
+cited location. That claim is itself checkable, so `eval::audit_evidence` now
+checks it: for each item it re-reads the cited file and compares the excerpt
+line by line against the stated line numbers, stripping the `"  123 | "`
+gutter that bounded reads prepend.
+
+Deterministic, no model involved, no spend. Items with no file or no excerpt
+count toward `total` but not `checkable`, and accuracy is defined as 1.0 when
+nothing was checkable — a run that gathered no evidence has not misquoted
+anything. `checkable` is reported alongside so that 1.0 cannot be read as
+strong when it is vacuous.
+
+Rejected: asking a model whether the evidence looked right. That is the exact
+failure mode this project argues against.
+
+### Decision 2 — Ablations, so "which change mattered" is measured
+
+`--ablation` switches off one stage at a time:
+
+```text
+none              the complete pipeline
+no-falsification  investigation still runs; nothing adjudicates it. Any
+                  candidate with evidence is reported. Isolates what
+                  falsification is worth on top of investigation.
+no-followup       falsification stays, but an "Insufficient" verdict never
+                  triggers a second look. Isolates the feedback loop.
+candidates-only   no investigation, no verification. Isolates the prompt
+                  from the machinery.
+```
+
+Each writes to `summary-<agent>-<ablation>.json` and its own trajectory
+directory, so an ablation can never overwrite a full run, and every ablation
+trajectory opens with a Note marking it as a deliberately crippled run.
+
+Rejected: arguing from the trajectories about what each stage contributed.
+The A2 result showed our intuitions about this pipeline are unreliable —
+candidate generation, not verification, was the bottleneck — so the
+contributions get measured.
+
+### Decision 3 — The stopwatch harness is blind and deliberately conservative
+
+`vcr triage` replaces the findings-to-triage proxy with a real measurement.
+Two design choices matter and both cost the advanced arm:
+
+**Blind.** Findings from every arm are pooled, shuffled with a recorded seed,
+and presented with no indication of which system produced them. A reviewer who
+knows a finding came from "the advanced system" spends different effort on it,
+and that difference would land directly in the number being measured.
+
+**Claim only, no evidence.** The reviewer sees the claim and its location, not
+the gathered evidence and not the verifier's verdict. This understates the
+advanced system's benefit — a reviewer handed a cited argument plausibly
+decides faster than one handed a bare assertion. Showing evidence would
+measure the whole product, but it would also make the arms instantly
+distinguishable and destroy the blinding.
+
+Measuring the conservative quantity honestly beats measuring the flattering
+one badly. The limitation is written into every session file rather than left
+for a reader to notice.
+
+Rejected: an unblinded session with full output. More realistic, and
+uninterpretable.
+
+### Decision 4 — Repeated trials, because one run is a sample
+
+`vcr variance` aggregates `<root>/<trial>/evaluation-<arm>.json` and reports
+mean, min, max and sample standard deviation per metric, plus the specific
+cases whose true-positive count was not identical across trials.
+
+Naming the unstable cases matters more than the standard deviation: it is the
+difference between "F1 moved by 0.04" and "c03 and c12 trade places between
+runs", and only the second tells you anything.
+
+### Decision 5 — A Python pilot, in a separate benchmark
+
+Three Python cases live in `benchmark/pilot-python/`, deliberately **not**
+merged into the frozen Rust benchmark — mixing them would break the freeze and
+contaminate every headline figure.
+
+Two of the three are direct analogues of Rust cases (p02 of c02, p03 of c12),
+because the question the pilot exists to answer is whether the *same
+investigation behaviour* transfers to a language with different failure modes,
+not whether the reviewer can find Python bugs in general.
+
+Ground truth was verified by execution, as for the Rust cases: p01's silent
+`None` was observed propagating into an `AttributeError` in a different
+module, p02's cluster invariant was probed and held, p03's `len()` guard was
+observed admitting an index that then raised `IndexError`.
+
+p02's notes record an honest wrinkle with no Rust equivalent: Python privacy
+is a convention, so `cluster._nodes.clear()` would work from outside. A
+reviewer flagging that has made a real argument, and it still scores as a
+false positive under our ground truth. That scoring decision is recorded
+rather than hidden.
+
+### Consequence
+
+Instruments built. Results follow in the next entries, and every one of these
+designs was fixed before its first number existed.
+
+
+---
+
+## 2026-08-30 17:10 UTC — Sprint 2 results: three trials, one ablation, two corrections
+
+### Context
+
+The instruments designed in the previous entry were run. Three trials of each
+arm on the frozen 12-case benchmark, plus a falsification ablation, plus the
+Python pilot.
+
+### Evidence
+
+```text
+arm                          P              R              F1             FP/case  $/case
+baseline                  1.000 ± 0.000  0.750 ± 0.000  0.857 ± 0.000     0.00    0.0032
+advanced                  0.921 ± 0.069  0.917 ± 0.072  0.917 ± 0.036     0.06    0.0147
+advanced-no-falsification 0.619 ± 0.031  0.875 ± 0.000  0.725 ± 0.021     0.36    0.0108
+```
+
+Evidence accuracy: **1.000 in every run of every arm**, across 48–60 cited
+excerpts per advanced run and 17/17 on Python. Zero mismatches ever observed.
+
+Follow-up loop: **fired zero times**. Across 36 verifications the verifier
+returned `Supports` 24 times and `Contradicts` 12 times, never `Insufficient`.
+
+Python pilot (1 run, 3 cases): baseline F1 **0.000** — reported nothing on any
+case; advanced F1 **0.500**, trap cleared by rejecting both candidates on
+repository evidence.
+
+### Decision
+
+Three findings, two of which correct things previously written down.
+
+**1. The advanced arm beat the baseline in every trial.** Its worst F1 (0.875)
+exceeds the baseline's (0.857). The baseline was *perfectly stable* — identical
+on all twelve cases in all three trials, σ = 0.000 on every metric — and all of
+the advanced arm's variance comes from one case, `c12`, found in 1 trial of 3.
+Reported headline figures are now means over three trials, not the single run
+that produced 0.941. That single run was the best of the three, and saying so
+matters.
+
+**2. CORRECTION — "which change contributed most" was answered wrong.** The
+changelog credited broadened candidate generation (A2). The ablation disproves
+it: with falsification removed and broadening intact, F1 falls to 0.725, which
+is **below the plain baseline**, and all four traps become false positives in
+every trial. Broadening alone makes the system worse than doing nothing clever.
+
+The corrected claim is that the question was malformed. Broadening and
+falsification are one mechanism, not two rankable changes: each half alone
+scores below the baseline, together they score 0.060 above it. The old answer
+was plausible, consistent with every number available at the time, and wrong —
+which is the argument for ablations over introspection.
+
+**3. NEGATIVE RESULT — the follow-up loop is inert.** The self-correction step
+added this sprint never executed, because the verifier never returns
+`Insufficient` on this benchmark. Kept in the code, reported as inert. It costs
+nothing when it does not fire and would plausibly matter where evidence is
+thinner, but it contributed nothing here and is not claimed as an improvement.
+
+### Rejected alternatives
+
+- **Reporting the 0.941 single run as the headline.** Rejected: three trials
+  exist and their mean is 0.917. Quoting the best sample would be exactly the
+  overclaim the trials were run to prevent.
+- **Nudging the verifier toward `Insufficient` so the follow-up loop would have
+  work to do.** Rejected outright: that is tuning the measurement to justify
+  the code.
+- **Deleting the follow-up loop.** Rejected: it is correct, costs nothing when
+  idle, and deleting it would also delete the finding. Reported rather than
+  removed.
+- **Quietly updating the "contributed most" claim.** Rejected: the correction
+  is stated as a correction in both the changelog and the README, because being
+  publicly wrong about your own system and then measuring it is the more useful
+  story.
+- **Running the `no-followup` ablation.** Not needed: with zero `Insufficient`
+  verdicts the branch is unreachable, so that ablation is provably identical to
+  the full system. Recorded rather than spent on.
+
+### Consequence
+
+One bug found and fixed along the way: ablation trajectories were named from
+the agent rather than the arm, so a `no-falsification` run wrote
+`<case>-advanced.json` while the evaluator looked for
+`<case>-advanced-no-falsification.json` and scored nothing. The runs had
+succeeded, so renaming recovered them without re-spending.
+
+Still outstanding: the blind stopwatch harness is built and documented but no
+session has been run, so human review time in the headline table remains a
+labelled proxy.

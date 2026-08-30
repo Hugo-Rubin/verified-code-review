@@ -6,7 +6,7 @@ The model generates hypotheses, chooses what to look at, interprets what comes
 back, and offers a judgement. Rust supplies the evidence, enforces the
 boundaries, assigns the final status, and does all the scoring. Wherever a
 decision could be made either way, it is made in Rust — because that is the
-half that can be tested, and 174 tests do test it.
+half that can be tested, and 196 tests do test it.
 
 ---
 

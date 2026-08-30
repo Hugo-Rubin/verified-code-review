@@ -98,6 +98,58 @@ p03  capacity=100, filled=3
 Test suites: p01 3 passed, p02 4 passed, p03 5 passed — every one of them
 green with the defects in place.
 
+## Result
+
+One run per arm, three cases. `gemini-3.7-flash`, temperature 0, same
+configuration as the Rust benchmark.
+
+| Metric | Baseline | Advanced |
+|---|---:|---:|
+| Precision | 0.000 | 0.500 |
+| Recall | 0.000 | 0.500 |
+| **F1** | **0.000** | **0.500** |
+| False positives/case | 0.00 | 0.33 |
+| Evidence accuracy | n/a | **1.000** (17/17) |
+| Cost/case | $0.0032 | $0.0184 |
+
+| Case | Baseline | Advanced |
+|---|---|---|
+| `p01-retry-swallows-failure` | missed | **found** (+1 duplicate FP) |
+| `p02-primary-node-trap` | clean | **clean** — both candidates rejected on evidence |
+| `p03-len-is-capacity` | missed | missed |
+
+**The Rust pattern transfers.** The baseline found *nothing at all* — it
+reported zero findings on all three cases, exactly as it does on the Rust
+challenging cases, and for the same reason: the deciding evidence is never in
+the changed file. The advanced arm recovered one of the two real defects and
+correctly cleared the trap.
+
+**Falsification worked on Python.** On `p02` the reviewer proposed two
+candidates — an `IndexError` on `nodes[0]` and a related indexing concern — and
+the verifier rejected **both** after reading `cluster.py`, a file the change
+does not touch. The same reasoning that clears `c02` in Rust cleared its
+Python twin, against a constructor invariant expressed as a raised exception
+rather than an `Err` return.
+
+**Evidence citation works on Python.** All 17 cited excerpts were verified
+against the repository at their stated line numbers, using the same
+line-by-line audit as the Rust runs.
+
+**The one false positive is the duplicate-prediction rule, not a hallucination.**
+On `p01` the advanced arm reported the defect twice: once at `upload_chunk`
+(matched) and once at `upload_all`, describing the same failure one frame up
+the stack — *"upload_all continues executing and returns a list containing None
+when any chunk fails"*. That is a correct description of the same bug. Our
+matching is deliberately one-to-one, so the second scores as a false positive:
+telling a reviewer the same thing twice still costs a second triage. Worth
+knowing that this arm's only Python FP is a duplicate rather than an invention.
+
+**`p03` was missed**, which mirrors `c12` — its Rust twin and the single least
+stable case in the whole benchmark, found in only 1 of 3 Rust trials. Both are
+the "safe-looking guard that is secretly wrong" shape. That this shape is the
+hardest for the system in *both* languages is the most interesting thing the
+pilot found, and it is one observation, not a finding.
+
 ## What the pilot does not establish
 
 - **Three cases prove nothing statistically.** One trap and two
