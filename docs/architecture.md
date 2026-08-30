@@ -217,6 +217,50 @@ rates can be supplied after a run without spending the model again.
 
 ---
 
+## Where the language boundary sits
+
+The implementation is Rust-only by choice. The architecture is not, and the
+split is visible in the module map: language knowledge is concentrated in two
+places, and neither is load-bearing for the verification logic.
+
+**Language-independent — the whole core:**
+
+- `repo.rs` — path containment. Knows nothing about file contents.
+- `tools.rs` — literal substring search, bounded line-range reads, path
+  listing. Operates on bytes and line numbers.
+- `finding.rs` — the evidence model is `(file, line range, verbatim excerpt)`,
+  and the nine `IssueType` categories (Correctness, ErrorHandling, Validation,
+  StateManagement, ResourceManagement, Concurrency, ApiContract, Testing,
+  Performance) describe defect classes, not syntax.
+- `agent/advanced.rs` — the falsification question, the fresh-context request,
+  and `decide()` reason about claims and evidence. None of the three rules the
+  verifier applies (reachability, materiality, comment checkability) mentions a
+  language construct.
+- `eval.rs` — matching is category plus location overlap.
+- `trajectory.rs`, `runner.rs` — recording and aggregation.
+
+**Language-specific — currently two things:**
+
+- `prompts.rs` opens with "You are an experienced Rust reviewer". A Python
+  variant is a prompt change, not an architecture change.
+- `benchmark/cases/` is twelve Rust crates.
+
+**Language-specific if extended:**
+
+Test execution is the obvious next capability, and it is exactly the part that
+does not generalise: `cargo test`, `pytest`, `npm test`, `go test`, `mvn test`.
+So is AST and call-graph analysis, which is where the blind spots of literal
+search — dynamic dispatch, trait objects, macro-generated call paths — would be
+addressed properly rather than documented as limitations.
+
+The natural shape of an extension is therefore a per-language adapter behind
+the existing tool interface, leaving the pipeline untouched. That is a design
+observation, not a demonstrated capability: nothing here has been run against a
+non-Rust codebase, and doing so would need a prompt variant and a benchmark
+with execution-verified ground truth before any claim could be made.
+
+---
+
 ## What was deliberately not built
 
 - **AST or call-graph analysis.** The masterplan said not to build one without

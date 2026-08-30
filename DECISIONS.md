@@ -1009,3 +1009,79 @@ Remaining known failure: one false positive on c08, a true but immaterial
 observation that survived the materiality rule. Falsification filters for truth
 and, with the v5 wording, for consequence — but the boundary is a judgement the
 model still makes, and it will not always draw it where a reviewer would.
+
+---
+
+## 2026-08-30 13:45 UTC — Scope framing: Rust MVP of a language-independent architecture
+
+### Context
+
+Positioning decision from the human: the hackathon deliverable is a Rust
+reviewer reviewing Rust changes, and the verification architecture is
+deliberately built so that language-specific tooling can be added later. This
+is a documentation change only — no code was written to support other
+languages.
+
+### Evidence
+
+Checked the claim against the actual module map rather than accepting it.
+Language knowledge turns out to sit in exactly two places:
+
+```text
+language-independent
+  repo.rs            path containment, no knowledge of file contents
+  tools.rs           literal substring search, bounded line reads, listing
+  finding.rs         evidence is (file, line range, excerpt); the nine
+                     IssueType categories are defect classes, not syntax
+  agent/advanced.rs  falsification, fresh-context verification, decide().
+                     None of the three verifier rules - reachability,
+                     materiality, comment checkability - names a language
+                     construct
+  eval.rs            category plus location overlap
+  trajectory.rs      recording and accounting
+
+language-specific
+  prompts.rs         opens "You are an experienced Rust reviewer"
+  benchmark/cases/   twelve Rust crates
+
+language-specific if extended
+  test execution     cargo test / pytest / npm test / go test / mvn test
+  AST + call graph   where the literal-search blind spots would be fixed
+```
+
+### Decision
+
+Documented in `README.md` ("Scope: a Rust demonstration of a
+language-independent design") and `docs/architecture.md` ("Where the language
+boundary sits"), both stating plainly that this is a claim about the design and
+**not** a measured result: nothing in this project has been run against a
+non-Rust codebase.
+
+The narrow scope is also recorded as what made the evaluation affordable — one
+toolchain, one build system, one test runner, no sandbox variation — which is
+why a 12-case benchmark with execution-verified ground truth fit inside the
+deadline.
+
+### Rejected alternatives
+
+- Claiming multi-language support or implying the results generalise. Rejected:
+  it would be unevidenced, and the project's whole argument is about not
+  reporting unverified claims.
+- Adding a language abstraction layer now. Rejected: no experiment demanded it,
+  the masterplan forbids building features without evidence they are needed,
+  and the human explicitly asked for documentation only.
+
+### Consequence
+
+Framing is recorded. Two measurement improvements are deferred to a later
+session by agreement with the human, and are named here so they are not lost:
+
+1. **Multiple trials per arm** for variance. Currently one run per arm. Real
+   nondeterminism was observed: the advanced arm's handling of c03 and c12
+   swapped completely between two consecutive runs.
+2. **A stopwatch measurement of human review time**, replacing the currently
+   labelled findings-to-triage proxy.
+
+Token pricing will be supplied by the human, after which `vcr evaluate` fills
+in cost per case from the already-recorded token counts with no further model
+spend.

@@ -145,6 +145,65 @@ judgement; the orchestrator decides what it is worth. `Supports` without
 repository-grounded evidence becomes `Uncertain`, because "the model said so"
 is the standard this project exists to reject.
 
+## Scope: a Rust demonstration of a language-independent design
+
+The deliverable here is **a Rust reviewer reviewing Rust changes**, and every
+number in this README was measured on Rust. That narrowness is deliberate — one
+toolchain, one build system, one test runner, no sandbox variation — and it is
+what made a 12-case benchmark with execution-verified ground truth affordable
+inside the deadline.
+
+What is being demonstrated, though, is a **verification architecture**, and
+most of it never touches the language:
+
+```
+                    Verified Code Reviewer
+                             │
+                    language-independent core
+                             │
+   ┌───────────┬─────────────┼─────────────┬───────────┐
+   ▼           ▼             ▼             ▼           ▼
+  Rust      Python        TS / JS         Go         Java
+   │           │             │             │           │
+ tools       tools         tools         tools       tools
+```
+
+The pipeline — candidate finding → repository search and read → evidence →
+falsification question → fresh-context verification → verified / rejected /
+uncertain — operates on text and file positions. So do the pieces that enforce
+it:
+
+| Component | Language-specific? |
+|---|---|
+| Sandbox (`repo.rs`) | No — path containment |
+| Tools (`search`, `read`, `list_files`) | No — literal substring and line ranges |
+| Evidence model | No — file, line range, verbatim excerpt |
+| Falsification and fresh-context verification | No |
+| Decision gate (`decide()`) | No |
+| `IssueType` taxonomy | No — the nine categories are general |
+| Deterministic evaluator | No — type plus location overlap |
+| Trajectory and cost accounting | No |
+| **Review prompts** | **Yes** — currently say "Rust reviewer" |
+| **Benchmark** | **Yes** — twelve Rust crates |
+
+The genuinely language-bound work sits at the edges, and is the natural next
+extension:
+
+```
+cargo test   → Rust        pytest  → Python      npm test → JS / TS
+go test      → Go          mvn test → Java
+```
+
+plus deeper static analysis — AST and call-graph work — which is where the
+[blind spots](#limitations) of literal search would actually be addressed.
+
+**This is a claim about the design, not a measured result.** Nothing in this
+project has been run against a non-Rust codebase, and the honest expectation is
+that each new language costs a prompt variant and a benchmark before any claim
+could be made about it. What the Rust results support is that the verification
+loop itself does useful work; what they do not yet support is that it does so
+in Python.
+
 ## Baseline
 
 A reasonable direct-review setup, deliberately made strong. Same model, same
