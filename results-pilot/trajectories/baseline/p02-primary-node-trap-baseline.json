@@ -1,10 +1,10 @@
 {
-  "trajectory_id": "f7d69a65-3f1c-44ab-bc05-2e53cef4bad4",
+  "trajectory_id": "a62492e3-1604-4266-9cb9-52cbd40d3525",
   "case_id": "p02-primary-node-trap",
   "agent": "Baseline",
   "model": "gemini-3.7-flash",
-  "started_at": "2026-08-30T19:58:02.074609300+00:00",
-  "finished_at": "2026-08-30T19:58:14.122204600+00:00",
+  "started_at": "2026-08-30T22:43:29.620990800+00:00",
+  "finished_at": "2026-08-30T22:43:42.224322300+00:00",
   "config": {
     "llm": {
       "provider": "Vertex",
@@ -38,10 +38,10 @@
       "response_text": "{\n  \"findings\": []\n}",
       "usage": {
         "input_tokens": 766,
-        "output_tokens": 1325,
-        "total_tokens": 2091
+        "output_tokens": 1562,
+        "total_tokens": 2328
       },
-      "latency_ms": 12046,
+      "latency_ms": 12602,
       "attempts": 1
     },
     {
@@ -52,11 +52,11 @@
   "final_findings": [],
   "usage": {
     "input_tokens": 766,
-    "output_tokens": 1325,
-    "total_tokens": 2091
+    "output_tokens": 1562,
+    "total_tokens": 2328
   },
-  "cost_usd": 0.00554325,
-  "runtime_ms": 12047,
+  "cost_usd": 0.006432,
+  "runtime_ms": 12603,
   "llm_calls": 1,
   "tool_calls": 0,
   "retries": 0

@@ -1,10 +1,10 @@
 {
-  "trajectory_id": "535f0d6f-7b66-421f-b757-9d1eebdca36e",
+  "trajectory_id": "eb10e657-5a1a-4960-971a-d5368789df4b",
   "case_id": "p03-len-is-capacity",
   "agent": "Baseline",
   "model": "gemini-3.7-flash",
-  "started_at": "2026-08-30T19:58:14.123462300+00:00",
-  "finished_at": "2026-08-30T19:58:21.917619600+00:00",
+  "started_at": "2026-08-30T22:43:42.225286100+00:00",
+  "finished_at": "2026-08-30T22:43:45.651359300+00:00",
   "config": {
     "llm": {
       "provider": "Vertex",
@@ -38,10 +38,10 @@
       "response_text": "{\n  \"findings\": []\n}",
       "usage": {
         "input_tokens": 840,
-        "output_tokens": 340,
-        "total_tokens": 1180
+        "output_tokens": 335,
+        "total_tokens": 1175
       },
-      "latency_ms": 7793,
+      "latency_ms": 3425,
       "attempts": 1
     },
     {
@@ -52,11 +52,11 @@
   "final_findings": [],
   "usage": {
     "input_tokens": 840,
-    "output_tokens": 340,
-    "total_tokens": 1180
+    "output_tokens": 335,
+    "total_tokens": 1175
   },
-  "cost_usd": 0.001905,
-  "runtime_ms": 7793,
+  "cost_usd": 0.00188625,
+  "runtime_ms": 3425,
   "llm_calls": 1,
   "tool_calls": 0,
   "retries": 0

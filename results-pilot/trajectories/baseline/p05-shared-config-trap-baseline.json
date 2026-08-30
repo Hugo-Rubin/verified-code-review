@@ -1,0 +1,63 @@
+{
+  "trajectory_id": "f9fd7ec8-cdf8-4fd4-b40d-5448553d244a",
+  "case_id": "p05-shared-config-trap",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-30T22:43:49.601283100+00:00",
+  "finished_at": "2026-08-30T22:43:53.221586400+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Python reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\nA new `client` module builds a `Client` from the shared default settings plus any caller overrides, stamping a user-agent onto the resulting settings. It also exposes the configured retry count for callers that need it without building a client.\n\n## Diff\n\n```diff\n--- /dev/null\n+++ b/src/client.py\n@@ -0,0 +1,27 @@\n+\"\"\"HTTP client construction.\"\"\"\n+\n+from defaults import BASE, with_overrides\n+\n+\n+class Client:\n+    def __init__(self, settings):\n+        self.settings = settings\n+\n+    def describe(self):\n+        return (\n+            f\"retries={self.settings['retries']} \"\n+            f\"timeout={self.settings['timeout_secs']} \"\n+            f\"tls={self.settings['verify_tls']}\"\n+        )\n+\n+\n+def build_client(overrides=None):\n+    \"\"\"Build a client from the shared defaults plus any overrides.\"\"\"\n+    settings = with_overrides(overrides or {})\n+    settings[\"user_agent\"] = \"vcr/1.0\"\n+    return Client(settings)\n+\n+\n+def default_retry_budget():\n+    \"\"\"The configured retry count, read straight from the shared defaults.\"\"\"\n+    return BASE[\"retries\"]\n\n```\n\n## Current contents of the changed files\n\n\n### src/client.py\n\n```python\n    1 | \"\"\"HTTP client construction.\"\"\"\n    2 | \n    3 | from defaults import BASE, with_overrides\n    4 | \n    5 | \n    6 | class Client:\n    7 |     def __init__(self, settings):\n    8 |         self.settings = settings\n    9 | \n   10 |     def describe(self):\n   11 |         return (\n   12 |             f\"retries={self.settings['retries']} \"\n   13 |             f\"timeout={self.settings['timeout_secs']} \"\n   14 |             f\"tls={self.settings['verify_tls']}\"\n   15 |         )\n   16 | \n   17 | \n   18 | def build_client(overrides=None):\n   19 |     \"\"\"Build a client from the shared defaults plus any overrides.\"\"\"\n   20 |     settings = with_overrides(overrides or {})\n   21 |     settings[\"user_agent\"] = \"vcr/1.0\"\n   22 |     return Client(settings)\n   23 | \n   24 | \n   25 | def default_retry_budget():\n   26 |     \"\"\"The configured retry count, read straight from the shared defaults.\"\"\"\n   27 |     return BASE[\"retries\"]\n```\n",
+      "response_text": "{\n  \"findings\": []\n}",
+      "usage": {
+        "input_tokens": 988,
+        "output_tokens": 353,
+        "total_tokens": 1341
+      },
+      "latency_ms": 3619,
+      "attempts": 1
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "0 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [],
+  "usage": {
+    "input_tokens": 988,
+    "output_tokens": 353,
+    "total_tokens": 1341
+  },
+  "cost_usd": 0.0020647499999999997,
+  "runtime_ms": 3620,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

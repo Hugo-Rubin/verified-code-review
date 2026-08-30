@@ -203,11 +203,24 @@ fn cmd_check(benchmark: &std::path::Path) -> Result<()> {
             for dir in &dirs {
                 let name = dir.file_name().unwrap_or_default().to_string_lossy();
                 match (bench::load_case(dir), bench::load_ground_truth(dir)) {
-                    (Ok(c), Ok(gt)) => println!(
-                        "  {name:<24} {:?}  {} expected finding(s)",
-                        c.manifest.category,
-                        gt.expected_findings.len()
-                    ),
+                    (Ok(c), Ok(gt)) => {
+                        println!(
+                            "  {name:<24} {:?}  {} expected finding(s)",
+                            c.manifest.category,
+                            gt.expected_findings.len()
+                        );
+                        // Every case should anchor its ground truth where the
+                        // change is. A defect usually spans a change and
+                        // something it interacts with, and either end is a
+                        // defensible place to report it — but if the benchmark
+                        // is inconsistent about which, a correct finding gets
+                        // scored against a coin flip. One case drifted this
+                        // way and cost a correct finding a false positive
+                        // before it was caught.
+                        for problem in bench::findings_outside_the_diff(&c, &gt) {
+                            println!("      WARNING: {problem}");
+                        }
+                    }
                     (Err(e), _) | (_, Err(e)) => {
                         problems += 1;
                         println!("  {name:<24} BROKEN — {e:#}");
@@ -452,6 +465,14 @@ fn cmd_triage(
 ) -> Result<()> {
     let session =
         verified_code_reviewer::triage::run_session(benchmark, out, arms, seed, reviewer)?;
+
+    // A session where nothing was judged is not a measurement of zero, it is an
+    // abandoned run. Writing it would leave an artifact that reads like a
+    // result: every arm at 0 findings and 0.0 seconds.
+    if session.decisions.is_empty() {
+        println!("\nNo findings were triaged, so no session file was written.");
+        return Ok(());
+    }
 
     println!(
         "

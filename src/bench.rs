@@ -222,6 +222,80 @@ pub fn load_ground_truth(dir: impl AsRef<Path>) -> Result<GroundTruth> {
     Ok(gt)
 }
 
+/// Line ranges touched by a unified diff, per file, in the post-change file.
+///
+/// Used to check that ground truth anchors where the change actually is. A
+/// defect usually spans a change and something it interacts with, and either
+/// end is a defensible place to report it — but a benchmark has to pick one
+/// convention and hold to it, or a correct finding gets scored against the
+/// coin-flip of which end the author happened to choose.
+pub fn changed_line_ranges(diff: &str) -> std::collections::HashMap<String, Vec<(u32, u32)>> {
+    let mut out: std::collections::HashMap<String, Vec<(u32, u32)>> = Default::default();
+    let mut current: Option<String> = None;
+
+    for line in diff.lines() {
+        if let Some(rest) = line.strip_prefix("+++ ") {
+            let path = rest.split('\t').next().unwrap_or(rest).trim();
+            current = if path == "/dev/null" {
+                None
+            } else {
+                let p = path
+                    .strip_prefix("b/")
+                    .or_else(|| path.strip_prefix("a/"))
+                    .unwrap_or(path);
+                Some(crate::finding::normalize_path(p))
+            };
+            if let Some(f) = &current {
+                out.entry(f.clone()).or_default();
+            }
+            continue;
+        }
+
+        // `@@ -old +new @@`, where the new side is `start` or `start,count`.
+        if let (Some(file), Some(rest)) = (current.as_ref(), line.strip_prefix("@@ ")) {
+            if let Some(plus) = rest.split('+').nth(1) {
+                let spec = plus.split_whitespace().next().unwrap_or("");
+                let mut parts = spec.split(',');
+                if let Some(Ok(start)) = parts.next().map(|s| s.parse::<u32>()) {
+                    let count: u32 = parts.next().and_then(|c| c.parse().ok()).unwrap_or(1);
+                    let end = start + count.saturating_sub(1);
+                    out.entry(file.clone())
+                        .or_default()
+                        .push((start, end.max(start)));
+                }
+            }
+        }
+    }
+
+    out
+}
+
+/// Ground-truth findings that sit outside the lines the change touched.
+///
+/// Returns a description per offender. Empty means the case follows the
+/// convention every other case follows.
+pub fn findings_outside_the_diff(case: &Case, truth: &GroundTruth) -> Vec<String> {
+    let ranges = changed_line_ranges(&case.diff);
+    let mut offenders = Vec::new();
+
+    for f in &truth.expected_findings {
+        let file = crate::finding::normalize_path(&f.file);
+        let hunks = ranges.get(&file);
+        let inside = hunks.is_some_and(|hs| {
+            hs.iter()
+                .any(|(a, b)| !(f.end_line < *a || f.start_line > *b))
+        });
+        if !inside {
+            offenders.push(format!(
+                "{} anchors at {}:{}-{}, which the diff does not touch",
+                f.id, f.file, f.start_line, f.end_line
+            ));
+        }
+    }
+
+    offenders
+}
+
 /// Discover every case directory under `root`, sorted by case id.
 ///
 /// A directory is a case if it contains `case.json`.
@@ -346,6 +420,43 @@ mod tests {
         let renamed = tmp.path().join("c99");
         std::fs::rename(&dir, &renamed).unwrap();
         assert!(load_case(&renamed).is_err());
+    }
+
+    #[test]
+    fn parses_changed_line_ranges_from_a_diff() {
+        let diff = "--- a/src/a.rs
++++ b/src/a.rs
+@@ -8,12 +8,15 @@
+ context
+";
+        let r = changed_line_ranges(diff);
+        assert_eq!(r["src/a.rs"], vec![(8, 22)]);
+    }
+
+    #[test]
+    fn a_single_line_hunk_has_no_count() {
+        let diff = "+++ b/a.rs
+@@ -3 +3 @@
+";
+        assert_eq!(changed_line_ranges(diff)["a.rs"], vec![(3, 3)]);
+    }
+
+    #[test]
+    fn a_new_file_hunk_is_captured() {
+        let diff = "--- /dev/null
++++ b/src/new.rs
+@@ -0,0 +1,54 @@
+";
+        assert_eq!(changed_line_ranges(diff)["src/new.rs"], vec![(1, 54)]);
+    }
+
+    #[test]
+    fn a_deleted_file_contributes_nothing() {
+        let diff = "--- a/gone.rs
++++ /dev/null
+@@ -1,5 +0,0 @@
+";
+        assert!(changed_line_ranges(diff).is_empty());
     }
 
     #[test]

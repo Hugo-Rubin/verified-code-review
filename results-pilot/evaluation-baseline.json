@@ -3,24 +3,24 @@
     "agent": "Baseline",
     "model": "gemini-3.7-flash",
     "provider": "Vertex",
-    "case_count": 3,
+    "case_count": 6,
     "counts": {
-      "true_positives": 0,
+      "true_positives": 2,
       "false_positives": 0,
       "false_negatives": 2
     },
-    "precision": 0.0,
-    "recall": 0.0,
-    "f1": 0.0,
+    "precision": 1.0,
+    "recall": 0.5,
+    "f1": 0.6666666666666666,
     "false_positives_per_case": 0.0,
-    "manual_triage_findings_per_case": 0.0,
+    "manual_triage_findings_per_case": 0.3333333333333333,
     "withheld_findings_per_case": 0.0,
-    "mean_cost_usd_per_case": 0.0032015,
-    "mean_runtime_ms_per_case": 8084.666666666667,
+    "mean_cost_usd_per_case": 0.0040855,
+    "mean_runtime_ms_per_case": 7525.333333333333,
     "mean_llm_calls_per_case": 1.0,
     "mean_tool_calls_per_case": 0.0,
-    "total_input_tokens": 2761,
-    "total_output_tokens": 2009,
+    "total_input_tokens": 5414,
+    "total_output_tokens": 5454,
     "ablation": "None",
     "evidence_accuracy": 1.0,
     "evidence_audit": {
@@ -83,53 +83,157 @@
         }
       ],
       "withheld": 0
+    },
+    {
+      "case_id": "p04-mutable-default-cache",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "p04-mutable-default-cache-base-1",
+          "expected_id": "p04-f1",
+          "location": "src/registry.py:10",
+          "issue_type": "StateManagement"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "p05-shared-config-trap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "p06-generator-consumed-twice",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "p06-generator-consumed-twice-base-1",
+          "expected_id": "p06-f1",
+          "location": "src/pipeline.py:22-27",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
     }
   ],
   "per_case_stats": [
     {
       "case_id": "p01-retry-swallows-failure",
-      "trajectory_id": "e295f25a-0a6e-4958-8c14-b9ae2e83e7c3",
-      "runtime_ms": 4414,
+      "trajectory_id": "bf112fef-5f24-4d7e-b850-e7648c6141ff",
+      "runtime_ms": 3390,
       "llm_calls": 1,
       "tool_calls": 0,
       "retries": 0,
       "input_tokens": 1155,
-      "output_tokens": 344,
-      "cost_usd": 0.00215625,
+      "output_tokens": 287,
+      "cost_usd": 0.0019425,
       "reported_findings": 0,
       "withheld_findings": 0
     },
     {
       "case_id": "p02-primary-node-trap",
-      "trajectory_id": "f7d69a65-3f1c-44ab-bc05-2e53cef4bad4",
-      "runtime_ms": 12047,
+      "trajectory_id": "a62492e3-1604-4266-9cb9-52cbd40d3525",
+      "runtime_ms": 12603,
       "llm_calls": 1,
       "tool_calls": 0,
       "retries": 0,
       "input_tokens": 766,
-      "output_tokens": 1325,
-      "cost_usd": 0.00554325,
+      "output_tokens": 1562,
+      "cost_usd": 0.006432,
       "reported_findings": 0,
       "withheld_findings": 0
     },
     {
       "case_id": "p03-len-is-capacity",
-      "trajectory_id": "535f0d6f-7b66-421f-b757-9d1eebdca36e",
-      "runtime_ms": 7793,
+      "trajectory_id": "eb10e657-5a1a-4960-971a-d5368789df4b",
+      "runtime_ms": 3425,
       "llm_calls": 1,
       "tool_calls": 0,
       "retries": 0,
       "input_tokens": 840,
-      "output_tokens": 340,
-      "cost_usd": 0.001905,
+      "output_tokens": 335,
+      "cost_usd": 0.00188625,
       "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p04-mutable-default-cache",
+      "trajectory_id": "188740a2-d56a-4db4-a27b-de187dcd4caf",
+      "runtime_ms": 3947,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 816,
+      "output_tokens": 398,
+      "cost_usd": 0.0021045,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p05-shared-config-trap",
+      "trajectory_id": "f9fd7ec8-cdf8-4fd4-b40d-5448553d244a",
+      "runtime_ms": 3620,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 988,
+      "output_tokens": 353,
+      "cost_usd": 0.0020647499999999997,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p06-generator-consumed-twice",
+      "trajectory_id": "d4119175-b27f-4f6c-8746-ec1f71271120",
+      "runtime_ms": 18167,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 849,
+      "output_tokens": 2519,
+      "cost_usd": 0.010083,
+      "reported_findings": 1,
       "withheld_findings": 0
     }
   ],
   "by_category": [
     {
+      "category": "RealIssue",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 2,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
       "category": "Trap",
-      "case_count": 1,
+      "case_count": 2,
       "counts": {
         "true_positives": 0,
         "false_positives": 0,

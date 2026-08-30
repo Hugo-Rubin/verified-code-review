@@ -1,10 +1,10 @@
 {
-  "trajectory_id": "e295f25a-0a6e-4958-8c14-b9ae2e83e7c3",
+  "trajectory_id": "bf112fef-5f24-4d7e-b850-e7648c6141ff",
   "case_id": "p01-retry-swallows-failure",
   "agent": "Baseline",
   "model": "gemini-3.7-flash",
-  "started_at": "2026-08-30T19:57:57.658785300+00:00",
-  "finished_at": "2026-08-30T19:58:02.073224300+00:00",
+  "started_at": "2026-08-30T22:43:26.229456300+00:00",
+  "finished_at": "2026-08-30T22:43:29.619678+00:00",
   "config": {
     "llm": {
       "provider": "Vertex",
@@ -38,10 +38,10 @@
       "response_text": "{\n  \"findings\": []\n}",
       "usage": {
         "input_tokens": 1155,
-        "output_tokens": 344,
-        "total_tokens": 1499
+        "output_tokens": 287,
+        "total_tokens": 1442
       },
-      "latency_ms": 4414,
+      "latency_ms": 3389,
       "attempts": 1
     },
     {
@@ -52,11 +52,11 @@
   "final_findings": [],
   "usage": {
     "input_tokens": 1155,
-    "output_tokens": 344,
-    "total_tokens": 1499
+    "output_tokens": 287,
+    "total_tokens": 1442
   },
-  "cost_usd": 0.00215625,
-  "runtime_ms": 4414,
+  "cost_usd": 0.0019425,
+  "runtime_ms": 3390,
   "llm_calls": 1,
   "tool_calls": 0,
   "retries": 0

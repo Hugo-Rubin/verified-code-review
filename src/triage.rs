@@ -278,7 +278,9 @@ fn finish(
 
     for arm in arms {
         let mine: Vec<&TriageDecision> = decisions.iter().filter(|d| &d.arm == arm).collect();
-        let total: f64 = mine.iter().map(|d| d.seconds).sum();
+        // `sum()` over an empty slice can yield -0.0, which prints as "-0.0"
+        // and reads like a measurement rather than an absence.
+        let total: f64 = mine.iter().map(|d| d.seconds).sum::<f64>().max(0.0);
         let n = mine.len() as u32;
 
         let mut verdict_counts: BTreeMap<String, u32> = BTreeMap::new();
@@ -418,6 +420,16 @@ mod tests {
         assert_eq!(s.arms[0].findings_triaged, 0);
         assert_eq!(s.arms[0].total_seconds, 0.0);
         assert_eq!(s.arms[0].seconds_per_case, 0.0);
+    }
+
+    #[test]
+    fn an_arm_with_no_decisions_reports_positive_zero() {
+        let s = finish("t".into(), "me", 1, vec![], &["a".to_string()], 12, None).unwrap();
+        assert_eq!(s.arms[0].total_seconds, 0.0);
+        assert!(
+            s.arms[0].total_seconds.is_sign_positive(),
+            "-0.0 prints as a measurement rather than an absence"
+        );
     }
 
     #[test]
