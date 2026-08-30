@@ -20,3 +20,4 @@ pub mod repo;
 pub mod runner;
 pub mod tools;
 pub mod trajectory;
+pub mod triage;

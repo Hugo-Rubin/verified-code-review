@@ -203,11 +203,22 @@ impl Trajectory {
         self.cost_usd = self.usage.cost_usd(self.config.llm.pricing);
     }
 
+    /// The experimental arm this trajectory belongs to: the agent, plus the
+    /// ablation when one is active.
+    ///
+    /// Filenames are built from this rather than from the agent alone, because
+    /// an ablation run and a full run share an agent and would otherwise
+    /// collide — and the evaluator, which looks runs up by arm, would not find
+    /// them.
+    pub fn arm(&self) -> String {
+        format!("{}{}", self.agent.as_str(), self.config.ablation.suffix())
+    }
+
     /// Write the trajectory as pretty JSON under `dir`.
     pub fn write(&self, dir: impl AsRef<Path>) -> Result<std::path::PathBuf> {
         let dir = dir.as_ref();
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-        let path = dir.join(format!("{}-{}.json", self.case_id, self.agent.as_str()));
+        let path = dir.join(format!("{}-{}.json", self.case_id, self.arm()));
         let json = serde_json::to_string_pretty(self).context("serializing trajectory")?;
         std::fs::write(&path, json).with_context(|| format!("writing {}", path.display()))?;
         Ok(path)
@@ -355,6 +366,33 @@ mod tests {
         let path = t.write(dir.path()).unwrap();
         assert!(path.ends_with("c01-baseline.json"));
         assert!(path.is_file());
+    }
+
+    #[test]
+    fn an_ablation_run_writes_under_its_own_arm_name() {
+        // A real bug this caught: ablation trajectories were named after the
+        // agent, so a no-falsification run wrote `<case>-advanced.json` while
+        // the evaluator looked for `<case>-advanced-no-falsification.json` and
+        // failed to score the run at all.
+        let mut cfg = RunConfig::mock();
+        cfg.ablation = crate::config::Ablation::NoFalsification;
+        let mut t = Trajectory::new("c01", AgentKind::Advanced, &cfg);
+        t.finish(vec![], 1);
+
+        assert_eq!(t.arm(), "advanced-no-falsification");
+        let dir = tempfile::tempdir().unwrap();
+        let path = t.write(dir.path()).unwrap();
+        assert!(
+            path.ends_with("c01-advanced-no-falsification.json"),
+            "got {}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn a_full_run_keeps_the_plain_agent_name() {
+        let t = Trajectory::new("c01", AgentKind::Advanced, &RunConfig::mock());
+        assert_eq!(t.arm(), "advanced");
     }
 
     #[test]

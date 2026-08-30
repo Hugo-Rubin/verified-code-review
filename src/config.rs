@@ -76,6 +76,45 @@ pub struct LlmConfig {
     pub pricing: Option<Pricing>,
 }
 
+/// Which part of the advanced pipeline to switch off, so its contribution can
+/// be measured rather than argued about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Ablation {
+    /// The complete pipeline.
+    None,
+    /// Skip the falsification question and the fresh-context verifier
+    /// entirely. Any candidate backed by investigation evidence is reported.
+    /// Isolates what falsification contributes on top of investigation.
+    NoFalsification,
+    /// Keep falsification, but never send an "Insufficient" verdict back for
+    /// a second targeted look. Isolates the self-correction feedback loop.
+    NoFollowup,
+    /// Skip investigation and verification. Candidates are reported as
+    /// produced, which makes the advanced arm a second baseline with a
+    /// different prompt. Isolates the prompt from the machinery.
+    CandidatesOnly,
+}
+
+impl Ablation {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Ablation::None => "none",
+            Ablation::NoFalsification => "no-falsification",
+            Ablation::NoFollowup => "no-followup",
+            Ablation::CandidatesOnly => "candidates-only",
+        }
+    }
+
+    /// Suffix for output filenames, empty for a full run so the default
+    /// artifacts keep their existing names.
+    pub fn suffix(&self) -> String {
+        match self {
+            Ablation::None => String::new(),
+            other => format!("-{}", other.as_str()),
+        }
+    }
+}
+
 /// Settings that control how a review run behaves. Recorded in the trajectory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunConfig {
@@ -84,10 +123,23 @@ pub struct RunConfig {
     pub match_line_tolerance: u32,
     /// Upper bound on investigation tool calls per candidate finding.
     pub max_tool_calls_per_finding: u32,
+    /// How many times an "Insufficient" verdict may send the investigation
+    /// back for more evidence, steered by the gap the verifier named.
+    ///
+    /// 0 disables the feedback loop, which is what the `no-followup` ablation
+    /// measures.
+    pub max_followup_investigations: u32,
     /// Upper bound on lines returned by a single bounded file read.
     pub max_read_lines: u32,
     /// Upper bound on matches returned by a single search.
     pub max_search_results: u32,
+    /// Which stage, if any, is switched off for this run.
+    #[serde(default = "ablation_none")]
+    pub ablation: Ablation,
+}
+
+fn ablation_none() -> Ablation {
+    Ablation::None
 }
 
 fn env_opt(key: &str) -> Option<String> {
@@ -176,8 +228,10 @@ impl RunConfig {
             },
             match_line_tolerance: env_or("VCR_MATCH_LINE_TOLERANCE", 3_u32)?,
             max_tool_calls_per_finding: env_or("VCR_MAX_TOOL_CALLS_PER_FINDING", 8_u32)?,
+            max_followup_investigations: env_or("VCR_MAX_FOLLOWUP_INVESTIGATIONS", 1_u32)?,
             max_read_lines: env_or("VCR_MAX_READ_LINES", 200_u32)?,
             max_search_results: env_or("VCR_MAX_SEARCH_RESULTS", 40_u32)?,
+            ablation: Ablation::None,
         })
     }
 
@@ -199,8 +253,10 @@ impl RunConfig {
             },
             match_line_tolerance: 3,
             max_tool_calls_per_finding: 8,
+            max_followup_investigations: 1,
             max_read_lines: 200,
             max_search_results: 40,
+            ablation: Ablation::None,
         }
     }
 }

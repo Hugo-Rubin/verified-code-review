@@ -1,0 +1,15 @@
+{
+  "case_id": "p03-len-is-capacity",
+  "expected_findings": [
+    {
+      "id": "p03-f1",
+      "issue_type": "Correctness",
+      "also_accept": ["Validation", "ErrorHandling", "ApiContract"],
+      "file": "src/api.py",
+      "start_line": 9,
+      "end_line": 11,
+      "description": "The bounds check calls `len(cache)`, and `PagedCache.__len__` returns the configured capacity rather than the number of pages present. For a partially filled cache - capacity 100 holding 3 pages - any index in 3..100 passes the guard and reaches `cache.page_at(index)`, which indexes the backing list directly and raises IndexError. The check should compare against `cache.filled`."
+    }
+  ],
+  "notes": "PILOT CASE - Python. Not part of the frozen Rust benchmark and not included in any headline figure.\n\nThe Python analogue of c12-slot-guard-capacity, and arguably a nastier one: overriding `__len__` to mean something other than 'how many items are in here' is a Python-specific footgun with no direct Rust equivalent, and `len(cache)` reads as obviously correct at the call site.\n\nAs in c12, the first look is reassuring. src/api.py has an explicit bounds check, a docstring promising None rather than an error, and passing tests. It only comes apart on reading `PagedCache.__len__` in src/cache.py, which the change does not touch and which documents the discrepancy outright.\n\nWhy the tests miss it: every test builds its cache through `cache_with(n, capacity)` with n == capacity, so the cache is always exactly full and `len()` and `filled` coincide. `test_len_reports_configured_capacity` states the discrepancy but never combines it with a fetch.\n\nVerified by execution: capacity 100 with 3 pages, fetch(50) raises IndexError.\n\nalso_accept covers Validation, ErrorHandling, and ApiContract."
+}

@@ -1,0 +1,163 @@
+{
+  "aggregate": {
+    "agent": "Advanced",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 3,
+    "counts": {
+      "true_positives": 1,
+      "false_positives": 1,
+      "false_negatives": 1
+    },
+    "precision": 0.5,
+    "recall": 0.5,
+    "f1": 0.5,
+    "false_positives_per_case": 0.3333333333333333,
+    "manual_triage_findings_per_case": 0.6666666666666666,
+    "withheld_findings_per_case": 0.6666666666666666,
+    "mean_cost_usd_per_case": 0.01836725,
+    "mean_runtime_ms_per_case": 57410.0,
+    "mean_llm_calls_per_case": 8.666666666666666,
+    "mean_tool_calls_per_case": 3.6666666666666665,
+    "total_input_tokens": 31699,
+    "total_output_tokens": 8354,
+    "ablation": "None",
+    "evidence_accuracy": 1.0,
+    "evidence_audit": {
+      "total": 17,
+      "checkable": 17,
+      "accurate": 17,
+      "mismatches": []
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "p01-retry-swallows-failure",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "p01-retry-swallows-failure-adv-2",
+          "expected_id": "p01-f1",
+          "location": "src/uploader.py:24-37",
+          "issue_type": "ErrorHandling"
+        }
+      ],
+      "unmatched_predictions": [
+        {
+          "prediction_id": "p01-retry-swallows-failure-adv-1",
+          "location": "src/uploader.py:39-44",
+          "issue_type": "ApiContract",
+          "claim": "upload_all continues executing and returns a list containing None when any chunk fails, causing callers expecting valid Receipt objects to encounter AttributeError or silently process incomplete uploads."
+        }
+      ],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "p02-primary-node-trap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 2
+    },
+    {
+      "case_id": "p03-len-is-capacity",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [
+        {
+          "expected_id": "p03-f1",
+          "location": "src/api.py:9-11",
+          "issue_type": "Correctness",
+          "description": "The bounds check calls `len(cache)`, and `PagedCache.__len__` returns the configured capacity rather than the number of pages present. For a partially filled cache - capacity 100 holding 3 pages - any index in 3..100 passes the guard and reaches `cache.page_at(index)`, which indexes the backing list directly and raises IndexError. The check should compare against `cache.filled`."
+        }
+      ],
+      "withheld": 0
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "p01-retry-swallows-failure",
+      "trajectory_id": "9b8b7a1c-e8aa-4d59-a409-07c248f72841",
+      "runtime_ms": 79983,
+      "llm_calls": 13,
+      "tool_calls": 6,
+      "retries": 3,
+      "input_tokens": 17765,
+      "output_tokens": 4267,
+      "cost_usd": 0.029325,
+      "reported_findings": 2,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p02-primary-node-trap",
+      "trajectory_id": "31010a3d-0024-425f-a858-2f27ab5c60a8",
+      "runtime_ms": 84232,
+      "llm_calls": 12,
+      "tool_calls": 5,
+      "retries": 5,
+      "input_tokens": 12687,
+      "output_tokens": 3231,
+      "cost_usd": 0.021631499999999998,
+      "reported_findings": 0,
+      "withheld_findings": 2
+    },
+    {
+      "case_id": "p03-len-is-capacity",
+      "trajectory_id": "2ceeeb11-3dd1-4197-902d-5669eaf8e622",
+      "runtime_ms": 8015,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1247,
+      "output_tokens": 856,
+      "cost_usd": 0.0041452500000000005,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    }
+  ],
+  "by_category": [
+    {
+      "category": "Trap",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 1,
+        "false_negatives": 1
+      },
+      "precision": 0.5,
+      "recall": 0.5,
+      "f1": 0.5
+    }
+  ],
+  "line_tolerance": 3
+}

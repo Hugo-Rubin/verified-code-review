@@ -19,7 +19,7 @@
 
 use super::{case_file_context, parse_review};
 use crate::bench::Case;
-use crate::config::RunConfig;
+use crate::config::{Ablation, RunConfig};
 use crate::finding::{
     CandidateFinding, Evidence, Finding, FindingStatus, VerificationOutcome, VerificationResult,
 };
@@ -33,28 +33,170 @@ use std::time::Instant;
 
 const FILE_CONTEXT_LINES: u32 = 400;
 
+/// Tool-call budget for a follow-up investigation. Smaller than the first
+/// pass: it is aimed at one specific gap, not at exploring.
+const FOLLOW_UP_TOOL_BUDGET: u32 = 4;
+
 pub async fn run(case: &Case, client: &LlmClient, cfg: &RunConfig) -> Result<Trajectory> {
     let started = Instant::now();
     let mut traj = Trajectory::new(case.id(), AgentKind::Advanced, cfg);
+
+    if cfg.ablation != Ablation::None {
+        traj.push(TrajectoryEvent::Note {
+            note: format!(
+                "ABLATION: {} — this run deliberately disables part of the pipeline and is                  not the full system",
+                cfg.ablation.as_str()
+            ),
+        });
+    }
 
     let candidates = propose_candidates(case, client, cfg, &mut traj).await;
     let mut findings = Vec::new();
 
     for candidate in candidates {
+        // Candidates-only: no investigation, no verification. Reported as
+        // produced, which is what the advanced prompt alone is worth.
+        if cfg.ablation == Ablation::CandidatesOnly {
+            traj.push(TrajectoryEvent::Decision {
+                candidate_id: candidate.id.clone(),
+                status: FindingStatus::Verified,
+                reason: "ablation candidates-only: reported without investigation or                          verification"
+                    .to_string(),
+            });
+            findings.push(Finding {
+                candidate,
+                falsification_question: String::new(),
+                evidence: Vec::new(),
+                verification: None,
+                status: FindingStatus::Verified,
+                status_reason: "ablation candidates-only".to_string(),
+            });
+            continue;
+        }
+
         let question = falsification_question(&candidate, client, cfg, &mut traj).await;
         traj.push(TrajectoryEvent::FalsificationQuestion {
             candidate_id: candidate.id.clone(),
             question: question.clone(),
         });
 
-        let evidence = investigate(case, &candidate, &question, client, cfg, &mut traj).await;
+        let first_budget = cfg.max_tool_calls_per_finding;
+        let mut evidence = investigate(
+            case,
+            &candidate,
+            &question,
+            client,
+            cfg,
+            &mut traj,
+            None,
+            "",
+            first_budget,
+        )
+        .await;
         traj.push(TrajectoryEvent::EvidenceAssembled {
             candidate_id: candidate.id.clone(),
             evidence: evidence.clone(),
         });
 
-        let verification =
+        // No-falsification: investigation still runs, so the reviewer has the
+        // same repository evidence, but nothing adjudicates it. Any candidate
+        // the investigation backed is reported. This is the arm that shows
+        // what falsification is actually worth.
+        if cfg.ablation == Ablation::NoFalsification {
+            let concrete = concrete_evidence_count(&evidence);
+            let (status, reason) = if concrete > 0 {
+                (
+                    FindingStatus::Verified,
+                    format!(
+                        "ablation no-falsification: reported on {concrete} evidence item(s),                          unadjudicated"
+                    ),
+                )
+            } else {
+                (
+                    FindingStatus::Uncertain,
+                    "ablation no-falsification: investigation returned no evidence".to_string(),
+                )
+            };
+            traj.push(TrajectoryEvent::Decision {
+                candidate_id: candidate.id.clone(),
+                status,
+                reason: reason.clone(),
+            });
+            findings.push(Finding {
+                candidate,
+                falsification_question: question,
+                evidence,
+                verification: None,
+                status,
+                status_reason: reason,
+            });
+            continue;
+        }
+
+        let mut verification =
             verify_fresh(&candidate, &question, &evidence, client, cfg, &mut traj).await;
+
+        // Self-correction: an "Insufficient" verdict is not a dead end, it is
+        // a statement of what is missing. Feed that back into one more
+        // targeted investigation rather than discarding the candidate.
+        //
+        // Bounded to a single extra pass on purpose. The verdict that comes
+        // back is what an independent reader concluded from the evidence; if a
+        // second, directed look still cannot close the gap, a third is
+        // unlikely to, and "Uncertain" is the honest answer.
+        let needs_more = verification
+            .as_ref()
+            .map(|v| v.outcome == VerificationOutcome::Insufficient)
+            .unwrap_or(false);
+
+        if needs_more && cfg.max_followup_investigations > 0 && cfg.ablation != Ablation::NoFollowup
+        {
+            let gap = verification
+                .as_ref()
+                .map(|v| v.rationale.clone())
+                .unwrap_or_default();
+
+            traj.push(TrajectoryEvent::Note {
+                note: format!(
+                    "{}: verification was Insufficient; re-investigating against the stated gap",
+                    candidate.id
+                ),
+            });
+
+            let follow_up_budget = first_budget.min(FOLLOW_UP_TOOL_BUDGET);
+            let extra = investigate(
+                case,
+                &candidate,
+                &question,
+                client,
+                cfg,
+                &mut traj,
+                Some(&gap),
+                "f",
+                follow_up_budget,
+            )
+            .await;
+
+            if extra.is_empty() {
+                traj.push(TrajectoryEvent::Note {
+                    note: format!(
+                        "{}: follow-up investigation found nothing further; keeping the                          original verdict",
+                        candidate.id
+                    ),
+                });
+            } else {
+                evidence.extend(extra);
+                traj.push(TrajectoryEvent::EvidenceAssembled {
+                    candidate_id: candidate.id.clone(),
+                    evidence: evidence.clone(),
+                });
+                // Re-adjudicated from scratch on the fuller package, in a
+                // fresh context again — the second verifier is not told that
+                // an earlier one was unsure.
+                verification =
+                    verify_fresh(&candidate, &question, &evidence, client, cfg, &mut traj).await;
+            }
+        }
 
         if let Some(v) = &verification {
             traj.push(TrajectoryEvent::Verification {
@@ -113,7 +255,7 @@ async fn propose_candidates(
     cfg: &RunConfig,
     traj: &mut Trajectory,
 ) -> Vec<CandidateFinding> {
-    let system = prompts::advanced_system();
+    let system = prompts::advanced_system(case.manifest.language.as_str());
     let user = prompts::review_user(
         &case.manifest.description,
         &case.diff,
@@ -282,6 +424,13 @@ fn seed_claimed_region(repo: &RepoRoot, candidate: &CandidateFinding) -> Option<
     })
 }
 
+/// Gather evidence for one candidate.
+///
+/// `gap` is what an independent check said it could not settle. It is `None`
+/// on the first pass; on a follow-up it steers the investigation at the actual
+/// gap instead of letting it pick a direction again from scratch. `pass`
+/// labels this pass's tool-call ids in the trajectory, and `budget` bounds it.
+#[allow(clippy::too_many_arguments)]
 async fn investigate(
     case: &Case,
     candidate: &CandidateFinding,
@@ -289,16 +438,22 @@ async fn investigate(
     client: &LlmClient,
     cfg: &RunConfig,
     traj: &mut Trajectory,
+    gap: Option<&str>,
+    pass: &str,
+    budget: u32,
 ) -> Vec<Evidence> {
-    let system = prompts::investigate_system(cfg.max_tool_calls_per_finding);
+    let system = prompts::investigate_system(budget);
     let mut evidence = Vec::new();
     let mut history = String::new();
 
-    if let Some(seed) = seed_claimed_region(&case.repo, candidate) {
-        evidence.push(seed);
+    // The claimed region is seeded once, on the first pass only.
+    if gap.is_none() {
+        if let Some(seed) = seed_claimed_region(&case.repo, candidate) {
+            evidence.push(seed);
+        }
     }
 
-    for step in 0..cfg.max_tool_calls_per_finding {
+    for step in 0..budget {
         let user = prompts::investigate_user(
             &candidate.claim,
             &candidate.location.to_string(),
@@ -309,6 +464,7 @@ async fn investigate(
             } else {
                 &history
             },
+            gap,
         );
 
         let resp = match client
@@ -374,7 +530,7 @@ async fn investigate(
                 .unwrap_or(serde_json::Value::Null),
         };
 
-        let tool_call_id = format!("{}-t{}", candidate.id, step + 1);
+        let tool_call_id = format!("{}-{}t{}", candidate.id, pass, step + 1);
         let t0 = Instant::now();
         let result = tools::execute(&case.repo, &call, &tool_call_id, cfg);
         let duration_ms = t0.elapsed().as_millis() as u64;

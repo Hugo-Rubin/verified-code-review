@@ -23,6 +23,43 @@ pub enum CaseCategory {
     Challenging,
 }
 
+/// The language a case is written in.
+///
+/// The pipeline is language-independent — the sandbox, the tools, the evidence
+/// model, the verifier's rules, and the evaluator all operate on text and file
+/// positions. This exists so the reviewer addresses itself correctly and
+/// renders source in the right fence, not because any stage branches on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Language {
+    #[default]
+    Rust,
+    Python,
+}
+
+impl Language {
+    /// Name used in prompts.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Language::Rust => "Rust",
+            Language::Python => "Python",
+        }
+    }
+
+    /// Markdown fence tag for rendering source.
+    pub fn fence(&self) -> &'static str {
+        match self {
+            Language::Rust => "rust",
+            Language::Python => "python",
+        }
+    }
+}
+
+impl std::fmt::Display for Language {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Agent-visible case metadata.
 ///
 /// `description` must describe the change neutrally. It must not hint at
@@ -34,6 +71,9 @@ pub struct CaseManifest {
     /// Neutral description of the change under review.
     pub description: String,
     pub category: CaseCategory,
+    /// Defaults to Rust, so existing cases need no change.
+    #[serde(default)]
+    pub language: Language,
 }
 
 /// A loaded case, ready to review. Contains no ground truth.
@@ -221,6 +261,26 @@ mod tests {
     const GT_OK: &str = r#"{"case_id":"c01","expected_findings":[
         {"id":"g1","issue_type":"ErrorHandling","file":"src/lib.rs",
          "start_line":1,"end_line":2,"description":"boom"}]}"#;
+
+    #[test]
+    fn language_defaults_to_rust_when_absent() {
+        let m: CaseManifest = serde_json::from_str(
+            r#"{"case_id":"c","title":"t","description":"d","category":"Trap"}"#,
+        )
+        .unwrap();
+        assert_eq!(m.language, Language::Rust);
+    }
+
+    #[test]
+    fn language_is_read_when_present() {
+        let m: CaseManifest = serde_json::from_str(
+            r#"{"case_id":"p","title":"t","description":"d","category":"Trap","language":"Python"}"#,
+        )
+        .unwrap();
+        assert_eq!(m.language, Language::Python);
+        assert_eq!(m.language.as_str(), "Python");
+        assert_eq!(m.language.fence(), "python");
+    }
 
     #[test]
     fn loads_case_without_exposing_ground_truth() {

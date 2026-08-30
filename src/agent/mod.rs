@@ -136,14 +136,19 @@ pub fn changed_files(diff: &str) -> Vec<String> {
 ///
 /// Bounded per file so a large file cannot crowd out the rest of the prompt.
 /// Both agents use this, so neither gets a context advantage from it.
-pub fn build_file_context(repo: &RepoRoot, files: &[String], max_lines_per_file: u32) -> String {
+pub fn build_file_context(
+    repo: &RepoRoot,
+    files: &[String],
+    max_lines_per_file: u32,
+    fence: &str,
+) -> String {
     let mut out = String::new();
 
     for file in files {
         out.push_str(&format!("\n### {file}\n\n"));
         match repo.read_to_string(file) {
             Ok(content) => {
-                out.push_str("```rust\n");
+                out.push_str(&format!("```{fence}\n"));
                 out.push_str(&number_lines(&content, 1, max_lines_per_file));
                 let total = content.lines().count() as u32;
                 if total > max_lines_per_file {
@@ -184,7 +189,12 @@ pub fn number_lines(content: &str, from: u32, limit: u32) -> String {
 /// Convenience: the file context for a case, as both agents see it.
 pub fn case_file_context(case: &Case, max_lines_per_file: u32) -> String {
     let files = changed_files(&case.diff);
-    build_file_context(&case.repo, &files, max_lines_per_file)
+    build_file_context(
+        &case.repo,
+        &files,
+        max_lines_per_file,
+        case.manifest.language.fence(),
+    )
 }
 
 #[cfg(test)]

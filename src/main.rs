@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use verified_code_reviewer::{
     bench,
-    config::RunConfig,
+    config::{Ablation, RunConfig},
     runner::{self, Aggregate},
     trajectory::AgentKind,
 };
@@ -38,6 +38,30 @@ impl From<AgentArg> for AgentKind {
     }
 }
 
+/// Which stage of the advanced pipeline to switch off.
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum AblationArg {
+    /// The complete pipeline.
+    None,
+    /// Drop the falsification question and the fresh-context verifier.
+    NoFalsification,
+    /// Keep falsification but never re-investigate after "Insufficient".
+    NoFollowup,
+    /// Report candidates as produced, with no investigation or verification.
+    CandidatesOnly,
+}
+
+impl From<AblationArg> for Ablation {
+    fn from(a: AblationArg) -> Self {
+        match a {
+            AblationArg::None => Ablation::None,
+            AblationArg::NoFalsification => Ablation::NoFalsification,
+            AblationArg::NoFollowup => Ablation::NoFollowup,
+            AblationArg::CandidatesOnly => Ablation::CandidatesOnly,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Check configuration and the benchmark without calling the model.
@@ -57,6 +81,11 @@ enum Command {
         /// no measurements; useful for exercising the pipeline.
         #[arg(long)]
         dry_run: bool,
+        /// Switch off part of the advanced pipeline to measure its
+        /// contribution. Writes to separate artifacts so a full run is never
+        /// overwritten.
+        #[arg(long, value_enum, default_value = "none")]
+        ablation: AblationArg,
     },
     /// Score a completed run against ground truth.
     Evaluate {
@@ -66,11 +95,41 @@ enum Command {
         benchmark: PathBuf,
         #[arg(long, default_value = "results")]
         out: PathBuf,
+        /// Score an ablation run rather than the full pipeline.
+        #[arg(long, value_enum, default_value = "none")]
+        ablation: AblationArg,
     },
     /// Print the baseline vs advanced comparison table.
     Report {
         #[arg(long, default_value = "results")]
         out: PathBuf,
+    },
+    /// Blind stopwatch session measuring real human review time.
+    ///
+    /// Pools the reported findings from every named arm, shuffles them, and
+    /// presents them one at a time without saying which system produced which.
+    Triage {
+        #[arg(long, default_value = "benchmark/cases")]
+        benchmark: PathBuf,
+        #[arg(long, default_value = "results")]
+        out: PathBuf,
+        /// Comma-separated arm names, matching `evaluation-<arm>.json`.
+        #[arg(long, default_value = "baseline,advanced", value_delimiter = ',')]
+        arms: Vec<String>,
+        /// Shuffle seed, recorded so the order can be reproduced.
+        #[arg(long, default_value_t = 20260830)]
+        seed: u64,
+        /// Recorded with the session for provenance.
+        #[arg(long, default_value = "unnamed-reviewer")]
+        reviewer: String,
+    },
+    /// Summarise spread across repeated trials.
+    ///
+    /// Expects `<root>/<trial>/evaluation-<arm>.json`, i.e. one subdirectory
+    /// per trial, each already evaluated.
+    Variance {
+        #[arg(long, default_value = "results-trials")]
+        root: PathBuf,
     },
 }
 
@@ -86,13 +145,23 @@ async fn main() -> Result<()> {
             benchmark,
             out,
             dry_run,
-        } => cmd_run(agent.into(), &benchmark, &out, dry_run).await,
+            ablation,
+        } => cmd_run(agent.into(), &benchmark, &out, dry_run, ablation.into()).await,
         Command::Evaluate {
             agent,
             benchmark,
             out,
-        } => cmd_evaluate(agent.into(), &benchmark, &out),
+            ablation,
+        } => cmd_evaluate(agent.into(), &benchmark, &out, ablation.into()),
         Command::Report { out } => cmd_report(&out),
+        Command::Variance { root } => cmd_variance(&root),
+        Command::Triage {
+            benchmark,
+            out,
+            arms,
+            seed,
+            reviewer,
+        } => cmd_triage(&benchmark, &out, &arms, seed, &reviewer),
     }
 }
 
@@ -158,14 +227,29 @@ async fn cmd_run(
     benchmark: &std::path::Path,
     out: &std::path::Path,
     dry_run: bool,
+    ablation: Ablation,
 ) -> Result<()> {
-    let cfg = if dry_run {
+    let mut cfg = if dry_run {
         eprintln!("dry run: using the offline stub. Results are NOT measurements.");
         RunConfig::mock()
     } else {
         RunConfig::from_env().context("loading configuration (see .env.example)")?
     };
+    cfg.ablation = ablation;
 
+    if ablation != Ablation::None && agent != AgentKind::Advanced {
+        anyhow::bail!(
+            "--ablation applies to the advanced agent; the baseline has no stages to disable"
+        );
+    }
+    if ablation != Ablation::None {
+        eprintln!(
+            "ABLATION: {} — part of the pipeline is disabled; this is not the full system",
+            ablation.as_str()
+        );
+    }
+
+    let arm = runner::arm_name(agent, ablation);
     let summary = runner::run_benchmark(benchmark, agent, &cfg, out).await?;
 
     println!(
@@ -174,12 +258,11 @@ async fn cmd_run(
     );
     println!(
         "Trajectories: {}",
-        out.join("trajectories").join(agent.as_str()).display()
+        out.join("trajectories").join(&arm).display()
     );
     println!(
         "Summary:      {}",
-        out.join(format!("summary-{}.json", agent.as_str()))
-            .display()
+        out.join(format!("summary-{arm}.json")).display()
     );
     if summary.is_mock() {
         println!("\nNOTE: this was a dry run. Do not report these numbers.");
@@ -191,8 +274,10 @@ fn cmd_evaluate(
     agent: AgentKind,
     benchmark: &std::path::Path,
     out: &std::path::Path,
+    ablation: Ablation,
 ) -> Result<()> {
-    let summary_path = out.join(format!("summary-{}.json", agent.as_str()));
+    let arm = runner::arm_name(agent, ablation);
+    let summary_path = out.join(format!("summary-{arm}.json"));
     let summary = runner::load_summary(&summary_path)
         .with_context(|| format!("no run found — expected {}", summary_path.display()))?;
 
@@ -248,6 +333,17 @@ fn print_aggregate(a: &Aggregate) {
     match a.mean_cost_usd_per_case {
         Some(c) => println!("  cost/case             ${c:.5}"),
         None => println!("  cost/case             unavailable (pricing not configured)"),
+    }
+    if a.evidence_audit.checkable > 0 {
+        println!(
+            "  evidence accuracy     {:.3}  ({}/{} cited excerpts verified against the repo)",
+            a.evidence_accuracy, a.evidence_audit.accurate, a.evidence_audit.checkable
+        );
+        for m in a.evidence_audit.mismatches.iter().take(5) {
+            println!("      mismatch: {m}");
+        }
+    } else {
+        println!("  evidence accuracy     n/a (no checkable evidence gathered)");
     }
     println!(
         "  runtime/case          {:.0} ms",
@@ -317,6 +413,12 @@ fn cmd_report(out: &std::path::Path) -> Result<()> {
         2,
     );
     row(
+        "Evidence accuracy",
+        base.aggregate.evidence_accuracy,
+        adv.aggregate.evidence_accuracy,
+        3,
+    );
+    row(
         "Runtime/case (ms)",
         base.aggregate.mean_runtime_ms_per_case,
         adv.aggregate.mean_runtime_ms_per_case,
@@ -337,6 +439,103 @@ fn cmd_report(out: &std::path::Path) -> Result<()> {
     println!(
         "\n\"Findings to triage/case\" is a manual-triage proxy rather than a direct \
          measurement of human review time."
+    );
+    Ok(())
+}
+
+fn cmd_triage(
+    benchmark: &std::path::Path,
+    out: &std::path::Path,
+    arms: &[String],
+    seed: u64,
+    reviewer: &str,
+) -> Result<()> {
+    let session =
+        verified_code_reviewer::triage::run_session(benchmark, out, arms, seed, reviewer)?;
+
+    println!(
+        "
+{}",
+        "=".repeat(72)
+    );
+    println!("MEASURED HUMAN REVIEW TIME");
+    println!("{}", "=".repeat(72));
+    println!(
+        "  {:<28} {:>10} {:>14} {:>14}",
+        "arm", "findings", "sec/finding", "sec/case"
+    );
+    for a in &session.arms {
+        println!(
+            "  {:<28} {:>10} {:>14.1} {:>14.1}",
+            a.arm, a.findings_triaged, a.mean_seconds_per_finding, a.seconds_per_case
+        );
+    }
+    println!(
+        "
+This is a direct measurement, not the findings-to-triage proxy."
+    );
+    for n in &session.notes {
+        println!("  - {n}");
+    }
+
+    let path = out.join("triage-session.json");
+    runner::write_json(&path, &session)?;
+    println!(
+        "
+Written: {}",
+        path.display()
+    );
+    Ok(())
+}
+
+fn cmd_variance(root: &std::path::Path) -> Result<()> {
+    let arms = runner::variance_across_trials(root)?;
+
+    for arm in &arms {
+        println!(
+            "
+{} — {} · {} trial(s)",
+            arm.arm, arm.model, arm.trials
+        );
+        if arm.trials < 2 {
+            println!("  (a single trial has no spread to report)");
+        }
+        println!(
+            "  {:<28} {:>9} {:>9} {:>9} {:>9}",
+            "metric", "mean", "min", "max", "stdev"
+        );
+        for m in &arm.metrics {
+            if m.mean.is_nan() {
+                println!("  {:<28} {:>9}", m.metric, "n/a");
+                continue;
+            }
+            let p = if m.metric.contains("runtime") { 0 } else { 4 };
+            println!(
+                "  {:<28} {:>9.p$} {:>9.p$} {:>9.p$} {:>9.p$}",
+                m.metric,
+                m.mean,
+                m.min,
+                m.max,
+                m.stdev,
+                p = p
+            );
+        }
+        if arm.unstable_cases.is_empty() {
+            println!("  every case scored identically in all trials");
+        } else {
+            println!("  cases that did not score identically across trials:");
+            for c in &arm.unstable_cases {
+                println!("    - {c}");
+            }
+        }
+    }
+
+    let path = root.join("variance.json");
+    runner::write_json(&path, &arms)?;
+    println!(
+        "
+Written: {}",
+        path.display()
     );
     Ok(())
 }

@@ -14,11 +14,13 @@ is never visible to a reviewer. Keeping it in the repository makes each diff
 reproducible and auditable instead of hand-written.
 
 Usage:
-    python scripts/make_diffs.py [--check]
+    python scripts/make_diffs.py [--check] [--root DIR]
 
     --check  verify the committed diffs match what would be generated,
              and exit non-zero if any differ. Intended for CI and for
              confirming a frozen benchmark has not drifted.
+    --root   benchmark directory to operate on. Defaults to the frozen Rust
+             benchmark; pass benchmark/pilot-python for the pilot.
 """
 
 import argparse
@@ -27,7 +29,6 @@ import io
 import pathlib
 import sys
 
-CASES = pathlib.Path("benchmark/cases")
 
 
 def read_lines(path: pathlib.Path) -> list[str]:
@@ -70,15 +71,17 @@ def build_diff(case_dir: pathlib.Path) -> str | None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--root", default="benchmark/cases")
     args = ap.parse_args()
 
-    if not CASES.is_dir():
-        print(f"no benchmark directory at {CASES}", file=sys.stderr)
+    cases = pathlib.Path(args.root)
+    if not cases.is_dir():
+        print(f"no benchmark directory at {cases}", file=sys.stderr)
         return 2
 
     drifted, written, skipped = [], [], []
 
-    for case_dir in sorted(p for p in CASES.iterdir() if p.is_dir()):
+    for case_dir in sorted(p for p in cases.iterdir() if p.is_dir()):
         generated = build_diff(case_dir)
         if generated is None:
             skipped.append(case_dir.name)

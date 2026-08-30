@@ -1,0 +1,20 @@
+--- a/src/uploader.py
++++ b/src/uploader.py
+@@ -24,7 +24,7 @@
+     def upload_chunk(self, chunk_id, payload):
+         """Upload one chunk and return its receipt.
+ 
+-        Retries up to ``max_attempts`` times, then raises ``UploadError``.
++        Retries up to ``max_attempts`` times.
+         """
+         last = None
+         for _ in range(self.max_attempts):
+@@ -34,7 +34,7 @@
+                 return Receipt(chunk_id=chunk_id, etag=etag)
+             except Exception as exc:
+                 last = exc
+-        raise UploadError(f"chunk {chunk_id} failed after {self.max_attempts} attempts") from last
++        return None
+ 
+     def upload_all(self, chunks):
+         """Upload every chunk and return the receipts."""

@@ -2,8 +2,8 @@
 
 use crate::agent;
 use crate::bench::{self, CaseCategory};
-use crate::config::{Provider, RunConfig};
-use crate::eval::{self, CaseEvaluation, Counts};
+use crate::config::{Ablation, Provider, RunConfig};
+use crate::eval::{self, CaseEvaluation, Counts, EvidenceAudit};
 use crate::llm::LlmClient;
 use crate::trajectory::{AgentKind, Trajectory};
 use anyhow::{bail, Context, Result};
@@ -77,6 +77,13 @@ impl RunSummary {
     }
 }
 
+/// Name for one experimental arm: the agent, plus the ablation when one is
+/// active. A full run keeps the plain agent name so default artifacts are
+/// unchanged.
+pub fn arm_name(agent: AgentKind, ablation: Ablation) -> String {
+    format!("{}{}", agent.as_str(), ablation.suffix())
+}
+
 /// Run one agent over every case in a benchmark directory.
 pub async fn run_benchmark(
     benchmark_dir: &Path,
@@ -93,7 +100,8 @@ pub async fn run_benchmark(
     }
 
     let client = LlmClient::from_config(&cfg.llm).context("constructing LLM client")?;
-    let traj_dir = out_dir.join("trajectories").join(agent_kind.as_str());
+    let arm = arm_name(agent_kind, cfg.ablation);
+    let traj_dir = out_dir.join("trajectories").join(&arm);
     let started_at = chrono::Utc::now().to_rfc3339();
     let mut stats = Vec::new();
 
@@ -122,10 +130,7 @@ pub async fn run_benchmark(
         stats,
     };
 
-    write_json(
-        &out_dir.join(format!("summary-{}.json", agent_kind.as_str())),
-        &summary,
-    )?;
+    write_json(&out_dir.join(format!("summary-{arm}.json")), &summary)?;
     Ok(summary)
 }
 
@@ -155,6 +160,15 @@ pub struct Aggregate {
     pub mean_tool_calls_per_case: f64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    /// Which stage, if any, was disabled for this run.
+    #[serde(default = "default_ablation")]
+    pub ablation: Ablation,
+    /// Fraction of checkable evidence excerpts that really appear at the lines
+    /// they cite. 1.0 when nothing checkable was gathered.
+    pub evidence_accuracy: f64,
+    /// The audit behind `evidence_accuracy`, including every mismatch found.
+    #[serde(default)]
+    pub evidence_audit: EvidenceAudit,
     /// Set when the run used the offline stub, so a reader cannot mistake it
     /// for a measurement.
     ///
@@ -162,6 +176,10 @@ pub struct Aggregate {
     /// it needs a default on the way back in — absent means a real run.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub mock_run: bool,
+}
+
+fn default_ablation() -> Ablation {
+    Ablation::None
 }
 
 /// Full evaluation of one arm.
@@ -186,6 +204,168 @@ pub struct CategoryBreakdown {
     pub f1: f64,
 }
 
+/// Spread of one metric across repeated trials.
+///
+/// LLM output is nondeterministic even at temperature 0, so a single run is a
+/// sample, not a measurement. These are reported so a reader can tell a real
+/// difference from run-to-run noise.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetricSpread {
+    pub metric: String,
+    pub trials: usize,
+    pub mean: f64,
+    pub min: f64,
+    pub max: f64,
+    /// Sample standard deviation (n-1). Zero when there is a single trial.
+    pub stdev: f64,
+}
+
+impl MetricSpread {
+    pub fn of(metric: &str, values: &[f64]) -> Self {
+        let n = values.len();
+        let mean = if n == 0 {
+            0.0
+        } else {
+            values.iter().sum::<f64>() / n as f64
+        };
+        // Sample standard deviation: with one trial there is no spread to
+        // report, and dividing by n-1 would be division by zero.
+        let stdev = if n < 2 {
+            0.0
+        } else {
+            let var = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+            var.sqrt()
+        };
+        Self {
+            metric: metric.to_string(),
+            trials: n,
+            mean,
+            min: values.iter().cloned().fold(f64::INFINITY, f64::min),
+            max: values.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+            stdev,
+        }
+    }
+}
+
+/// Variance across repeated trials of one arm.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArmVariance {
+    pub arm: String,
+    pub model: String,
+    pub trials: usize,
+    pub metrics: Vec<MetricSpread>,
+    /// Cases whose true-positive count was not identical in every trial. These
+    /// are where the nondeterminism actually lives, and naming them is more
+    /// useful than a standard deviation alone.
+    pub unstable_cases: Vec<String>,
+}
+
+/// Load every `evaluation-<arm>.json` under `root/*/` and summarise the spread
+/// per arm.
+pub fn variance_across_trials(root: &Path) -> Result<Vec<ArmVariance>> {
+    let mut by_arm: std::collections::BTreeMap<String, Vec<Evaluation>> =
+        std::collections::BTreeMap::new();
+
+    let entries = std::fs::read_dir(root)
+        .with_context(|| format!("listing trials directory {}", root.display()))?;
+
+    let mut trial_dirs: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
+    trial_dirs.sort();
+
+    for dir in &trial_dirs {
+        for file in std::fs::read_dir(dir)?.filter_map(|e| e.ok()) {
+            let name = file.file_name().to_string_lossy().to_string();
+            let Some(arm) = name
+                .strip_prefix("evaluation-")
+                .and_then(|n| n.strip_suffix(".json"))
+            else {
+                continue;
+            };
+            let raw = std::fs::read_to_string(file.path())?;
+            let eval: Evaluation = serde_json::from_str(&raw)
+                .with_context(|| format!("parsing {}", file.path().display()))?;
+            by_arm.entry(arm.to_string()).or_default().push(eval);
+        }
+    }
+
+    if by_arm.is_empty() {
+        bail!(
+            "no evaluation-*.json found under {}/*/ — run and evaluate each trial first",
+            root.display()
+        );
+    }
+
+    let mut out = Vec::new();
+    for (arm, evals) in by_arm {
+        let pick = |f: fn(&Aggregate) -> f64| -> Vec<f64> {
+            evals.iter().map(|e| f(&e.aggregate)).collect()
+        };
+
+        // A case is unstable when its true-positive count differs across
+        // trials.
+        let mut unstable = Vec::new();
+        if let Some(first) = evals.first() {
+            for case in &first.per_case {
+                let counts: Vec<u32> = evals
+                    .iter()
+                    .filter_map(|e| {
+                        e.per_case
+                            .iter()
+                            .find(|c| c.case_id == case.case_id)
+                            .map(|c| c.counts.true_positives)
+                    })
+                    .collect();
+                if counts.windows(2).any(|w| w[0] != w[1]) {
+                    unstable.push(format!(
+                        "{} (TP per trial: {})",
+                        case.case_id,
+                        counts
+                            .iter()
+                            .map(|c| c.to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+            }
+        }
+
+        out.push(ArmVariance {
+            arm: arm.clone(),
+            model: evals
+                .first()
+                .map(|e| e.aggregate.model.clone())
+                .unwrap_or_default(),
+            trials: evals.len(),
+            metrics: vec![
+                MetricSpread::of("precision", &pick(|a| a.precision)),
+                MetricSpread::of("recall", &pick(|a| a.recall)),
+                MetricSpread::of("f1", &pick(|a| a.f1)),
+                MetricSpread::of(
+                    "false_positives_per_case",
+                    &pick(|a| a.false_positives_per_case),
+                ),
+                MetricSpread::of(
+                    "findings_to_triage_per_case",
+                    &pick(|a| a.manual_triage_findings_per_case),
+                ),
+                MetricSpread::of("evidence_accuracy", &pick(|a| a.evidence_accuracy)),
+                MetricSpread::of(
+                    "cost_usd_per_case",
+                    &pick(|a| a.mean_cost_usd_per_case.unwrap_or(f64::NAN)),
+                ),
+                MetricSpread::of("runtime_ms_per_case", &pick(|a| a.mean_runtime_ms_per_case)),
+            ],
+            unstable_cases: unstable,
+        });
+    }
+
+    Ok(out)
+}
+
 /// Score a completed run against the benchmark's ground truth.
 ///
 /// `pricing_override` recomputes cost from the token counts already recorded
@@ -199,8 +379,10 @@ pub fn evaluate_run(
     out_dir: &Path,
     pricing_override: Option<crate::config::Pricing>,
 ) -> Result<Evaluation> {
-    let traj_dir = out_dir.join("trajectories").join(summary.agent.as_str());
+    let arm = arm_name(summary.agent, summary.config.ablation);
+    let traj_dir = out_dir.join("trajectories").join(&arm);
     let mut per_case = Vec::new();
+    let mut audit = EvidenceAudit::default();
 
     for dir in bench::discover_cases(benchmark_dir)? {
         let case = bench::load_case(&dir)?;
@@ -214,11 +396,16 @@ pub fn evaluate_run(
             );
         }
 
-        let path = traj_dir.join(format!("{}-{}.json", case.id(), summary.agent.as_str()));
+        let path = traj_dir.join(format!("{}-{arm}.json", case.id()));
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading trajectory {}", path.display()))?;
         let traj: Trajectory = serde_json::from_str(&raw)
             .with_context(|| format!("parsing trajectory {}", path.display()))?;
+
+        // Every recorded excerpt is claimed to be verbatim repository content
+        // at a cited location. Check it against the repository rather than
+        // taking the claim on trust.
+        audit.merge(&eval::audit_evidence(&case.repo, &traj.final_findings));
 
         per_case.push(eval::evaluate_case(
             case.id(),
@@ -288,6 +475,9 @@ pub fn evaluate_run(
         mean_tool_calls_per_case: sum(|s| s.tool_calls as f64) / n,
         total_input_tokens: summary.stats.iter().map(|s| s.input_tokens).sum(),
         total_output_tokens: summary.stats.iter().map(|s| s.output_tokens).sum(),
+        ablation: summary.config.ablation,
+        evidence_accuracy: audit.accuracy(),
+        evidence_audit: audit,
         mock_run: summary.is_mock(),
     };
 
@@ -325,10 +515,7 @@ pub fn evaluate_run(
         line_tolerance: summary.config.match_line_tolerance,
     };
 
-    write_json(
-        &out_dir.join(format!("evaluation-{}.json", summary.agent.as_str())),
-        &evaluation,
-    )?;
+    write_json(&out_dir.join(format!("evaluation-{arm}.json")), &evaluation)?;
     Ok(evaluation)
 }
 
@@ -379,6 +566,9 @@ mod tests {
             mean_tool_calls_per_case: 0.0,
             total_input_tokens: 1,
             total_output_tokens: 2,
+            ablation: Ablation::None,
+            evidence_accuracy: 1.0,
+            evidence_audit: EvidenceAudit::default(),
             mock_run: false,
         };
         let e = Evaluation {

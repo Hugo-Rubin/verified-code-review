@@ -1,0 +1,156 @@
+{
+  "aggregate": {
+    "agent": "Baseline",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 3,
+    "counts": {
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 2
+    },
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "false_positives_per_case": 0.0,
+    "manual_triage_findings_per_case": 0.0,
+    "withheld_findings_per_case": 0.0,
+    "mean_cost_usd_per_case": 0.0032015,
+    "mean_runtime_ms_per_case": 8084.666666666667,
+    "mean_llm_calls_per_case": 1.0,
+    "mean_tool_calls_per_case": 0.0,
+    "total_input_tokens": 2761,
+    "total_output_tokens": 2009,
+    "ablation": "None",
+    "evidence_accuracy": 1.0,
+    "evidence_audit": {
+      "total": 0,
+      "checkable": 0,
+      "accurate": 0,
+      "mismatches": []
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "p01-retry-swallows-failure",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [
+        {
+          "expected_id": "p01-f1",
+          "location": "src/uploader.py:35-37",
+          "issue_type": "ErrorHandling",
+          "description": "Returning `None` after exhausting the retries converts a reported failure into a silent one. `upload_all` appends the `None` straight into `receipts`, and `build_manifest` in src/manifest.py dereferences `r.etag` for every receipt, so a permanently failing chunk raises `AttributeError: 'NoneType' object has no attribute 'etag'` far from the upload that actually failed. The bare `except Exception` also captures the exception into `last` and then discards it, so the original transport error is lost."
+        }
+      ],
+      "withheld": 0
+    },
+    {
+      "case_id": "p02-primary-node-trap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "p03-len-is-capacity",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [
+        {
+          "expected_id": "p03-f1",
+          "location": "src/api.py:9-11",
+          "issue_type": "Correctness",
+          "description": "The bounds check calls `len(cache)`, and `PagedCache.__len__` returns the configured capacity rather than the number of pages present. For a partially filled cache - capacity 100 holding 3 pages - any index in 3..100 passes the guard and reaches `cache.page_at(index)`, which indexes the backing list directly and raises IndexError. The check should compare against `cache.filled`."
+        }
+      ],
+      "withheld": 0
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "p01-retry-swallows-failure",
+      "trajectory_id": "e295f25a-0a6e-4958-8c14-b9ae2e83e7c3",
+      "runtime_ms": 4414,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1155,
+      "output_tokens": 344,
+      "cost_usd": 0.00215625,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p02-primary-node-trap",
+      "trajectory_id": "f7d69a65-3f1c-44ab-bc05-2e53cef4bad4",
+      "runtime_ms": 12047,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 766,
+      "output_tokens": 1325,
+      "cost_usd": 0.00554325,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p03-len-is-capacity",
+      "trajectory_id": "535f0d6f-7b66-421f-b757-9d1eebdca36e",
+      "runtime_ms": 7793,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 840,
+      "output_tokens": 340,
+      "cost_usd": 0.001905,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    }
+  ],
+  "by_category": [
+    {
+      "category": "Trap",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 2
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  ],
+  "line_tolerance": 3
+}

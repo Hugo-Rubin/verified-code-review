@@ -98,9 +98,9 @@ only settle the ones you raise."#,
 }
 
 /// Baseline: one direct review pass over the diff and the changed files.
-pub fn baseline_system() -> String {
+pub fn baseline_system(language: &str) -> String {
     format!(
-        r#"You are an experienced Rust reviewer examining a proposed change before it merges.
+        r#"You are an experienced {language} reviewer examining a proposed change before it merges.
 
 Report defects that are actually present in this change. For each one, give the
 file and the line range in the file's current state, classify it, and state the
@@ -112,16 +112,16 @@ Be precise and be selective:
 - Do not report style preferences, naming, formatting, or missing comments.
 - Do not invent a defect to have something to say.
 
-{}"#,
-        baseline_schema()
+{schema}"#,
+        schema = baseline_schema()
     )
 }
 
 /// Advanced reviewer: same task, but findings are explicitly provisional
 /// because an investigation stage follows.
-pub fn advanced_system() -> String {
+pub fn advanced_system(language: &str) -> String {
     format!(
-        r#"You are an experienced Rust reviewer examining a proposed change before it merges.
+        r#"You are an experienced {language} reviewer examining a proposed change before it merges.
 
 You are producing CANDIDATE findings, not final ones. Nothing you write here
 reaches a human directly. Each candidate is investigated against the actual
@@ -155,8 +155,8 @@ fine.
 - Do not report style preferences, naming, formatting, or missing comments.
 - Avoid vague concerns such as "this looks fragile"; say what would go wrong.
 
-{}"#,
-        advanced_schema()
+{schema}"#,
+        schema = advanced_schema()
     )
 }
 
@@ -269,7 +269,28 @@ pub fn investigate_user(
     falsification_question: &str,
     diff: &str,
     history: &str,
+    gap: Option<&str>,
 ) -> String {
+    // When an independent check has already looked at the evidence and said
+    // what it could not settle, that is the most useful steer available — far
+    // better than letting the investigation pick a direction again from
+    // scratch.
+    let gap_section = match gap {
+        None => String::new(),
+        Some(g) => format!(
+            r#"
+## An independent check has already reviewed the evidence below
+
+It could not settle the claim either way, and said this was missing:
+
+> {g}
+
+Gather specifically what would close that gap. If you cannot, say so and stop
+rather than collecting more of what has already proved insufficient.
+"#
+        ),
+    };
+
     format!(
         r#"## Claim under investigation
 
@@ -286,7 +307,7 @@ Location: {location}
 ```diff
 {diff}
 ```
-
+{gap_section}
 ## Investigation so far
 
 {history}
@@ -303,7 +324,7 @@ What is your next step?"#
 /// previous stage already believed the claim. The whole point is to remove the
 /// anchor.
 pub fn verify_system() -> String {
-    r#"You are deciding whether a body of evidence establishes that a Rust codebase has a real defect.
+    r#"You are deciding whether a body of evidence establishes that a codebase has a real defect.
 
 You did not write the claim and have no stake in it. Someone asserted it; your
 task is to weigh the evidence.
@@ -379,7 +400,7 @@ Return JSON of exactly this shape:
   "rationale": "<2-4 sentences explaining what the evidence shows>",
   "decisive_evidence": ["<short quote or file:line reference>", ...]
 }"#
-        .to_string()
+    .to_string()
 }
 
 pub fn verify_user(claim: &str, location: &str, question: &str, evidence: &str) -> String {
@@ -430,7 +451,7 @@ mod tests {
             "\"claim\"",
             "\"reasoning\"",
         ];
-        for prompt in [baseline_system(), advanced_system()] {
+        for prompt in [baseline_system("Rust"), advanced_system("Rust")] {
             for field in shape {
                 assert!(prompt.contains(field), "missing {field} from the contract");
             }
@@ -442,12 +463,12 @@ mod tests {
 
     #[test]
     fn only_the_baseline_is_told_that_silence_is_correct() {
-        assert!(baseline_system().contains(
+        assert!(baseline_system("Rust").contains(
             "An empty
 result is a correct answer"
         ));
-        assert!(!advanced_system().contains("is a correct answer"));
-        assert!(advanced_system().contains("Under-proposing is the expensive mistake"));
+        assert!(!advanced_system("Rust").contains("is a correct answer"));
+        assert!(advanced_system("Rust").contains("Under-proposing is the expensive mistake"));
     }
 
     #[test]
@@ -495,7 +516,7 @@ result is a correct answer"
             "heartbeat",
             "pool",
         ];
-        for prompt in [baseline_system(), advanced_system()] {
+        for prompt in [baseline_system("Rust"), advanced_system("Rust")] {
             let lower = prompt.to_lowercase();
             for tell in tells {
                 assert!(
@@ -519,7 +540,7 @@ result is a correct answer"
 
     #[test]
     fn candidates_must_name_a_consequence() {
-        let s = advanced_system();
+        let s = advanced_system("Rust");
         assert!(s.contains("must name a consequence"));
     }
 
@@ -544,6 +565,22 @@ result is a correct answer"
         let s = falsify_system();
         assert!(s.contains("ask about the call sites by") || s.contains("call sites by name"));
         assert!(s.contains("Never make a comment the answer"));
+    }
+
+    #[test]
+    fn the_reviewer_addresses_itself_in_the_case_language() {
+        assert!(baseline_system("Python").contains("experienced Python reviewer"));
+        assert!(advanced_system("Python").contains("experienced Python reviewer"));
+        assert!(baseline_system("Rust").contains("experienced Rust reviewer"));
+    }
+
+    #[test]
+    fn the_verifier_is_language_neutral() {
+        // The verifier reasons about claims and evidence, not syntax, so it
+        // needs no language and must not assume one.
+        let s = verify_system();
+        assert!(!s.contains("Rust"));
+        assert!(!s.contains("Python"));
     }
 
     #[test]

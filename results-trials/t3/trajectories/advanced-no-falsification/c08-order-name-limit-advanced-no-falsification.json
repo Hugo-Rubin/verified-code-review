@@ -1,0 +1,208 @@
+{
+  "trajectory_id": "ee6f60c1-7da1-48ff-a232-4bdb40da77ca",
+  "case_id": "c08-order-name-limit",
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-30T19:51:28.720108200+00:00",
+  "finished_at": "2026-08-30T19:51:44.374532900+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "NoFalsification"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "ABLATION: no-falsification — this run deliberately disables part of the pipeline and is                  not the full system"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "advanced-review/v5",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nYou are producing CANDIDATE findings, not final ones. Nothing you write here\nreaches a human directly. Each candidate is investigated against the actual\nrepository and then independently adjudicated, and only what survives is\nreported. A candidate that turns out to be wrong costs almost nothing. A real\ndefect you never raised is never checked at all.\n\nSo err toward proposing. Raise anything a careful reviewer would want confirmed\nbefore approving this change, including things you expect will turn out to be\nfine.\n\n- Anchor each candidate to a specific file and line range.\n- State each claim as something that can actually happen, not as a\n  conditional. Write \"callers can reach this with an empty list, and it will\n  panic\", not \"this will panic if the list is empty\" — the second is true of\n  the code whether or not the situation ever arises, so it cannot be\n  disproved and is not a finding.\n- State each claim as a single falsifiable sentence — something repository\n  evidence could confirm or refute.\n- Every candidate must name a consequence: what goes wrong, and for whom.\n  Incorrect output, a panic, data loss, a violated contract, a security\n  consequence, or a real cost at the scale this code runs at. If you cannot\n  finish the sentence \"and so the user gets...\", it is not a candidate.\n  Missing trait derives, a signature that is more fallible than it needs to\n  be, and unused declarations are observations about the code, not defects —\n  leave them out. The investigation stage can settle whether a claim is true;\n  it cannot make a true triviality worth a reviewer's time.\n- Pay particular attention to anything whose correctness depends on facts that\n  are not visible in the changed files. If the code is only correct given some\n  assumption about the rest of the repository, that assumption is a candidate.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Avoid vague concerns such as \"this looks fragile\"; say what would go wrong.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nReturn {\"findings\": []} only if there is genuinely nothing worth checking.\n\nUnder-proposing is the expensive mistake at this stage. Include a candidate\neven when you suspect it is fine, and in particular whenever the code's\ncorrectness depends on something you cannot see in the changed files — a\ncaller, a constructor, an invariant asserted in a comment, a value's origin.\nThose are the candidates the investigation stage exists to settle, and it can\nonly settle the ones you raise.",
+      "user": "## Change under review\n\nOrders gain a free-text `notes` field. `validate` now checks the notes length alongside the existing name and quantity checks, and `ValidationError` gains a `Notes` variant.\n\n## Diff\n\n```diff\n--- a/src/order.rs\r\n+++ b/src/order.rs\r\n@@ -10,19 +10,25 @@\r\n #[derive(Debug, PartialEq, Eq)]\r\n pub enum ValidationError {\r\n     Name,\r\n+    Notes,\r\n     Quantity,\r\n }\r\n \r\n #[derive(Debug, Clone)]\r\n pub struct Order {\r\n     pub name: String,\r\n+    pub notes: String,\r\n     pub quantity: u32,\r\n }\r\n \r\n /// Check an order before it is written to the database.\r\n pub fn validate(order: &Order) -> Result<(), ValidationError> {\r\n-    if order.name.is_empty() || order.name.len() > MAX_NAME_LEN {\r\n+    if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize {\r\n         return Err(ValidationError::Name);\r\n+    }\r\n+\r\n+    if order.notes.len() > MAX_NAME_LEN {\r\n+        return Err(ValidationError::Notes);\r\n     }\r\n \r\n     if order.quantity == 0 || order.quantity > MAX_QUANTITY {\r\n@@ -39,6 +45,7 @@\r\n     fn order(name: &str, quantity: u32) -> Order {\r\n         Order {\r\n             name: name.to_string(),\r\n+            notes: String::new(),\r\n             quantity,\r\n         }\r\n     }\r\n@@ -61,4 +68,11 @@\r\n             Err(ValidationError::Quantity)\r\n         );\r\n     }\r\n+\r\n+    #[test]\r\n+    fn rejects_oversized_notes() {\r\n+        let mut o = order(\"widget\", 5);\r\n+        o.notes = \"n\".repeat(65);\r\n+        assert_eq!(validate(&o), Err(ValidationError::Notes));\r\n+    }\r\n }\r\n\n```\n\n## Current contents of the changed files\n\n\n### src/order.rs\n\n```rust\n    1 | //! Order validation.\n    2 | \n    3 | /// Maximum name length. The `orders.name` column is `VARCHAR(64)`; a longer\n    4 | /// name is rejected by the database at insert time.\n    5 | pub const MAX_NAME_LEN: usize = 64;\n    6 | \n    7 | /// Largest quantity a single order may request.\n    8 | pub const MAX_QUANTITY: u32 = 1000;\n    9 | \n   10 | #[derive(Debug, PartialEq, Eq)]\n   11 | pub enum ValidationError {\n   12 |     Name,\n   13 |     Notes,\n   14 |     Quantity,\n   15 | }\n   16 | \n   17 | #[derive(Debug, Clone)]\n   18 | pub struct Order {\n   19 |     pub name: String,\n   20 |     pub notes: String,\n   21 |     pub quantity: u32,\n   22 | }\n   23 | \n   24 | /// Check an order before it is written to the database.\n   25 | pub fn validate(order: &Order) -> Result<(), ValidationError> {\n   26 |     if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize {\n   27 |         return Err(ValidationError::Name);\n   28 |     }\n   29 | \n   30 |     if order.notes.len() > MAX_NAME_LEN {\n   31 |         return Err(ValidationError::Notes);\n   32 |     }\n   33 | \n   34 |     if order.quantity == 0 || order.quantity > MAX_QUANTITY {\n   35 |         return Err(ValidationError::Quantity);\n   36 |     }\n   37 | \n   38 |     Ok(())\n   39 | }\n   40 | \n   41 | #[cfg(test)]\n   42 | mod tests {\n   43 |     use super::*;\n   44 | \n   45 |     fn order(name: &str, quantity: u32) -> Order {\n   46 |         Order {\n   47 |             name: name.to_string(),\n   48 |             notes: String::new(),\n   49 |             quantity,\n   50 |         }\n   51 |     }\n   52 | \n   53 |     #[test]\n   54 |     fn accepts_a_reasonable_order() {\n   55 |         assert!(validate(&order(\"widget\", 5)).is_ok());\n   56 |     }\n   57 | \n   58 |     #[test]\n   59 |     fn rejects_an_empty_name() {\n   60 |         assert_eq!(validate(&order(\"\", 5)), Err(ValidationError::Name));\n   61 |     }\n   62 | \n   63 |     #[test]\n   64 |     fn rejects_a_zero_or_oversized_quantity() {\n   65 |         assert_eq!(validate(&order(\"widget\", 0)), Err(ValidationError::Quantity));\n   66 |         assert_eq!(\n   67 |             validate(&order(\"widget\", 5000)),\n   68 |             Err(ValidationError::Quantity)\n   69 |         );\n   70 |     }\n   71 | \n   72 |     #[test]\n   73 |     fn rejects_oversized_notes() {\n   74 |         let mut o = order(\"widget\", 5);\n   75 |         o.notes = \"n\".repeat(65);\n   76 |         assert_eq!(validate(&o), Err(ValidationError::Notes));\n   77 |     }\n   78 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Validation\",\n      \"severity\": \"High\",\n      \"file\": \"src/order.rs\",\n      \"start_line\": 26,\n      \"end_line\": 28,\n      \"claim\": \"Order name validation checks against MAX_QUANTITY instead of MAX_NAME_LEN, allowing names up to 1000 characters that fail database insertion.\",\n      \"reasoning\": \"The validation condition was accidentally modified from `order.name.len() > MAX_NAME_LEN` to `order.name.len() > MAX_QUANTITY as usize`. As a result, orders with names between 65 and 1000 characters pass `validate` but will be rejected by the database's `VARCHAR(64)` constraint.\",\n      \"suggested_fix\": \"Change `MAX_QUANTITY as usize` back to `MAX_NAME_LEN` when validating `order.name`, and introduce a separate constant for maximum notes length if intended.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 2144,
+        "output_tokens": 588,
+        "total_tokens": 2732
+      },
+      "latency_ms": 6024,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c08-order-name-limit-adv-1",
+        "issue_type": "Validation",
+        "severity": "High",
+        "location": {
+          "file": "src/order.rs",
+          "start_line": 26,
+          "end_line": 28
+        },
+        "claim": "Order name validation checks against MAX_QUANTITY instead of MAX_NAME_LEN, allowing names up to 1000 characters that fail database insertion.",
+        "reasoning": "The validation condition was accidentally modified from `order.name.len() > MAX_NAME_LEN` to `order.name.len() > MAX_QUANTITY as usize`. As a result, orders with names between 65 and 1000 characters pass `validate` but will be rejected by the database's `VARCHAR(64)` constraint."
+      }
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Falsify",
+      "prompt_version": "advanced-falsify/v2",
+      "system": "You are helping test a code-review finding.\n\nGiven a claim about a defect, write the single most decisive question whose\nanswer would show the claim is WRONG. The question must be answerable by\ninspecting the repository: callers, implementations, tests, configuration, or\ntype definitions.\n\nAsk about the thing the claim actually depends on, not about the mechanism.\nWhether a function panics on a bad input is usually not in doubt and can be\nread off the body; whether anything ever hands it a bad input is the question.\nSo when a claim rests on how the code is used, ask about the call sites by\nname.\n\nGood: \"Does every caller of parse_row check is_empty() before indexing?\"\nBad:  \"Does parse_row panic when the row is empty?\"  (asks the mechanism)\nBad:  \"Is this code correct?\"                        (unanswerable)\n\nNever make a comment the answer. If a doc comment already asserts the\nprecondition, the question is whether the callers honour it.\n\nReturn JSON of exactly this shape:\n\n{\"falsification_question\": \"<one question>\"}",
+      "user": "Claim: Order name validation checks against MAX_QUANTITY instead of MAX_NAME_LEN, allowing names up to 1000 characters that fail database insertion.\nLocation: src/order.rs:26-28\nReviewer's reasoning: The validation condition was accidentally modified from `order.name.len() > MAX_NAME_LEN` to `order.name.len() > MAX_QUANTITY as usize`. As a result, orders with names between 65 and 1000 characters pass `validate` but will be rejected by the database's `VARCHAR(64)` constraint.\n\nWhat evidence would prove this claim wrong?",
+      "response_text": "{\"falsification_question\": \"Does the order name validation in `src/order.rs` check `order.name.len()` against `MAX_NAME_LEN`?\"}",
+      "usage": {
+        "input_tokens": 381,
+        "output_tokens": 371,
+        "total_tokens": 752
+      },
+      "latency_ms": 4435,
+      "attempts": 1
+    },
+    {
+      "event": "FalsificationQuestion",
+      "candidate_id": "c08-order-name-limit-adv-1",
+      "question": "Does the order name validation in `src/order.rs` check `order.name.len()` against `MAX_NAME_LEN`?"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nOrder name validation checks against MAX_QUANTITY instead of MAX_NAME_LEN, allowing names up to 1000 characters that fail database insertion.\n\nLocation: src/order.rs:26-28\n\n## Falsification question\n\nDoes the order name validation in `src/order.rs` check `order.name.len()` against `MAX_NAME_LEN`?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/order.rs\r\n+++ b/src/order.rs\r\n@@ -10,19 +10,25 @@\r\n #[derive(Debug, PartialEq, Eq)]\r\n pub enum ValidationError {\r\n     Name,\r\n+    Notes,\r\n     Quantity,\r\n }\r\n \r\n #[derive(Debug, Clone)]\r\n pub struct Order {\r\n     pub name: String,\r\n+    pub notes: String,\r\n     pub quantity: u32,\r\n }\r\n \r\n /// Check an order before it is written to the database.\r\n pub fn validate(order: &Order) -> Result<(), ValidationError> {\r\n-    if order.name.is_empty() || order.name.len() > MAX_NAME_LEN {\r\n+    if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize {\r\n         return Err(ValidationError::Name);\r\n+    }\r\n+\r\n+    if order.notes.len() > MAX_NAME_LEN {\r\n+        return Err(ValidationError::Notes);\r\n     }\r\n \r\n     if order.quantity == 0 || order.quantity > MAX_QUANTITY {\r\n@@ -39,6 +45,7 @@\r\n     fn order(name: &str, quantity: u32) -> Order {\r\n         Order {\r\n             name: name.to_string(),\r\n+            notes: String::new(),\r\n             quantity,\r\n         }\r\n     }\r\n@@ -61,4 +68,11 @@\r\n             Err(ValidationError::Quantity)\r\n         );\r\n     }\r\n+\r\n+    #[test]\r\n+    fn rejects_oversized_notes() {\r\n+        let mut o = order(\"widget\", 5);\r\n+        o.notes = \"n\".repeat(65);\r\n+        assert_eq!(validate(&o), Err(ValidationError::Notes));\r\n+    }\r\n }\r\n\n```\n\n## Investigation so far\n\n(nothing yet)\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": false,\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"file\": \"src/order.rs\",\n    \"start_line\": 1,\n    \"end_line\": 50\n  },\n  \"rationale\": \"Read src/order.rs to see what order.name.len() is checked against in the validate function.\"\n}",
+      "usage": {
+        "input_tokens": 862,
+        "output_tokens": 146,
+        "total_tokens": 1008
+      },
+      "latency_ms": 2520,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "c08-order-name-limit-adv-1-t1",
+      "candidate_id": "c08-order-name-limit-adv-1",
+      "tool": "read",
+      "arguments": {
+        "end_line": 50,
+        "file": "src/order.rs",
+        "start_line": 1
+      },
+      "response": "src/order.rs lines 1-50 of 78:\n    1 | //! Order validation.\n    2 | \n    3 | /// Maximum name length. The `orders.name` column is `VARCHAR(64)`; a longer\n    4 | /// name is rejected by the database at insert time.\n    5 | pub const MAX_NAME_LEN: usize = 64;\n    6 | \n    7 | /// Largest quantity a single order may request.\n    8 | pub const MAX_QUANTITY: u32 = 1000;\n    9 | \n   10 | #[derive(Debug, PartialEq, Eq)]\n   11 | pub enum ValidationError {\n   12 |     Name,\n   13 |     Notes,\n   14 |     Quantity,\n   15 | }\n   16 | \n   17 | #[derive(Debug, Clone)]\n   18 | pub struct Order {\n   19 |     pub name: String,\n   20 |     pub notes: String,\n   21 |     pub quantity: u32,\n   22 | }\n   23 | \n   24 | /// Check an order before it is written to the database.\n   25 | pub fn validate(order: &Order) -> Result<(), ValidationError> {\n   26 |     if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize {\n   27 |         return Err(ValidationError::Name);\n   28 |     }\n   29 | \n   30 |     if order.notes.len() > MAX_NAME_LEN {\n   31 |         return Err(ValidationError::Notes);\n   32 |     }\n   33 | \n   34 |     if order.quantity == 0 || order.quantity > MAX_QUANTITY {\n   35 |         return Err(ValidationError::Quantity);\n   36 |     }\n   37 | \n   38 |     Ok(())\n   39 | }\n   40 | \n   41 | #[cfg(test)]\n   42 | mod tests {\n   43 |     use super::*;\n   44 | \n   45 |     fn order(name: &str, quantity: u32) -> Order {\n   46 |         Order {\n   47 |             name: name.to_string(),\n   48 |             notes: String::new(),\n   49 |             quantity,\n   50 |         }\n",
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nOrder name validation checks against MAX_QUANTITY instead of MAX_NAME_LEN, allowing names up to 1000 characters that fail database insertion.\n\nLocation: src/order.rs:26-28\n\n## Falsification question\n\nDoes the order name validation in `src/order.rs` check `order.name.len()` against `MAX_NAME_LEN`?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/order.rs\r\n+++ b/src/order.rs\r\n@@ -10,19 +10,25 @@\r\n #[derive(Debug, PartialEq, Eq)]\r\n pub enum ValidationError {\r\n     Name,\r\n+    Notes,\r\n     Quantity,\r\n }\r\n \r\n #[derive(Debug, Clone)]\r\n pub struct Order {\r\n     pub name: String,\r\n+    pub notes: String,\r\n     pub quantity: u32,\r\n }\r\n \r\n /// Check an order before it is written to the database.\r\n pub fn validate(order: &Order) -> Result<(), ValidationError> {\r\n-    if order.name.is_empty() || order.name.len() > MAX_NAME_LEN {\r\n+    if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize {\r\n         return Err(ValidationError::Name);\r\n+    }\r\n+\r\n+    if order.notes.len() > MAX_NAME_LEN {\r\n+        return Err(ValidationError::Notes);\r\n     }\r\n \r\n     if order.quantity == 0 || order.quantity > MAX_QUANTITY {\r\n@@ -39,6 +45,7 @@\r\n     fn order(name: &str, quantity: u32) -> Order {\r\n         Order {\r\n             name: name.to_string(),\r\n+            notes: String::new(),\r\n             quantity,\r\n         }\r\n     }\r\n@@ -61,4 +68,11 @@\r\n             Err(ValidationError::Quantity)\r\n         );\r\n     }\r\n+\r\n+    #[test]\r\n+    fn rejects_oversized_notes() {\r\n+        let mut o = order(\"widget\", 5);\r\n+        o.notes = \"n\".repeat(65);\r\n+        assert_eq!(validate(&o), Err(ValidationError::Notes));\r\n+    }\r\n }\r\n\n```\n\n## Investigation so far\n\n\n--- step 1 : read {\"end_line\":50,\"file\":\"src/order.rs\",\"start_line\":1} ---\nsrc/order.rs lines 1-50 of 78:\n    1 | //! Order validation.\n    2 | \n    3 | /// Maximum name length. The `orders.name` column is `VARCHAR(64)`; a longer\n    4 | /// name is rejected by the database at insert time.\n    5 | pub const MAX_NAME_LEN: usize = 64;\n    6 | \n    7 | /// Largest quantity a single order may request.\n    8 | pub const MAX_QUANTITY: u32 = 1000;\n    9 | \n   10 | #[derive(Debug, PartialEq, Eq)]\n   11 | pub enum ValidationError {\n   12 |     Name,\n   13 |     Notes,\n   14 |     Quantity,\n   15 | }\n   16 | \n   17 | #[derive(Debug, Clone)]\n   18 | pub struct Order {\n   19 |     pub name: String,\n   20 |     pub notes: String,\n   21 |     pub quantity: u32,\n   22 | }\n   23 | \n   24 | /// Check an order before it is written to the database.\n   25 | pub fn validate(order: &Order) -> Result<(), ValidationError> {\n   26 |     if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize {\n   27 |         return Err(ValidationError::Name);\n   28 |     }\n   29 | \n   30 |     if order.notes.len() > MAX_NAME_LEN {\n   31 |         return Err(ValidationError::Notes);\n   32 |     }\n   33 | \n   34 |     if order.quantity == 0 || order.quantity > MAX_QUANTITY {\n   35 |         return Err(ValidationError::Quantity);\n   36 |     }\n   37 | \n   38 |     Ok(())\n   39 | }\n   40 | \n   41 | #[cfg(test)]\n   42 | mod tests {\n   43 |     use super::*;\n   44 | \n   45 |     fn order(name: &str, quantity: u32) -> Order {\n   46 |         Order {\n   47 |             name: name.to_string(),\n   48 |             notes: String::new(),\n   49 |             quantity,\n   50 |         }\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": true,\n  \"tool\": null,\n  \"arguments\": null,\n  \"rationale\": \"In `src/order.rs` lines 26-28, `order.name.len()` is checked against `MAX_QUANTITY as usize` (`if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize`) rather than `MAX_NAME_LEN`.\"\n}",
+      "usage": {
+        "input_tokens": 1459,
+        "output_tokens": 239,
+        "total_tokens": 1698
+      },
+      "latency_ms": 2671,
+      "attempts": 1
+    },
+    {
+      "event": "EvidenceAssembled",
+      "candidate_id": "c08-order-name-limit-adv-1",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/order.rs",
+          "start_line": 11,
+          "end_line": 43,
+          "excerpt": "   11 | pub enum ValidationError {\n   12 |     Name,\n   13 |     Notes,\n   14 |     Quantity,\n   15 | }\n   16 | \n   17 | #[derive(Debug, Clone)]\n   18 | pub struct Order {\n   19 |     pub name: String,\n   20 |     pub notes: String,\n   21 |     pub quantity: u32,\n   22 | }\n   23 | \n   24 | /// Check an order before it is written to the database.\n   25 | pub fn validate(order: &Order) -> Result<(), ValidationError> {\n   26 |     if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize {\n   27 |         return Err(ValidationError::Name);\n   28 |     }\n   29 | \n   30 |     if order.notes.len() > MAX_NAME_LEN {\n   31 |         return Err(ValidationError::Notes);\n   32 |     }\n   33 | \n   34 |     if order.quantity == 0 || order.quantity > MAX_QUANTITY {\n   35 |         return Err(ValidationError::Quantity);\n   36 |     }\n   37 | \n   38 |     Ok(())\n   39 | }\n   40 | \n   41 | #[cfg(test)]\n   42 | mod tests {\n   43 |     use super::*;",
+          "tool_call_id": "c08-order-name-limit-adv-1-claimed-region"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/order.rs",
+          "start_line": 1,
+          "end_line": 50,
+          "excerpt": "    1 | //! Order validation.\n    2 | \n    3 | /// Maximum name length. The `orders.name` column is `VARCHAR(64)`; a longer\n    4 | /// name is rejected by the database at insert time.\n    5 | pub const MAX_NAME_LEN: usize = 64;\n    6 | \n    7 | /// Largest quantity a single order may request.\n    8 | pub const MAX_QUANTITY: u32 = 1000;\n    9 | \n   10 | #[derive(Debug, PartialEq, Eq)]\n   11 | pub enum ValidationError {\n   12 |     Name,\n   13 |     Notes,\n   14 |     Quantity,\n   15 | }\n   16 | \n   17 | #[derive(Debug, Clone)]\n   18 | pub struct Order {\n   19 |     pub name: String,\n   20 |     pub notes: String,\n   21 |     pub quantity: u32,\n   22 | }\n   23 | \n   24 | /// Check an order before it is written to the database.\n   25 | pub fn validate(order: &Order) -> Result<(), ValidationError> {\n   26 |     if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize {\n   27 |         return Err(ValidationError::Name);\n   28 |     }\n   29 | \n   30 |     if order.notes.len() > MAX_NAME_LEN {\n   31 |         return Err(ValidationError::Notes);\n   32 |     }\n   33 | \n   34 |     if order.quantity == 0 || order.quantity > MAX_QUANTITY {\n   35 |         return Err(ValidationError::Quantity);\n   36 |     }\n   37 | \n   38 |     Ok(())\n   39 | }\n   40 | \n   41 | #[cfg(test)]\n   42 | mod tests {\n   43 |     use super::*;\n   44 | \n   45 |     fn order(name: &str, quantity: u32) -> Order {\n   46 |         Order {\n   47 |             name: name.to_string(),\n   48 |             notes: String::new(),\n   49 |             quantity,\n   50 |         }",
+          "tool_call_id": "c08-order-name-limit-adv-1-t1"
+        }
+      ]
+    },
+    {
+      "event": "Decision",
+      "candidate_id": "c08-order-name-limit-adv-1",
+      "status": "Verified",
+      "reason": "ablation no-falsification: reported on 1 evidence item(s),                          unadjudicated"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "c08-order-name-limit-adv-1",
+      "issue_type": "Validation",
+      "severity": "High",
+      "location": {
+        "file": "src/order.rs",
+        "start_line": 26,
+        "end_line": 28
+      },
+      "claim": "Order name validation checks against MAX_QUANTITY instead of MAX_NAME_LEN, allowing names up to 1000 characters that fail database insertion.",
+      "reasoning": "The validation condition was accidentally modified from `order.name.len() > MAX_NAME_LEN` to `order.name.len() > MAX_QUANTITY as usize`. As a result, orders with names between 65 and 1000 characters pass `validate` but will be rejected by the database's `VARCHAR(64)` constraint.",
+      "falsification_question": "Does the order name validation in `src/order.rs` check `order.name.len()` against `MAX_NAME_LEN`?",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/order.rs",
+          "start_line": 11,
+          "end_line": 43,
+          "excerpt": "   11 | pub enum ValidationError {\n   12 |     Name,\n   13 |     Notes,\n   14 |     Quantity,\n   15 | }\n   16 | \n   17 | #[derive(Debug, Clone)]\n   18 | pub struct Order {\n   19 |     pub name: String,\n   20 |     pub notes: String,\n   21 |     pub quantity: u32,\n   22 | }\n   23 | \n   24 | /// Check an order before it is written to the database.\n   25 | pub fn validate(order: &Order) -> Result<(), ValidationError> {\n   26 |     if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize {\n   27 |         return Err(ValidationError::Name);\n   28 |     }\n   29 | \n   30 |     if order.notes.len() > MAX_NAME_LEN {\n   31 |         return Err(ValidationError::Notes);\n   32 |     }\n   33 | \n   34 |     if order.quantity == 0 || order.quantity > MAX_QUANTITY {\n   35 |         return Err(ValidationError::Quantity);\n   36 |     }\n   37 | \n   38 |     Ok(())\n   39 | }\n   40 | \n   41 | #[cfg(test)]\n   42 | mod tests {\n   43 |     use super::*;",
+          "tool_call_id": "c08-order-name-limit-adv-1-claimed-region"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/order.rs",
+          "start_line": 1,
+          "end_line": 50,
+          "excerpt": "    1 | //! Order validation.\n    2 | \n    3 | /// Maximum name length. The `orders.name` column is `VARCHAR(64)`; a longer\n    4 | /// name is rejected by the database at insert time.\n    5 | pub const MAX_NAME_LEN: usize = 64;\n    6 | \n    7 | /// Largest quantity a single order may request.\n    8 | pub const MAX_QUANTITY: u32 = 1000;\n    9 | \n   10 | #[derive(Debug, PartialEq, Eq)]\n   11 | pub enum ValidationError {\n   12 |     Name,\n   13 |     Notes,\n   14 |     Quantity,\n   15 | }\n   16 | \n   17 | #[derive(Debug, Clone)]\n   18 | pub struct Order {\n   19 |     pub name: String,\n   20 |     pub notes: String,\n   21 |     pub quantity: u32,\n   22 | }\n   23 | \n   24 | /// Check an order before it is written to the database.\n   25 | pub fn validate(order: &Order) -> Result<(), ValidationError> {\n   26 |     if order.name.is_empty() || order.name.len() > MAX_QUANTITY as usize {\n   27 |         return Err(ValidationError::Name);\n   28 |     }\n   29 | \n   30 |     if order.notes.len() > MAX_NAME_LEN {\n   31 |         return Err(ValidationError::Notes);\n   32 |     }\n   33 | \n   34 |     if order.quantity == 0 || order.quantity > MAX_QUANTITY {\n   35 |         return Err(ValidationError::Quantity);\n   36 |     }\n   37 | \n   38 |     Ok(())\n   39 | }\n   40 | \n   41 | #[cfg(test)]\n   42 | mod tests {\n   43 |     use super::*;\n   44 | \n   45 |     fn order(name: &str, quantity: u32) -> Order {\n   46 |         Order {\n   47 |             name: name.to_string(),\n   48 |             notes: String::new(),\n   49 |             quantity,\n   50 |         }",
+          "tool_call_id": "c08-order-name-limit-adv-1-t1"
+        }
+      ],
+      "status": "Verified",
+      "status_reason": "ablation no-falsification: reported on 1 evidence item(s),                          unadjudicated"
+    }
+  ],
+  "usage": {
+    "input_tokens": 4846,
+    "output_tokens": 1344,
+    "total_tokens": 6190
+  },
+  "cost_usd": 0.008674499999999998,
+  "runtime_ms": 15654,
+  "llm_calls": 4,
+  "tool_calls": 1,
+  "retries": 0
+}

@@ -19,9 +19,9 @@ half that can be tested, and 174 tests do test it.
 | `repo.rs` | Sandboxed filesystem access | The single boundary between an agent and the disk |
 | `tools.rs` | `search`, `read`, `list_files` | The only source of `Evidence` in the system |
 | `llm/` | Vertex client, retries, JSON extraction, offline stub | Isolates every provider quirk |
-| `prompts.rs` | All prompt text, versioned | A result can always be traced to the exact instructions that produced it |
-| `agent/baseline.rs` | One-pass reviewer | The fair comparison point |
-| `agent/advanced.rs` | Five-stage pipeline and the decision gate | The system under test |
+| `prompts.rs` | All five roles' instructions, versioned independently | A result can always be traced to the exact instructions that produced it |
+| `agent/baseline.rs` | The baseline's single reviewer role | The fair comparison point |
+| `agent/advanced.rs` | Orchestration of four roles, and the decision gate | The system under test |
 | `eval.rs` | Deterministic matching and metrics | No model anywhere near scoring |
 | `trajectory.rs` | Full execution record | Auditability |
 | `runner.rs` | Orchestration and aggregation | Keeps `main.rs` thin |
@@ -74,6 +74,25 @@ half that can be tested, and 174 tests do test it.
                  ▼
         human reviewer decides
 ```
+
+### Why four roles rather than one
+
+Each boundary in that diagram is a separate stateless request with its own
+versioned instructions, and each exists because collapsing it would break
+something specific:
+
+| Boundary | What collapsing it would cost |
+|---|---|
+| Reviewer / Falsifier | A request asked to state a claim *and* to say what would refute it tends to produce a question shaped to fit the claim. |
+| Falsifier / Investigator | The investigator is steered by the question, not the claim. That is what makes it hunt for the disproof rather than for confirmation. |
+| Investigator / Verifier | The verifier must not see the investigation's running commentary — only what the tools actually returned. |
+| Anything / Verifier | The verifier is the only role that can stop a finding. It must not know who is asking. |
+
+This is orchestration doing work, not orchestration for its own sake — and the
+distinction is measured rather than asserted. `--ablation` switches off one
+role at a time so each one's contribution appears in the results table, and any
+component that turns out to earn nothing is reported as such in the
+[changelog](improvement-changelog.md) instead of being presented as a feature.
 
 ### Why the falsification question is its own call
 

@@ -1,0 +1,15 @@
+{
+  "case_id": "p01-retry-swallows-failure",
+  "expected_findings": [
+    {
+      "id": "p01-f1",
+      "issue_type": "ErrorHandling",
+      "also_accept": ["Correctness", "ApiContract"],
+      "file": "src/uploader.py",
+      "start_line": 35,
+      "end_line": 37,
+      "description": "Returning `None` after exhausting the retries converts a reported failure into a silent one. `upload_all` appends the `None` straight into `receipts`, and `build_manifest` in src/manifest.py dereferences `r.etag` for every receipt, so a permanently failing chunk raises `AttributeError: 'NoneType' object has no attribute 'etag'` far from the upload that actually failed. The bare `except Exception` also captures the exception into `last` and then discards it, so the original transport error is lost."
+    }
+  ],
+  "notes": "PILOT CASE - Python. Not part of the frozen Rust benchmark and not included in any headline figure.\n\nThis mirrors the shape of the Rust challenging cases: the change looks like a defensible API simplification within the changed file, and what makes it a defect lives in a file the change does not touch. Establishing it requires finding the consumer of the return value.\n\nThe three existing tests pass and always will: `FlakyTransport` is constructed with `fail_times` at most 2 against `max_attempts=3`, so the exhausted path is never exercised. `test_uploads_every_chunk` builds a manifest successfully because every receipt is real.\n\nVerified by execution: a transport that always raises makes `upload_chunk` return None, and `build_manifest` then raises AttributeError.\n\nalso_accept covers Correctness and ApiContract, both defensible readings of a function that silently returns a sentinel its consumer cannot handle."
+}

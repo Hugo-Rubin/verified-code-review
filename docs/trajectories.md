@@ -4,7 +4,25 @@ Every run this project reports is recorded in full. Nothing is summarised at
 write time and nothing is discarded — including candidates that were rejected,
 model calls that failed, and retries.
 
-There are **two agents**, and representative trajectories for both are below.
+There are **two systems** under comparison, and **five agent roles** between
+them. Representative trajectories covering every role are below.
+
+| System | Roles | Prompt |
+|---|---|---|
+| Baseline | Reviewer | `baseline-review/v2` |
+| Advanced | Reviewer | `advanced-review/v5` |
+| | Falsifier | `advanced-falsify/v2` |
+| | Investigator | `advanced-investigate/v1` |
+| | Fresh verifier | `fresh-verify/v5` |
+
+Each role is a separate stateless request with its own instructions. In a
+trajectory they are distinguishable by the `stage` and `prompt_version` fields
+on every `LlmCall`, so you can read any single role's contribution in
+isolation:
+
+```bash
+python -c "import json,sys; t=json.load(open(sys.argv[1])); [print(e['stage'], e['prompt_version']) for e in t['events'] if e['event']=='LlmCall']" results/trajectories/advanced/c12-slot-guard-capacity-advanced.json
+```
 
 - **Raw records:** [`../results/trajectories/`](../results/trajectories/) —
   24 JSON files, one per (case, agent).
@@ -49,7 +67,7 @@ provider error text passes through a scrubber before it is stored.
 
 ---
 
-## Agent 1 — Baseline reviewer
+## System 1 — Baseline: a single reviewer role
 
 One model call. Diff plus the full contents of every changed file, in, findings
 out. There is no investigation stage and no verification stage, so every
@@ -79,11 +97,17 @@ about insufficient information.
 
 ---
 
-## Agent 2 — Advanced reviewer
+## System 2 — Advanced: four roles, orchestrated by Rust
 
-Five stages: candidate → falsification question → investigation → fresh-context
-verification → decision. The falsification and verification stages are separate
-stateless requests, so the verifier never inherits the reviewer's reasoning.
+Reviewer → falsifier → investigator → fresh verifier, then a decision made in
+Rust. Each role is a separate stateless request, which is what stops the
+verifier inheriting the reviewer's reasoning.
+
+In the trajectories below, watch the `stage` on each model call change from
+`Review` to `Falsify` to `Investigate` to `Verify`. Those are four different
+sets of instructions, not one agent talking to itself: nothing carries between
+them except the artifacts the orchestrator chooses to pass on — the claim, the
+question, and evidence built by Rust from bytes on disk.
 
 ### [`c12-slot-guard-capacity-advanced.md`](trajectories/c12-slot-guard-capacity-advanced.md) — the headline execution
 

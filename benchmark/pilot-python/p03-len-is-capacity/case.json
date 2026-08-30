@@ -1,0 +1,7 @@
+{
+  "case_id": "p03-len-is-capacity",
+  "language": "Python",
+  "title": "Add read endpoints over the paged cache",
+  "description": "A new `api` module exposes `fetch` for a single slot and `fetch_many` for several. Both are bounds-checked and return `None` or skip the entry rather than raising on an out-of-range index.",
+  "category": "Challenging"
+}

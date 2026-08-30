@@ -242,6 +242,82 @@ cargo run --quiet --bin vcr -- evaluate --agent advanced --out results
 cargo run --quiet --bin vcr -- report --out results
 ```
 
+## 12. Optional: the rest of the evaluation
+
+### Repeated trials and variance
+
+One run of an arm is a sample, not a measurement — LLM output is
+nondeterministic even at temperature 0. This runs each arm several times and
+reports the spread:
+
+```bash
+pwsh scripts/run_trials.ps1 -Trials 3 -Root results-trials
+```
+
+~55 minutes and roughly $1.10 at the rates in `.env`. It writes
+`results-trials/t1/`, `t2/`, `t3/`, each with the same layout as a normal run,
+then prints the summary. To re-print it later without re-running:
+
+```bash
+cargo run --quiet --bin vcr -- variance --root results-trials
+```
+
+The output names the specific cases whose true-positive count differed between
+trials. That is more informative than a standard deviation: it is the
+difference between "F1 moved a little" and "these two cases trade places".
+
+### Ablations — what each stage contributes
+
+```bash
+cargo run --quiet --bin vcr -- run --agent advanced --ablation no-falsification --out results
+```
+
+| Ablation | What it switches off |
+|---|---|
+| `no-falsification` | The falsification question and the fresh-context verifier. Investigation still runs; any candidate with evidence is reported. |
+| `no-followup` | The feedback loop only. An "Insufficient" verdict never triggers a second targeted look. |
+| `candidates-only` | Investigation and verification both. Isolates the prompt from the machinery. |
+
+Each writes `summary-advanced-<ablation>.json` and its own trajectory
+directory, so an ablation can never overwrite a full run. Evaluate one with the
+matching flag:
+
+```bash
+cargo run --quiet --bin vcr -- evaluate --agent advanced --ablation no-falsification --out results
+```
+
+### Measuring real human review time
+
+The `Findings to triage/case` figure in the comparison table is a proxy. To
+replace it with a stopwatch measurement:
+
+```bash
+cargo run --quiet --bin vcr -- triage --arms baseline,advanced --reviewer your-name --out results
+```
+
+Findings from both arms are pooled, shuffled, and shown one at a time with no
+indication of which system produced them and no access to ground truth. You
+decide `r` (real defect), `n` (not a bug), or `u` (unsure); open the repository
+and read the code, because that reading time is the thing being measured.
+
+Only the claim and its location are shown — not the gathered evidence, not the
+verifier's verdict. That deliberately understates the advanced system's
+benefit, and it is what keeps the arms indistinguishable. The limitation is
+written into `results/triage-session.json` alongside the numbers.
+
+Budget 20–40 minutes depending on how carefully you read.
+
+### The Python pilot
+
+A separate three-case benchmark demonstrating that the pipeline is not
+Rust-specific. It is **not** part of any headline figure:
+
+```bash
+cargo run --quiet --bin vcr -- run --agent advanced --benchmark benchmark/pilot-python --out results-pilot
+```
+
+See [`pilot-python.md`](pilot-python.md).
+
 ## Expected output
 
 The reported run produced:

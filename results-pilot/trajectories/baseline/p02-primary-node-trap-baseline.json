@@ -1,0 +1,63 @@
+{
+  "trajectory_id": "f7d69a65-3f1c-44ab-bc05-2e53cef4bad4",
+  "case_id": "p02-primary-node-trap",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-30T19:58:02.074609300+00:00",
+  "finished_at": "2026-08-30T19:58:14.122204600+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Python reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\nA new `status` module summarises a cluster: its node count, the name of the primary node, and how many nodes are unhealthy. The first node is the primary by convention.\n\n## Diff\n\n```diff\n--- /dev/null\n+++ b/src/status.py\n@@ -0,0 +1,19 @@\n+\"\"\"Cluster status reporting.\"\"\"\n+\n+\n+def status_report(cluster):\n+    \"\"\"Summarise a cluster's health.\n+\n+    The first node is the primary by convention.\n+    \"\"\"\n+    nodes = cluster.nodes()\n+\n+    return {\n+        \"total\": len(nodes),\n+        \"primary\": nodes[0].name,\n+        \"unhealthy\": len(cluster.unhealthy()),\n+    }\n+\n+\n+def all_healthy(report):\n+    return report[\"unhealthy\"] == 0\n\n```\n\n## Current contents of the changed files\n\n\n### src/status.py\n\n```python\n    1 | \"\"\"Cluster status reporting.\"\"\"\n    2 | \n    3 | \n    4 | def status_report(cluster):\n    5 |     \"\"\"Summarise a cluster's health.\n    6 | \n    7 |     The first node is the primary by convention.\n    8 |     \"\"\"\n    9 |     nodes = cluster.nodes()\n   10 | \n   11 |     return {\n   12 |         \"total\": len(nodes),\n   13 |         \"primary\": nodes[0].name,\n   14 |         \"unhealthy\": len(cluster.unhealthy()),\n   15 |     }\n   16 | \n   17 | \n   18 | def all_healthy(report):\n   19 |     return report[\"unhealthy\"] == 0\n```\n",
+      "response_text": "{\n  \"findings\": []\n}",
+      "usage": {
+        "input_tokens": 766,
+        "output_tokens": 1325,
+        "total_tokens": 2091
+      },
+      "latency_ms": 12046,
+      "attempts": 1
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "0 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [],
+  "usage": {
+    "input_tokens": 766,
+    "output_tokens": 1325,
+    "total_tokens": 2091
+  },
+  "cost_usd": 0.00554325,
+  "runtime_ms": 12047,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

@@ -1,0 +1,424 @@
+{
+  "trajectory_id": "245bc99a-4db5-445e-981f-bfe6df9df9e3",
+  "case_id": "c05-timeout-parse-default",
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-30T19:19:39.025379300+00:00",
+  "finished_at": "2026-08-30T19:20:05.148184700+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "NoFalsification"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "ABLATION: no-falsification — this run deliberately disables part of the pipeline and is                  not the full system"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "advanced-review/v5",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nYou are producing CANDIDATE findings, not final ones. Nothing you write here\nreaches a human directly. Each candidate is investigated against the actual\nrepository and then independently adjudicated, and only what survives is\nreported. A candidate that turns out to be wrong costs almost nothing. A real\ndefect you never raised is never checked at all.\n\nSo err toward proposing. Raise anything a careful reviewer would want confirmed\nbefore approving this change, including things you expect will turn out to be\nfine.\n\n- Anchor each candidate to a specific file and line range.\n- State each claim as something that can actually happen, not as a\n  conditional. Write \"callers can reach this with an empty list, and it will\n  panic\", not \"this will panic if the list is empty\" — the second is true of\n  the code whether or not the situation ever arises, so it cannot be\n  disproved and is not a finding.\n- State each claim as a single falsifiable sentence — something repository\n  evidence could confirm or refute.\n- Every candidate must name a consequence: what goes wrong, and for whom.\n  Incorrect output, a panic, data loss, a violated contract, a security\n  consequence, or a real cost at the scale this code runs at. If you cannot\n  finish the sentence \"and so the user gets...\", it is not a candidate.\n  Missing trait derives, a signature that is more fallible than it needs to\n  be, and unused declarations are observations about the code, not defects —\n  leave them out. The investigation stage can settle whether a claim is true;\n  it cannot make a true triviality worth a reviewer's time.\n- Pay particular attention to anything whose correctness depends on facts that\n  are not visible in the changed files. If the code is only correct given some\n  assumption about the rest of the repository, that assumption is a candidate.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Avoid vague concerns such as \"this looks fragile\"; say what would go wrong.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nReturn {\"findings\": []} only if there is genuinely nothing worth checking.\n\nUnder-proposing is the expensive mistake at this stage. Include a candidate\neven when you suspect it is fine, and in particular whenever the code's\ncorrectness depends on something you cannot see in the changed files — a\ncaller, a constructor, an invariant asserted in a comment, a value's origin.\nThose are the candidates the investigation stage exists to settle, and it can\nonly settle the ones you raise.",
+      "user": "## Change under review\n\n`request_timeout` previously returned `Result<Duration, ConfigError>`, which forced every call site to handle an error that in practice never came up. It now returns a `Duration` directly and falls back when the configured value cannot be parsed, removing the error handling from the callers.\n\n## Diff\n\n```diff\n--- a/src/config.rs\r\n+++ b/src/config.rs\r\n@@ -16,14 +16,10 @@\r\n }\r\n \r\n /// Resolve the request timeout from its raw configured value.\r\n-pub fn request_timeout(raw: Option<&str>) -> Result<Duration, ConfigError> {\r\n+pub fn request_timeout(raw: Option<&str>) -> Duration {\r\n     match raw {\r\n-        None => Ok(Duration::from_secs(DEFAULT_TIMEOUT_SECS)),\r\n-        Some(s) => s\r\n-            .trim()\r\n-            .parse()\r\n-            .map(Duration::from_secs)\r\n-            .map_err(|_| ConfigError::NotANumber(s.to_string())),\r\n+        None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\r\n+        Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\r\n     }\r\n }\r\n \r\n@@ -38,17 +34,17 @@\r\n \r\n     #[test]\r\n     fn uses_the_default_when_unset() {\r\n-        assert_eq!(request_timeout(None).unwrap(), Duration::from_secs(30));\r\n+        assert_eq!(request_timeout(None), Duration::from_secs(30));\r\n     }\r\n \r\n     #[test]\r\n     fn parses_a_configured_value() {\r\n-        assert_eq!(request_timeout(Some(\"5\")).unwrap(), Duration::from_secs(5));\r\n-        assert_eq!(request_timeout(Some(\" 90 \")).unwrap(), Duration::from_secs(90));\r\n+        assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\r\n+        assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\r\n     }\r\n \r\n     #[test]\r\n     fn zero_means_unbounded() {\r\n-        assert!(is_unbounded(request_timeout(Some(\"0\")).unwrap()));\r\n+        assert!(is_unbounded(request_timeout(Some(\"0\"))));\r\n     }\r\n }\r\n\n```\n\n## Current contents of the changed files\n\n\n### src/config.rs\n\n```rust\n    1 | //! Runtime configuration.\n    2 | \n    3 | use std::time::Duration;\n    4 | \n    5 | /// Timeout applied when the operator sets nothing.\n    6 | pub const DEFAULT_TIMEOUT_SECS: u64 = 30;\n    7 | \n    8 | /// A timeout of zero disables the deadline entirely: the client will wait\n    9 | /// forever. This is intentional, and is how operators opt out of timeouts on\n   10 | /// long-running administrative endpoints.\n   11 | pub const NO_TIMEOUT: Duration = Duration::from_secs(0);\n   12 | \n   13 | #[derive(Debug, PartialEq, Eq)]\n   14 | pub enum ConfigError {\n   15 |     NotANumber(String),\n   16 | }\n   17 | \n   18 | /// Resolve the request timeout from its raw configured value.\n   19 | pub fn request_timeout(raw: Option<&str>) -> Duration {\n   20 |     match raw {\n   21 |         None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\n   22 |         Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\n   23 |     }\n   24 | }\n   25 | \n   26 | /// True when `timeout` means \"wait indefinitely\".\n   27 | pub fn is_unbounded(timeout: Duration) -> bool {\n   28 |     timeout == NO_TIMEOUT\n   29 | }\n   30 | \n   31 | #[cfg(test)]\n   32 | mod tests {\n   33 |     use super::*;\n   34 | \n   35 |     #[test]\n   36 |     fn uses_the_default_when_unset() {\n   37 |         assert_eq!(request_timeout(None), Duration::from_secs(30));\n   38 |     }\n   39 | \n   40 |     #[test]\n   41 |     fn parses_a_configured_value() {\n   42 |         assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\n   43 |         assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\n   44 |     }\n   45 | \n   46 |     #[test]\n   47 |     fn zero_means_unbounded() {\n   48 |         assert!(is_unbounded(request_timeout(Some(\"0\"))));\n   49 |     }\n   50 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Correctness\",\n      \"severity\": \"High\",\n      \"file\": \"src/config.rs\",\n      \"start_line\": 19,\n      \"end_line\": 24,\n      \"claim\": \"Invalid timeout configuration strings silently resolve to zero, which disables request timeouts entirely rather than falling back to the default timeout.\",\n      \"reasoning\": \"When `s.trim().parse()` fails on unparseable inputs, `unwrap_or(0)` produces `0` seconds, which according to the doc comment on `NO_TIMEOUT` intentionally disables deadlines and causes clients to wait forever. An operator with a malformed configuration string will unintentionally disable timeouts across all requests instead of using `DEFAULT_TIMEOUT_SECS`.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 1959,
+        "output_tokens": 675,
+        "total_tokens": 2634
+      },
+      "latency_ms": 6774,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c05-timeout-parse-default-adv-1",
+        "issue_type": "Correctness",
+        "severity": "High",
+        "location": {
+          "file": "src/config.rs",
+          "start_line": 19,
+          "end_line": 24
+        },
+        "claim": "Invalid timeout configuration strings silently resolve to zero, which disables request timeouts entirely rather than falling back to the default timeout.",
+        "reasoning": "When `s.trim().parse()` fails on unparseable inputs, `unwrap_or(0)` produces `0` seconds, which according to the doc comment on `NO_TIMEOUT` intentionally disables deadlines and causes clients to wait forever. An operator with a malformed configuration string will unintentionally disable timeouts across all requests instead of using `DEFAULT_TIMEOUT_SECS`."
+      }
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Falsify",
+      "prompt_version": "advanced-falsify/v2",
+      "system": "You are helping test a code-review finding.\n\nGiven a claim about a defect, write the single most decisive question whose\nanswer would show the claim is WRONG. The question must be answerable by\ninspecting the repository: callers, implementations, tests, configuration, or\ntype definitions.\n\nAsk about the thing the claim actually depends on, not about the mechanism.\nWhether a function panics on a bad input is usually not in doubt and can be\nread off the body; whether anything ever hands it a bad input is the question.\nSo when a claim rests on how the code is used, ask about the call sites by\nname.\n\nGood: \"Does every caller of parse_row check is_empty() before indexing?\"\nBad:  \"Does parse_row panic when the row is empty?\"  (asks the mechanism)\nBad:  \"Is this code correct?\"                        (unanswerable)\n\nNever make a comment the answer. If a doc comment already asserts the\nprecondition, the question is whether the callers honour it.\n\nReturn JSON of exactly this shape:\n\n{\"falsification_question\": \"<one question>\"}",
+      "user": "Claim: Invalid timeout configuration strings silently resolve to zero, which disables request timeouts entirely rather than falling back to the default timeout.\nLocation: src/config.rs:19-24\nReviewer's reasoning: When `s.trim().parse()` fails on unparseable inputs, `unwrap_or(0)` produces `0` seconds, which according to the doc comment on `NO_TIMEOUT` intentionally disables deadlines and causes clients to wait forever. An operator with a malformed configuration string will unintentionally disable timeouts across all requests instead of using `DEFAULT_TIMEOUT_SECS`.\n\nWhat evidence would prove this claim wrong?",
+      "response_text": "{\"falsification_question\": \"Does the request timeout logic treat a timeout value of 0 as a trigger to use DEFAULT_TIMEOUT_SECS rather than disabling timeouts?\"}",
+      "usage": {
+        "input_tokens": 372,
+        "output_tokens": 480,
+        "total_tokens": 852
+      },
+      "latency_ms": 5481,
+      "attempts": 1
+    },
+    {
+      "event": "FalsificationQuestion",
+      "candidate_id": "c05-timeout-parse-default-adv-1",
+      "question": "Does the request timeout logic treat a timeout value of 0 as a trigger to use DEFAULT_TIMEOUT_SECS rather than disabling timeouts?"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nInvalid timeout configuration strings silently resolve to zero, which disables request timeouts entirely rather than falling back to the default timeout.\n\nLocation: src/config.rs:19-24\n\n## Falsification question\n\nDoes the request timeout logic treat a timeout value of 0 as a trigger to use DEFAULT_TIMEOUT_SECS rather than disabling timeouts?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/config.rs\r\n+++ b/src/config.rs\r\n@@ -16,14 +16,10 @@\r\n }\r\n \r\n /// Resolve the request timeout from its raw configured value.\r\n-pub fn request_timeout(raw: Option<&str>) -> Result<Duration, ConfigError> {\r\n+pub fn request_timeout(raw: Option<&str>) -> Duration {\r\n     match raw {\r\n-        None => Ok(Duration::from_secs(DEFAULT_TIMEOUT_SECS)),\r\n-        Some(s) => s\r\n-            .trim()\r\n-            .parse()\r\n-            .map(Duration::from_secs)\r\n-            .map_err(|_| ConfigError::NotANumber(s.to_string())),\r\n+        None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\r\n+        Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\r\n     }\r\n }\r\n \r\n@@ -38,17 +34,17 @@\r\n \r\n     #[test]\r\n     fn uses_the_default_when_unset() {\r\n-        assert_eq!(request_timeout(None).unwrap(), Duration::from_secs(30));\r\n+        assert_eq!(request_timeout(None), Duration::from_secs(30));\r\n     }\r\n \r\n     #[test]\r\n     fn parses_a_configured_value() {\r\n-        assert_eq!(request_timeout(Some(\"5\")).unwrap(), Duration::from_secs(5));\r\n-        assert_eq!(request_timeout(Some(\" 90 \")).unwrap(), Duration::from_secs(90));\r\n+        assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\r\n+        assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\r\n     }\r\n \r\n     #[test]\r\n     fn zero_means_unbounded() {\r\n-        assert!(is_unbounded(request_timeout(Some(\"0\")).unwrap()));\r\n+        assert!(is_unbounded(request_timeout(Some(\"0\"))));\r\n     }\r\n }\r\n\n```\n\n## Investigation so far\n\n(nothing yet)\n\nWhat is your next step?",
+      "response_text": "{\n  \"arguments\": {\n    \"pattern\": \"request_timeout\"\n  },\n  \"done\": false,\n  \"rationale\": \"Search for where `request_timeout` is used across the codebase to see how a Duration of 0 or the returned timeout value is handled.\",\n  \"tool\": \"search\"\n}",
+      "usage": {
+        "input_tokens": 925,
+        "output_tokens": 143,
+        "total_tokens": 1068
+      },
+      "latency_ms": 2134,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "c05-timeout-parse-default-adv-1-t1",
+      "candidate_id": "c05-timeout-parse-default-adv-1",
+      "tool": "search",
+      "arguments": {
+        "pattern": "request_timeout"
+      },
+      "response": "6 match(es) for \"request_timeout\":\nsrc/config.rs:19: pub fn request_timeout(raw: Option<&str>) -> Duration {\nsrc/config.rs:37:         assert_eq!(request_timeout(None), Duration::from_secs(30));\nsrc/config.rs:42:         assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\nsrc/config.rs:43:         assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\nsrc/config.rs:48:         assert!(is_unbounded(request_timeout(Some(\"0\"))));\nsrc/lib.rs:5: pub use config::{is_unbounded, request_timeout, ConfigError, DEFAULT_TIMEOUT_SECS, NO_TIMEOUT};\n",
+      "ok": true,
+      "duration_ms": 1
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nInvalid timeout configuration strings silently resolve to zero, which disables request timeouts entirely rather than falling back to the default timeout.\n\nLocation: src/config.rs:19-24\n\n## Falsification question\n\nDoes the request timeout logic treat a timeout value of 0 as a trigger to use DEFAULT_TIMEOUT_SECS rather than disabling timeouts?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/config.rs\r\n+++ b/src/config.rs\r\n@@ -16,14 +16,10 @@\r\n }\r\n \r\n /// Resolve the request timeout from its raw configured value.\r\n-pub fn request_timeout(raw: Option<&str>) -> Result<Duration, ConfigError> {\r\n+pub fn request_timeout(raw: Option<&str>) -> Duration {\r\n     match raw {\r\n-        None => Ok(Duration::from_secs(DEFAULT_TIMEOUT_SECS)),\r\n-        Some(s) => s\r\n-            .trim()\r\n-            .parse()\r\n-            .map(Duration::from_secs)\r\n-            .map_err(|_| ConfigError::NotANumber(s.to_string())),\r\n+        None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\r\n+        Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\r\n     }\r\n }\r\n \r\n@@ -38,17 +34,17 @@\r\n \r\n     #[test]\r\n     fn uses_the_default_when_unset() {\r\n-        assert_eq!(request_timeout(None).unwrap(), Duration::from_secs(30));\r\n+        assert_eq!(request_timeout(None), Duration::from_secs(30));\r\n     }\r\n \r\n     #[test]\r\n     fn parses_a_configured_value() {\r\n-        assert_eq!(request_timeout(Some(\"5\")).unwrap(), Duration::from_secs(5));\r\n-        assert_eq!(request_timeout(Some(\" 90 \")).unwrap(), Duration::from_secs(90));\r\n+        assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\r\n+        assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\r\n     }\r\n \r\n     #[test]\r\n     fn zero_means_unbounded() {\r\n-        assert!(is_unbounded(request_timeout(Some(\"0\")).unwrap()));\r\n+        assert!(is_unbounded(request_timeout(Some(\"0\"))));\r\n     }\r\n }\r\n\n```\n\n## Investigation so far\n\n\n--- step 1 : search {\"pattern\":\"request_timeout\"} ---\n6 match(es) for \"request_timeout\":\nsrc/config.rs:19: pub fn request_timeout(raw: Option<&str>) -> Duration {\nsrc/config.rs:37:         assert_eq!(request_timeout(None), Duration::from_secs(30));\nsrc/config.rs:42:         assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\nsrc/config.rs:43:         assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\nsrc/config.rs:48:         assert!(is_unbounded(request_timeout(Some(\"0\"))));\nsrc/lib.rs:5: pub use config::{is_unbounded, request_timeout, ConfigError, DEFAULT_TIMEOUT_SECS, NO_TIMEOUT};\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": false,\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"file\": \"src/config.rs\",\n    \"start_line\": 1,\n    \"end_line\": 55\n  },\n  \"rationale\": \"Read src/config.rs to check is_unbounded, NO_TIMEOUT, and how a timeout value of 0 is treated across the config module.\"\n}",
+      "usage": {
+        "input_tokens": 1131,
+        "output_tokens": 170,
+        "total_tokens": 1301
+      },
+      "latency_ms": 2506,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "c05-timeout-parse-default-adv-1-t2",
+      "candidate_id": "c05-timeout-parse-default-adv-1",
+      "tool": "read",
+      "arguments": {
+        "end_line": 55,
+        "file": "src/config.rs",
+        "start_line": 1
+      },
+      "response": "src/config.rs lines 1-50 of 50:\n    1 | //! Runtime configuration.\n    2 | \n    3 | use std::time::Duration;\n    4 | \n    5 | /// Timeout applied when the operator sets nothing.\n    6 | pub const DEFAULT_TIMEOUT_SECS: u64 = 30;\n    7 | \n    8 | /// A timeout of zero disables the deadline entirely: the client will wait\n    9 | /// forever. This is intentional, and is how operators opt out of timeouts on\n   10 | /// long-running administrative endpoints.\n   11 | pub const NO_TIMEOUT: Duration = Duration::from_secs(0);\n   12 | \n   13 | #[derive(Debug, PartialEq, Eq)]\n   14 | pub enum ConfigError {\n   15 |     NotANumber(String),\n   16 | }\n   17 | \n   18 | /// Resolve the request timeout from its raw configured value.\n   19 | pub fn request_timeout(raw: Option<&str>) -> Duration {\n   20 |     match raw {\n   21 |         None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\n   22 |         Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\n   23 |     }\n   24 | }\n   25 | \n   26 | /// True when `timeout` means \"wait indefinitely\".\n   27 | pub fn is_unbounded(timeout: Duration) -> bool {\n   28 |     timeout == NO_TIMEOUT\n   29 | }\n   30 | \n   31 | #[cfg(test)]\n   32 | mod tests {\n   33 |     use super::*;\n   34 | \n   35 |     #[test]\n   36 |     fn uses_the_default_when_unset() {\n   37 |         assert_eq!(request_timeout(None), Duration::from_secs(30));\n   38 |     }\n   39 | \n   40 |     #[test]\n   41 |     fn parses_a_configured_value() {\n   42 |         assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\n   43 |         assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\n   44 |     }\n   45 | \n   46 |     #[test]\n   47 |     fn zero_means_unbounded() {\n   48 |         assert!(is_unbounded(request_timeout(Some(\"0\"))));\n   49 |     }\n   50 | }\n... stopped at line 50 (read limit 200 lines)\n",
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nInvalid timeout configuration strings silently resolve to zero, which disables request timeouts entirely rather than falling back to the default timeout.\n\nLocation: src/config.rs:19-24\n\n## Falsification question\n\nDoes the request timeout logic treat a timeout value of 0 as a trigger to use DEFAULT_TIMEOUT_SECS rather than disabling timeouts?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/config.rs\r\n+++ b/src/config.rs\r\n@@ -16,14 +16,10 @@\r\n }\r\n \r\n /// Resolve the request timeout from its raw configured value.\r\n-pub fn request_timeout(raw: Option<&str>) -> Result<Duration, ConfigError> {\r\n+pub fn request_timeout(raw: Option<&str>) -> Duration {\r\n     match raw {\r\n-        None => Ok(Duration::from_secs(DEFAULT_TIMEOUT_SECS)),\r\n-        Some(s) => s\r\n-            .trim()\r\n-            .parse()\r\n-            .map(Duration::from_secs)\r\n-            .map_err(|_| ConfigError::NotANumber(s.to_string())),\r\n+        None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\r\n+        Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\r\n     }\r\n }\r\n \r\n@@ -38,17 +34,17 @@\r\n \r\n     #[test]\r\n     fn uses_the_default_when_unset() {\r\n-        assert_eq!(request_timeout(None).unwrap(), Duration::from_secs(30));\r\n+        assert_eq!(request_timeout(None), Duration::from_secs(30));\r\n     }\r\n \r\n     #[test]\r\n     fn parses_a_configured_value() {\r\n-        assert_eq!(request_timeout(Some(\"5\")).unwrap(), Duration::from_secs(5));\r\n-        assert_eq!(request_timeout(Some(\" 90 \")).unwrap(), Duration::from_secs(90));\r\n+        assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\r\n+        assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\r\n     }\r\n \r\n     #[test]\r\n     fn zero_means_unbounded() {\r\n-        assert!(is_unbounded(request_timeout(Some(\"0\")).unwrap()));\r\n+        assert!(is_unbounded(request_timeout(Some(\"0\"))));\r\n     }\r\n }\r\n\n```\n\n## Investigation so far\n\n\n--- step 1 : search {\"pattern\":\"request_timeout\"} ---\n6 match(es) for \"request_timeout\":\nsrc/config.rs:19: pub fn request_timeout(raw: Option<&str>) -> Duration {\nsrc/config.rs:37:         assert_eq!(request_timeout(None), Duration::from_secs(30));\nsrc/config.rs:42:         assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\nsrc/config.rs:43:         assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\nsrc/config.rs:48:         assert!(is_unbounded(request_timeout(Some(\"0\"))));\nsrc/lib.rs:5: pub use config::{is_unbounded, request_timeout, ConfigError, DEFAULT_TIMEOUT_SECS, NO_TIMEOUT};\n\n\n--- step 2 : read {\"end_line\":55,\"file\":\"src/config.rs\",\"start_line\":1} ---\nsrc/config.rs lines 1-50 of 50:\n    1 | //! Runtime configuration.\n    2 | \n    3 | use std::time::Duration;\n    4 | \n    5 | /// Timeout applied when the operator sets nothing.\n    6 | pub const DEFAULT_TIMEOUT_SECS: u64 = 30;\n    7 | \n    8 | /// A timeout of zero disables the deadline entirely: the client will wait\n    9 | /// forever. This is intentional, and is how operators opt out of timeouts on\n   10 | /// long-running administrative endpoints.\n   11 | pub const NO_TIMEOUT: Duration = Duration::from_secs(0);\n   12 | \n   13 | #[derive(Debug, PartialEq, Eq)]\n   14 | pub enum ConfigError {\n   15 |     NotANumber(String),\n   16 | }\n   17 | \n   18 | /// Resolve the request timeout from its raw configured value.\n   19 | pub fn request_timeout(raw: Option<&str>) -> Duration {\n   20 |     match raw {\n   21 |         None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\n   22 |         Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\n   23 |     }\n   24 | }\n   25 | \n   26 | /// True when `timeout` means \"wait indefinitely\".\n   27 | pub fn is_unbounded(timeout: Duration) -> bool {\n   28 |     timeout == NO_TIMEOUT\n   29 | }\n   30 | \n   31 | #[cfg(test)]\n   32 | mod tests {\n   33 |     use super::*;\n   34 | \n   35 |     #[test]\n   36 |     fn uses_the_default_when_unset() {\n   37 |         assert_eq!(request_timeout(None), Duration::from_secs(30));\n   38 |     }\n   39 | \n   40 |     #[test]\n   41 |     fn parses_a_configured_value() {\n   42 |         assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\n   43 |         assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\n   44 |     }\n   45 | \n   46 |     #[test]\n   47 |     fn zero_means_unbounded() {\n   48 |         assert!(is_unbounded(request_timeout(Some(\"0\"))));\n   49 |     }\n   50 | }\n... stopped at line 50 (read limit 200 lines)\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": false,\n  \"tool\": \"search\",\n  \"arguments\": {\n    \"pattern\": \"DEFAULT_TIMEOUT_SECS\"\n  },\n  \"rationale\": \"Check where DEFAULT_TIMEOUT_SECS is used to see if a 0 timeout value triggers fallback to DEFAULT_TIMEOUT_SECS anywhere.\"\n}",
+      "usage": {
+        "input_tokens": 1811,
+        "output_tokens": 396,
+        "total_tokens": 2207
+      },
+      "latency_ms": 3779,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "c05-timeout-parse-default-adv-1-t3",
+      "candidate_id": "c05-timeout-parse-default-adv-1",
+      "tool": "search",
+      "arguments": {
+        "pattern": "DEFAULT_TIMEOUT_SECS"
+      },
+      "response": "3 match(es) for \"DEFAULT_TIMEOUT_SECS\":\nsrc/config.rs:6: pub const DEFAULT_TIMEOUT_SECS: u64 = 30;\nsrc/config.rs:21:         None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\nsrc/lib.rs:5: pub use config::{is_unbounded, request_timeout, ConfigError, DEFAULT_TIMEOUT_SECS, NO_TIMEOUT};\n",
+      "ok": true,
+      "duration_ms": 1
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nInvalid timeout configuration strings silently resolve to zero, which disables request timeouts entirely rather than falling back to the default timeout.\n\nLocation: src/config.rs:19-24\n\n## Falsification question\n\nDoes the request timeout logic treat a timeout value of 0 as a trigger to use DEFAULT_TIMEOUT_SECS rather than disabling timeouts?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/config.rs\r\n+++ b/src/config.rs\r\n@@ -16,14 +16,10 @@\r\n }\r\n \r\n /// Resolve the request timeout from its raw configured value.\r\n-pub fn request_timeout(raw: Option<&str>) -> Result<Duration, ConfigError> {\r\n+pub fn request_timeout(raw: Option<&str>) -> Duration {\r\n     match raw {\r\n-        None => Ok(Duration::from_secs(DEFAULT_TIMEOUT_SECS)),\r\n-        Some(s) => s\r\n-            .trim()\r\n-            .parse()\r\n-            .map(Duration::from_secs)\r\n-            .map_err(|_| ConfigError::NotANumber(s.to_string())),\r\n+        None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\r\n+        Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\r\n     }\r\n }\r\n \r\n@@ -38,17 +34,17 @@\r\n \r\n     #[test]\r\n     fn uses_the_default_when_unset() {\r\n-        assert_eq!(request_timeout(None).unwrap(), Duration::from_secs(30));\r\n+        assert_eq!(request_timeout(None), Duration::from_secs(30));\r\n     }\r\n \r\n     #[test]\r\n     fn parses_a_configured_value() {\r\n-        assert_eq!(request_timeout(Some(\"5\")).unwrap(), Duration::from_secs(5));\r\n-        assert_eq!(request_timeout(Some(\" 90 \")).unwrap(), Duration::from_secs(90));\r\n+        assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\r\n+        assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\r\n     }\r\n \r\n     #[test]\r\n     fn zero_means_unbounded() {\r\n-        assert!(is_unbounded(request_timeout(Some(\"0\")).unwrap()));\r\n+        assert!(is_unbounded(request_timeout(Some(\"0\"))));\r\n     }\r\n }\r\n\n```\n\n## Investigation so far\n\n\n--- step 1 : search {\"pattern\":\"request_timeout\"} ---\n6 match(es) for \"request_timeout\":\nsrc/config.rs:19: pub fn request_timeout(raw: Option<&str>) -> Duration {\nsrc/config.rs:37:         assert_eq!(request_timeout(None), Duration::from_secs(30));\nsrc/config.rs:42:         assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\nsrc/config.rs:43:         assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\nsrc/config.rs:48:         assert!(is_unbounded(request_timeout(Some(\"0\"))));\nsrc/lib.rs:5: pub use config::{is_unbounded, request_timeout, ConfigError, DEFAULT_TIMEOUT_SECS, NO_TIMEOUT};\n\n\n--- step 2 : read {\"end_line\":55,\"file\":\"src/config.rs\",\"start_line\":1} ---\nsrc/config.rs lines 1-50 of 50:\n    1 | //! Runtime configuration.\n    2 | \n    3 | use std::time::Duration;\n    4 | \n    5 | /// Timeout applied when the operator sets nothing.\n    6 | pub const DEFAULT_TIMEOUT_SECS: u64 = 30;\n    7 | \n    8 | /// A timeout of zero disables the deadline entirely: the client will wait\n    9 | /// forever. This is intentional, and is how operators opt out of timeouts on\n   10 | /// long-running administrative endpoints.\n   11 | pub const NO_TIMEOUT: Duration = Duration::from_secs(0);\n   12 | \n   13 | #[derive(Debug, PartialEq, Eq)]\n   14 | pub enum ConfigError {\n   15 |     NotANumber(String),\n   16 | }\n   17 | \n   18 | /// Resolve the request timeout from its raw configured value.\n   19 | pub fn request_timeout(raw: Option<&str>) -> Duration {\n   20 |     match raw {\n   21 |         None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\n   22 |         Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\n   23 |     }\n   24 | }\n   25 | \n   26 | /// True when `timeout` means \"wait indefinitely\".\n   27 | pub fn is_unbounded(timeout: Duration) -> bool {\n   28 |     timeout == NO_TIMEOUT\n   29 | }\n   30 | \n   31 | #[cfg(test)]\n   32 | mod tests {\n   33 |     use super::*;\n   34 | \n   35 |     #[test]\n   36 |     fn uses_the_default_when_unset() {\n   37 |         assert_eq!(request_timeout(None), Duration::from_secs(30));\n   38 |     }\n   39 | \n   40 |     #[test]\n   41 |     fn parses_a_configured_value() {\n   42 |         assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\n   43 |         assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\n   44 |     }\n   45 | \n   46 |     #[test]\n   47 |     fn zero_means_unbounded() {\n   48 |         assert!(is_unbounded(request_timeout(Some(\"0\"))));\n   49 |     }\n   50 | }\n... stopped at line 50 (read limit 200 lines)\n\n\n--- step 3 : search {\"pattern\":\"DEFAULT_TIMEOUT_SECS\"} ---\n3 match(es) for \"DEFAULT_TIMEOUT_SECS\":\nsrc/config.rs:6: pub const DEFAULT_TIMEOUT_SECS: u64 = 30;\nsrc/config.rs:21:         None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\nsrc/lib.rs:5: pub use config::{is_unbounded, request_timeout, ConfigError, DEFAULT_TIMEOUT_SECS, NO_TIMEOUT};\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": true,\n  \"tool\": null,\n  \"arguments\": null,\n  \"rationale\": \"In `src/config.rs`, `request_timeout` returns `Duration::from_secs(0)` when parsing fails (`unwrap_or(0)`). Lines 8-11 and 26-29 define `Duration::from_secs(0)` as `NO_TIMEOUT`, meaning unbounded/no timeout. `DEFAULT_TIMEOUT_SECS` is only returned when the input is `None`. Therefore, a timeout value of 0 does not trigger `DEFAULT_TIMEOUT_SECS`, but instead disables request timeouts.\"\n}",
+      "usage": {
+        "input_tokens": 1932,
+        "output_tokens": 628,
+        "total_tokens": 2560
+      },
+      "latency_ms": 5441,
+      "attempts": 1
+    },
+    {
+      "event": "EvidenceAssembled",
+      "candidate_id": "c05-timeout-parse-default-adv-1",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/config.rs",
+          "start_line": 4,
+          "end_line": 39,
+          "excerpt": "    4 | \n    5 | /// Timeout applied when the operator sets nothing.\n    6 | pub const DEFAULT_TIMEOUT_SECS: u64 = 30;\n    7 | \n    8 | /// A timeout of zero disables the deadline entirely: the client will wait\n    9 | /// forever. This is intentional, and is how operators opt out of timeouts on\n   10 | /// long-running administrative endpoints.\n   11 | pub const NO_TIMEOUT: Duration = Duration::from_secs(0);\n   12 | \n   13 | #[derive(Debug, PartialEq, Eq)]\n   14 | pub enum ConfigError {\n   15 |     NotANumber(String),\n   16 | }\n   17 | \n   18 | /// Resolve the request timeout from its raw configured value.\n   19 | pub fn request_timeout(raw: Option<&str>) -> Duration {\n   20 |     match raw {\n   21 |         None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\n   22 |         Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\n   23 |     }\n   24 | }\n   25 | \n   26 | /// True when `timeout` means \"wait indefinitely\".\n   27 | pub fn is_unbounded(timeout: Duration) -> bool {\n   28 |     timeout == NO_TIMEOUT\n   29 | }\n   30 | \n   31 | #[cfg(test)]\n   32 | mod tests {\n   33 |     use super::*;\n   34 | \n   35 |     #[test]\n   36 |     fn uses_the_default_when_unset() {\n   37 |         assert_eq!(request_timeout(None), Duration::from_secs(30));\n   38 |     }\n   39 | ",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-claimed-region"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 19,
+          "end_line": 19,
+          "symbol": "request_timeout",
+          "excerpt": "pub fn request_timeout(raw: Option<&str>) -> Duration {",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 37,
+          "end_line": 37,
+          "symbol": "request_timeout",
+          "excerpt": "        assert_eq!(request_timeout(None), Duration::from_secs(30));",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 42,
+          "end_line": 42,
+          "symbol": "request_timeout",
+          "excerpt": "        assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 43,
+          "end_line": 43,
+          "symbol": "request_timeout",
+          "excerpt": "        assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 48,
+          "end_line": 48,
+          "symbol": "request_timeout",
+          "excerpt": "        assert!(is_unbounded(request_timeout(Some(\"0\"))));",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/lib.rs",
+          "start_line": 5,
+          "end_line": 5,
+          "symbol": "request_timeout",
+          "excerpt": "pub use config::{is_unbounded, request_timeout, ConfigError, DEFAULT_TIMEOUT_SECS, NO_TIMEOUT};",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/config.rs",
+          "start_line": 1,
+          "end_line": 50,
+          "excerpt": "    1 | //! Runtime configuration.\n    2 | \n    3 | use std::time::Duration;\n    4 | \n    5 | /// Timeout applied when the operator sets nothing.\n    6 | pub const DEFAULT_TIMEOUT_SECS: u64 = 30;\n    7 | \n    8 | /// A timeout of zero disables the deadline entirely: the client will wait\n    9 | /// forever. This is intentional, and is how operators opt out of timeouts on\n   10 | /// long-running administrative endpoints.\n   11 | pub const NO_TIMEOUT: Duration = Duration::from_secs(0);\n   12 | \n   13 | #[derive(Debug, PartialEq, Eq)]\n   14 | pub enum ConfigError {\n   15 |     NotANumber(String),\n   16 | }\n   17 | \n   18 | /// Resolve the request timeout from its raw configured value.\n   19 | pub fn request_timeout(raw: Option<&str>) -> Duration {\n   20 |     match raw {\n   21 |         None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\n   22 |         Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\n   23 |     }\n   24 | }\n   25 | \n   26 | /// True when `timeout` means \"wait indefinitely\".\n   27 | pub fn is_unbounded(timeout: Duration) -> bool {\n   28 |     timeout == NO_TIMEOUT\n   29 | }\n   30 | \n   31 | #[cfg(test)]\n   32 | mod tests {\n   33 |     use super::*;\n   34 | \n   35 |     #[test]\n   36 |     fn uses_the_default_when_unset() {\n   37 |         assert_eq!(request_timeout(None), Duration::from_secs(30));\n   38 |     }\n   39 | \n   40 |     #[test]\n   41 |     fn parses_a_configured_value() {\n   42 |         assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\n   43 |         assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\n   44 |     }\n   45 | \n   46 |     #[test]\n   47 |     fn zero_means_unbounded() {\n   48 |         assert!(is_unbounded(request_timeout(Some(\"0\"))));\n   49 |     }\n   50 | }",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t2"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 6,
+          "end_line": 6,
+          "symbol": "DEFAULT_TIMEOUT_SECS",
+          "excerpt": "pub const DEFAULT_TIMEOUT_SECS: u64 = 30;",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t3"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 21,
+          "end_line": 21,
+          "symbol": "DEFAULT_TIMEOUT_SECS",
+          "excerpt": "        None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t3"
+        },
+        {
+          "kind": "Search",
+          "file": "src/lib.rs",
+          "start_line": 5,
+          "end_line": 5,
+          "symbol": "DEFAULT_TIMEOUT_SECS",
+          "excerpt": "pub use config::{is_unbounded, request_timeout, ConfigError, DEFAULT_TIMEOUT_SECS, NO_TIMEOUT};",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t3"
+        }
+      ]
+    },
+    {
+      "event": "Decision",
+      "candidate_id": "c05-timeout-parse-default-adv-1",
+      "status": "Verified",
+      "reason": "ablation no-falsification: reported on 10 evidence item(s),                          unadjudicated"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "c05-timeout-parse-default-adv-1",
+      "issue_type": "Correctness",
+      "severity": "High",
+      "location": {
+        "file": "src/config.rs",
+        "start_line": 19,
+        "end_line": 24
+      },
+      "claim": "Invalid timeout configuration strings silently resolve to zero, which disables request timeouts entirely rather than falling back to the default timeout.",
+      "reasoning": "When `s.trim().parse()` fails on unparseable inputs, `unwrap_or(0)` produces `0` seconds, which according to the doc comment on `NO_TIMEOUT` intentionally disables deadlines and causes clients to wait forever. An operator with a malformed configuration string will unintentionally disable timeouts across all requests instead of using `DEFAULT_TIMEOUT_SECS`.",
+      "falsification_question": "Does the request timeout logic treat a timeout value of 0 as a trigger to use DEFAULT_TIMEOUT_SECS rather than disabling timeouts?",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/config.rs",
+          "start_line": 4,
+          "end_line": 39,
+          "excerpt": "    4 | \n    5 | /// Timeout applied when the operator sets nothing.\n    6 | pub const DEFAULT_TIMEOUT_SECS: u64 = 30;\n    7 | \n    8 | /// A timeout of zero disables the deadline entirely: the client will wait\n    9 | /// forever. This is intentional, and is how operators opt out of timeouts on\n   10 | /// long-running administrative endpoints.\n   11 | pub const NO_TIMEOUT: Duration = Duration::from_secs(0);\n   12 | \n   13 | #[derive(Debug, PartialEq, Eq)]\n   14 | pub enum ConfigError {\n   15 |     NotANumber(String),\n   16 | }\n   17 | \n   18 | /// Resolve the request timeout from its raw configured value.\n   19 | pub fn request_timeout(raw: Option<&str>) -> Duration {\n   20 |     match raw {\n   21 |         None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\n   22 |         Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\n   23 |     }\n   24 | }\n   25 | \n   26 | /// True when `timeout` means \"wait indefinitely\".\n   27 | pub fn is_unbounded(timeout: Duration) -> bool {\n   28 |     timeout == NO_TIMEOUT\n   29 | }\n   30 | \n   31 | #[cfg(test)]\n   32 | mod tests {\n   33 |     use super::*;\n   34 | \n   35 |     #[test]\n   36 |     fn uses_the_default_when_unset() {\n   37 |         assert_eq!(request_timeout(None), Duration::from_secs(30));\n   38 |     }\n   39 | ",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-claimed-region"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 19,
+          "end_line": 19,
+          "symbol": "request_timeout",
+          "excerpt": "pub fn request_timeout(raw: Option<&str>) -> Duration {",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 37,
+          "end_line": 37,
+          "symbol": "request_timeout",
+          "excerpt": "        assert_eq!(request_timeout(None), Duration::from_secs(30));",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 42,
+          "end_line": 42,
+          "symbol": "request_timeout",
+          "excerpt": "        assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 43,
+          "end_line": 43,
+          "symbol": "request_timeout",
+          "excerpt": "        assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 48,
+          "end_line": 48,
+          "symbol": "request_timeout",
+          "excerpt": "        assert!(is_unbounded(request_timeout(Some(\"0\"))));",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/lib.rs",
+          "start_line": 5,
+          "end_line": 5,
+          "symbol": "request_timeout",
+          "excerpt": "pub use config::{is_unbounded, request_timeout, ConfigError, DEFAULT_TIMEOUT_SECS, NO_TIMEOUT};",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t1"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/config.rs",
+          "start_line": 1,
+          "end_line": 50,
+          "excerpt": "    1 | //! Runtime configuration.\n    2 | \n    3 | use std::time::Duration;\n    4 | \n    5 | /// Timeout applied when the operator sets nothing.\n    6 | pub const DEFAULT_TIMEOUT_SECS: u64 = 30;\n    7 | \n    8 | /// A timeout of zero disables the deadline entirely: the client will wait\n    9 | /// forever. This is intentional, and is how operators opt out of timeouts on\n   10 | /// long-running administrative endpoints.\n   11 | pub const NO_TIMEOUT: Duration = Duration::from_secs(0);\n   12 | \n   13 | #[derive(Debug, PartialEq, Eq)]\n   14 | pub enum ConfigError {\n   15 |     NotANumber(String),\n   16 | }\n   17 | \n   18 | /// Resolve the request timeout from its raw configured value.\n   19 | pub fn request_timeout(raw: Option<&str>) -> Duration {\n   20 |     match raw {\n   21 |         None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),\n   22 |         Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),\n   23 |     }\n   24 | }\n   25 | \n   26 | /// True when `timeout` means \"wait indefinitely\".\n   27 | pub fn is_unbounded(timeout: Duration) -> bool {\n   28 |     timeout == NO_TIMEOUT\n   29 | }\n   30 | \n   31 | #[cfg(test)]\n   32 | mod tests {\n   33 |     use super::*;\n   34 | \n   35 |     #[test]\n   36 |     fn uses_the_default_when_unset() {\n   37 |         assert_eq!(request_timeout(None), Duration::from_secs(30));\n   38 |     }\n   39 | \n   40 |     #[test]\n   41 |     fn parses_a_configured_value() {\n   42 |         assert_eq!(request_timeout(Some(\"5\")), Duration::from_secs(5));\n   43 |         assert_eq!(request_timeout(Some(\" 90 \")), Duration::from_secs(90));\n   44 |     }\n   45 | \n   46 |     #[test]\n   47 |     fn zero_means_unbounded() {\n   48 |         assert!(is_unbounded(request_timeout(Some(\"0\"))));\n   49 |     }\n   50 | }",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t2"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 6,
+          "end_line": 6,
+          "symbol": "DEFAULT_TIMEOUT_SECS",
+          "excerpt": "pub const DEFAULT_TIMEOUT_SECS: u64 = 30;",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t3"
+        },
+        {
+          "kind": "Search",
+          "file": "src/config.rs",
+          "start_line": 21,
+          "end_line": 21,
+          "symbol": "DEFAULT_TIMEOUT_SECS",
+          "excerpt": "        None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t3"
+        },
+        {
+          "kind": "Search",
+          "file": "src/lib.rs",
+          "start_line": 5,
+          "end_line": 5,
+          "symbol": "DEFAULT_TIMEOUT_SECS",
+          "excerpt": "pub use config::{is_unbounded, request_timeout, ConfigError, DEFAULT_TIMEOUT_SECS, NO_TIMEOUT};",
+          "tool_call_id": "c05-timeout-parse-default-adv-1-t3"
+        }
+      ],
+      "status": "Verified",
+      "status_reason": "ablation no-falsification: reported on 10 evidence item(s),                          unadjudicated"
+    }
+  ],
+  "usage": {
+    "input_tokens": 8130,
+    "output_tokens": 2492,
+    "total_tokens": 10622
+  },
+  "cost_usd": 0.0154425,
+  "runtime_ms": 26122,
+  "llm_calls": 6,
+  "tool_calls": 3,
+  "retries": 0
+}

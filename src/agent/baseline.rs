@@ -26,7 +26,7 @@ pub async fn run(case: &Case, client: &LlmClient, cfg: &RunConfig) -> Result<Tra
     let started = Instant::now();
     let mut traj = Trajectory::new(case.id(), AgentKind::Baseline, cfg);
 
-    let system = prompts::baseline_system();
+    let system = prompts::baseline_system(case.manifest.language.as_str());
     let user = prompts::review_user(
         &case.manifest.description,
         &case.diff,

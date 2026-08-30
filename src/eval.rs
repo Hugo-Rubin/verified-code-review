@@ -205,6 +205,133 @@ pub fn evaluate_case(
     }
 }
 
+/// Result of checking recorded evidence against the repository it came from.
+///
+/// The system claims every evidence excerpt is verbatim repository content at
+/// a cited location. That claim is itself checkable, so it is checked: a
+/// reviewer trusting a citation should not have to take our word that the
+/// citation is real.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceAudit {
+    /// Evidence items recorded across all findings.
+    pub total: u32,
+    /// Items carrying a file, a line range, and a non-empty excerpt, and so
+    /// checkable against the repository at all.
+    pub checkable: u32,
+    /// Checkable items whose excerpt matches the file at the cited lines.
+    pub accurate: u32,
+    /// Human-readable description of each mismatch.
+    pub mismatches: Vec<String>,
+}
+
+impl EvidenceAudit {
+    /// Fraction of checkable evidence that really is where it says it is.
+    ///
+    /// Defined as 1.0 when there was nothing checkable: a run that gathered no
+    /// evidence has not misquoted anything. Read it alongside `checkable`.
+    pub fn accuracy(&self) -> f64 {
+        if self.checkable == 0 {
+            return 1.0;
+        }
+        self.accurate as f64 / self.checkable as f64
+    }
+
+    pub fn merge(&mut self, other: &EvidenceAudit) {
+        self.total += other.total;
+        self.checkable += other.checkable;
+        self.accurate += other.accurate;
+        self.mismatches.extend(other.mismatches.iter().cloned());
+    }
+}
+
+/// Strip the `"  123 | "` gutter that bounded reads prepend, leaving the
+/// original source line.
+fn strip_line_gutter(line: &str) -> &str {
+    let trimmed = line.trim_start();
+    let Some(bar) = trimmed.find('|') else {
+        return line;
+    };
+    if trimmed[..bar].trim().chars().all(|c| c.is_ascii_digit()) && bar > 0 {
+        // The gutter is `<spaces><digits> | `; one space follows the bar.
+        trimmed[bar + 1..]
+            .strip_prefix(' ')
+            .unwrap_or(&trimmed[bar + 1..])
+    } else {
+        line
+    }
+}
+
+/// Check every evidence item in `findings` against the repository.
+pub fn audit_evidence(repo: &crate::repo::RepoRoot, findings: &[Finding]) -> EvidenceAudit {
+    let mut audit = EvidenceAudit::default();
+
+    for finding in findings {
+        for ev in &finding.evidence {
+            audit.total += 1;
+
+            let (Some(file), Some(start)) = (ev.file.as_ref(), ev.start_line) else {
+                continue;
+            };
+            if ev.excerpt.trim().is_empty() {
+                continue;
+            }
+
+            let Ok(content) = repo.read_to_string(file) else {
+                audit.checkable += 1;
+                audit.mismatches.push(format!(
+                    "{}: cites {file} which cannot be read",
+                    finding.candidate.id
+                ));
+                continue;
+            };
+
+            audit.checkable += 1;
+            let file_lines: Vec<&str> = content.lines().collect();
+
+            // Every excerpt line must appear at its stated position. Search
+            // evidence is a single line; a bounded read is a contiguous block
+            // starting at `start_line`.
+            let excerpt_lines: Vec<&str> = ev.excerpt.lines().collect();
+            let mut ok = true;
+            let mut detail = String::new();
+
+            for (offset, raw) in excerpt_lines.iter().enumerate() {
+                let expected_line_no = start as usize + offset;
+                let quoted = strip_line_gutter(raw).trim_end();
+
+                match file_lines.get(expected_line_no.saturating_sub(1)) {
+                    Some(actual) if actual.trim_end() == quoted => {}
+                    Some(actual) => {
+                        ok = false;
+                        detail = format!(
+                            "line {expected_line_no} reads {:?} but evidence quotes {:?}",
+                            actual.trim(),
+                            quoted.trim()
+                        );
+                        break;
+                    }
+                    None => {
+                        ok = false;
+                        detail = format!("line {expected_line_no} is past the end of {file}");
+                        break;
+                    }
+                }
+            }
+
+            if ok {
+                audit.accurate += 1;
+            } else {
+                audit.mismatches.push(format!(
+                    "{} @ {file}:{start}: {detail}",
+                    finding.candidate.id
+                ));
+            }
+        }
+    }
+
+    audit
+}
+
 /// Distance between the midpoints of two line ranges, doubled to stay in
 /// integers.
 fn midpoint_distance(a: &Location, b: &Location) -> u32 {
@@ -657,6 +784,171 @@ mod tests {
         let e = eval(&preds, &gt);
         assert_eq!(e.counts.true_positives, 0);
         assert_eq!(e.counts.false_negatives, 1);
+    }
+
+    // --- evidence audit ---
+
+    use crate::finding::{Evidence, EvidenceKind};
+
+    fn audit_fixture() -> (tempfile::TempDir, crate::repo::RepoRoot) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("src/a.rs"),
+            "fn one() {}\nfn two() {}\nfn three() {}\n",
+        )
+        .unwrap();
+        let root = crate::repo::RepoRoot::new(dir.path()).unwrap();
+        (dir, root)
+    }
+
+    fn with_evidence(evidence: Vec<Evidence>) -> Finding {
+        let mut f = pred(
+            "p1",
+            IssueType::Correctness,
+            "src/a.rs",
+            1,
+            1,
+            FindingStatus::Verified,
+        );
+        f.evidence = evidence;
+        f
+    }
+
+    fn ev(file: &str, start: u32, end: u32, excerpt: &str, kind: EvidenceKind) -> Evidence {
+        Evidence {
+            kind,
+            file: Some(file.into()),
+            start_line: Some(start),
+            end_line: Some(end),
+            symbol: None,
+            excerpt: excerpt.into(),
+            tool_call_id: "t1".into(),
+        }
+    }
+
+    #[test]
+    fn accurate_search_evidence_passes_the_audit() {
+        let (_d, repo) = audit_fixture();
+        let f = with_evidence(vec![ev(
+            "src/a.rs",
+            2,
+            2,
+            "fn two() {}",
+            EvidenceKind::Search,
+        )]);
+        let a = audit_evidence(&repo, &[f]);
+        assert_eq!((a.total, a.checkable, a.accurate), (1, 1, 1));
+        assert_eq!(a.accuracy(), 1.0);
+    }
+
+    #[test]
+    fn evidence_quoting_the_wrong_line_is_caught() {
+        let (_d, repo) = audit_fixture();
+        let f = with_evidence(vec![ev(
+            "src/a.rs",
+            1,
+            1,
+            "fn two() {}",
+            EvidenceKind::Search,
+        )]);
+        let a = audit_evidence(&repo, &[f]);
+        assert_eq!(a.accurate, 0);
+        assert!(a.mismatches[0].contains("evidence quotes"));
+    }
+
+    #[test]
+    fn a_read_block_with_line_gutters_is_checked_line_by_line() {
+        let (_d, repo) = audit_fixture();
+        let f = with_evidence(vec![ev(
+            "src/a.rs",
+            1,
+            3,
+            "    1 | fn one() {}\n    2 | fn two() {}\n    3 | fn three() {}",
+            EvidenceKind::FileRegion,
+        )]);
+        let a = audit_evidence(&repo, &[f]);
+        assert_eq!(a.accurate, 1, "gutter-prefixed reads must be recognised");
+    }
+
+    #[test]
+    fn a_read_block_starting_at_the_wrong_line_is_caught() {
+        let (_d, repo) = audit_fixture();
+        let f = with_evidence(vec![ev(
+            "src/a.rs",
+            2,
+            3,
+            "    1 | fn one() {}\n    2 | fn two() {}",
+            EvidenceKind::FileRegion,
+        )]);
+        assert_eq!(audit_evidence(&repo, &[f]).accurate, 0);
+    }
+
+    #[test]
+    fn evidence_past_the_end_of_the_file_is_caught() {
+        let (_d, repo) = audit_fixture();
+        let f = with_evidence(vec![ev(
+            "src/a.rs",
+            99,
+            99,
+            "fn one() {}",
+            EvidenceKind::Search,
+        )]);
+        let a = audit_evidence(&repo, &[f]);
+        assert_eq!(a.accurate, 0);
+        assert!(a.mismatches[0].contains("past the end"));
+    }
+
+    #[test]
+    fn evidence_citing_a_missing_file_is_counted_as_inaccurate() {
+        let (_d, repo) = audit_fixture();
+        let f = with_evidence(vec![ev(
+            "src/gone.rs",
+            1,
+            1,
+            "anything",
+            EvidenceKind::Search,
+        )]);
+        let a = audit_evidence(&repo, &[f]);
+        assert_eq!((a.checkable, a.accurate), (1, 0));
+    }
+
+    #[test]
+    fn unlocatable_evidence_counts_as_total_but_not_checkable() {
+        let (_d, repo) = audit_fixture();
+        let mut e = ev("src/a.rs", 1, 1, "fn one() {}", EvidenceKind::FileList);
+        e.file = None;
+        let a = audit_evidence(&repo, &[with_evidence(vec![e])]);
+        assert_eq!((a.total, a.checkable), (1, 0));
+        assert_eq!(
+            a.accuracy(),
+            1.0,
+            "nothing checkable means nothing misquoted"
+        );
+    }
+
+    #[test]
+    fn an_audit_with_no_evidence_is_vacuously_accurate() {
+        let (_d, repo) = audit_fixture();
+        assert_eq!(audit_evidence(&repo, &[]).accuracy(), 1.0);
+    }
+
+    #[test]
+    fn audits_merge() {
+        let mut a = EvidenceAudit {
+            total: 2,
+            checkable: 2,
+            accurate: 1,
+            mismatches: vec!["x".into()],
+        };
+        a.merge(&EvidenceAudit {
+            total: 3,
+            checkable: 3,
+            accurate: 3,
+            mismatches: vec![],
+        });
+        assert_eq!((a.total, a.checkable, a.accurate), (5, 5, 4));
+        assert_eq!(a.mismatches.len(), 1);
     }
 
     // --- determinism ---

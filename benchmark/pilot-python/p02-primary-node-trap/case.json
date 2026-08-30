@@ -1,0 +1,7 @@
+{
+  "case_id": "p02-primary-node-trap",
+  "language": "Python",
+  "title": "Add a cluster status report",
+  "description": "A new `status` module summarises a cluster: its node count, the name of the primary node, and how many nodes are unhealthy. The first node is the primary by convention.",
+  "category": "Trap"
+}

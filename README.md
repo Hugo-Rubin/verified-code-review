@@ -129,16 +129,59 @@ Five stages. The model reasons; **Rust decides**.
         ══════════════════════
 ```
 
-Three properties are load-bearing:
+### The four roles
+
+The advanced system is not one agent with a long prompt. It is four distinct
+roles, each a **separate stateless request** with its own instructions and its
+own versioned prompt, orchestrated by Rust:
+
+| Role | Prompt | Sees | Job |
+|---|---|---|---|
+| **Reviewer** | `advanced-review/v5` | diff + changed files | Propose candidates, erring toward proposing |
+| **Falsifier** | `advanced-falsify/v2` | the claim | Write the one question whose answer would show the claim is **wrong** |
+| **Investigator** | `advanced-investigate/v1` | claim, question, results so far | Choose the next `search` / `read` / `list_files` call, or stop |
+| **Fresh verifier** | `fresh-verify/v5` | claim + evidence, **nothing else** | Decide whether the evidence establishes a real defect |
+
+The split is not decoration. Each boundary exists because merging it back
+would break something specific:
+
+- **Falsifier separate from Reviewer** — asking the same request to state a
+  claim and then to say what would refute it invites a question shaped to fit
+  the claim. As its own call, the question is fixed on the record before any
+  evidence exists.
+- **Investigator separate from Falsifier** — the investigator is steered by the
+  question rather than by the claim, which is what makes it look for the
+  disproof instead of for confirmation.
+- **Verifier separate from everything** — see below. This is the one that
+  earns its keep.
+
+Rust sits between all four: it executes the tools, constructs every piece of
+evidence, and assigns the final status. No role can promote its own finding.
+
+The baseline is a fifth, separate system — one role, one call — and it is what
+the advanced arm is measured against.
+
+### Three properties are load-bearing
 
 **The falsification question is fixed before any evidence is gathered.** A
 question written after the verdict would only rationalise it.
 
-**The verifier runs in a genuinely fresh context.** It is a separate stateless
-request carrying the claim and the collected excerpts and *nothing else* — not
-the reviewer's reasoning, not the fact that a previous stage believed the
-claim. There is no conversation object that could leak the anchor. A test fails
-the build if the verifier prompt so much as mentions a reviewer.
+**The verifier runs in a genuinely fresh context.** It carries the claim and
+the collected excerpts and *nothing else* — not the reviewer's reasoning, not
+the investigator's running commentary, not the fact that a previous role
+believed the claim.
+
+This is a property of the architecture rather than of the prompt. `LlmRequest`
+is stateless by construction: every call carries its whole context and there is
+no conversation object, so there is no channel through which the anchor could
+leak even by accident. The prompt is written as though the reader has never
+seen a review, and
+`prompts::tests::verifier_prompt_never_mentions_the_reviewer` fails the build
+if words like "reviewer", "candidate", or "previous" appear in it.
+
+That isolation is what makes this orchestration rather than a pipeline of
+prompts. The verifier is the only role that can stop a finding, and it is the
+only one that cannot see who is asking.
 
 **Rust assigns the final status, not the model.** The verifier returns a
 judgement; the orchestrator decides what it is worth. `Supports` without
@@ -469,9 +512,13 @@ that has been told to keep quiet.
 ## Agent trajectories
 
 [`docs/trajectories.md`](docs/trajectories.md) — a guided reading of
-representative runs for both agents, showing instructions, tool calls, tool
-responses, the feedback that shaped each next step, retries, and the human
-checkpoint.
+representative runs covering **all five roles** (the baseline reviewer, and the
+advanced system's reviewer, falsifier, investigator, and fresh verifier),
+showing each role's instructions, its tool calls, the verbatim tool responses,
+the feedback that shaped the next step, retries, and the human checkpoint.
+
+Every trajectory records each role's full prompt text and its prompt version
+string, so any output can be traced to the exact instructions that produced it.
 
 Every run in [`results/trajectories/`](results/trajectories/) records the full
 prompts, every tool call and its verbatim response, the falsification question,

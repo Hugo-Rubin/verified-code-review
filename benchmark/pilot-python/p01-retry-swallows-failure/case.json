@@ -1,0 +1,7 @@
+{
+  "case_id": "p01-retry-swallows-failure",
+  "language": "Python",
+  "title": "Stop raising UploadError when every retry is exhausted",
+  "description": "`Uploader.upload_chunk` raised `UploadError` once it had exhausted `max_attempts`, which forced every call site to wrap uploads in try/except for a case that is already retried. It now returns `None` instead, and the docstring no longer promises an exception.",
+  "category": "Challenging"
+}

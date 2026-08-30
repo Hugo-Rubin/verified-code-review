@@ -1,0 +1,73 @@
+{
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "provider": "Vertex",
+  "started_at": "2026-08-30T19:58:22.715410+00:00",
+  "finished_at": "2026-08-30T20:01:14.954670500+00:00",
+  "benchmark_dir": "benchmark/pilot-python",
+  "case_count": 3,
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "None"
+  },
+  "stats": [
+    {
+      "case_id": "p01-retry-swallows-failure",
+      "trajectory_id": "9b8b7a1c-e8aa-4d59-a409-07c248f72841",
+      "runtime_ms": 79983,
+      "llm_calls": 13,
+      "tool_calls": 6,
+      "retries": 3,
+      "input_tokens": 17765,
+      "output_tokens": 4267,
+      "cost_usd": 0.029325,
+      "reported_findings": 2,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p02-primary-node-trap",
+      "trajectory_id": "31010a3d-0024-425f-a858-2f27ab5c60a8",
+      "runtime_ms": 84232,
+      "llm_calls": 12,
+      "tool_calls": 5,
+      "retries": 5,
+      "input_tokens": 12687,
+      "output_tokens": 3231,
+      "cost_usd": 0.021631499999999998,
+      "reported_findings": 0,
+      "withheld_findings": 2
+    },
+    {
+      "case_id": "p03-len-is-capacity",
+      "trajectory_id": "2ceeeb11-3dd1-4197-902d-5669eaf8e622",
+      "runtime_ms": 8015,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1247,
+      "output_tokens": 856,
+      "cost_usd": 0.0041452500000000005,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    }
+  ]
+}

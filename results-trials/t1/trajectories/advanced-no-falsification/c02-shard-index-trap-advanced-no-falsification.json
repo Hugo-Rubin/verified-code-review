@@ -1,0 +1,253 @@
+{
+  "trajectory_id": "4f20062d-e763-4c92-aab5-e55ec8c53964",
+  "case_id": "c02-shard-index-trap",
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-30T19:18:11.060641200+00:00",
+  "finished_at": "2026-08-30T19:18:41.333749600+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "ablation": "NoFalsification"
+  },
+  "events": [
+    {
+      "event": "Note",
+      "note": "ABLATION: no-falsification — this run deliberately disables part of the pipeline and is                  not the full system"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "advanced-review/v5",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nYou are producing CANDIDATE findings, not final ones. Nothing you write here\nreaches a human directly. Each candidate is investigated against the actual\nrepository and then independently adjudicated, and only what survives is\nreported. A candidate that turns out to be wrong costs almost nothing. A real\ndefect you never raised is never checked at all.\n\nSo err toward proposing. Raise anything a careful reviewer would want confirmed\nbefore approving this change, including things you expect will turn out to be\nfine.\n\n- Anchor each candidate to a specific file and line range.\n- State each claim as something that can actually happen, not as a\n  conditional. Write \"callers can reach this with an empty list, and it will\n  panic\", not \"this will panic if the list is empty\" — the second is true of\n  the code whether or not the situation ever arises, so it cannot be\n  disproved and is not a finding.\n- State each claim as a single falsifiable sentence — something repository\n  evidence could confirm or refute.\n- Every candidate must name a consequence: what goes wrong, and for whom.\n  Incorrect output, a panic, data loss, a violated contract, a security\n  consequence, or a real cost at the scale this code runs at. If you cannot\n  finish the sentence \"and so the user gets...\", it is not a candidate.\n  Missing trait derives, a signature that is more fallible than it needs to\n  be, and unused declarations are observations about the code, not defects —\n  leave them out. The investigation stage can settle whether a claim is true;\n  it cannot make a true triviality worth a reviewer's time.\n- Pay particular attention to anything whose correctness depends on facts that\n  are not visible in the changed files. If the code is only correct given some\n  assumption about the rest of the repository, that assumption is a candidate.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Avoid vague concerns such as \"this looks fragile\"; say what would go wrong.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nReturn {\"findings\": []} only if there is genuinely nothing worth checking.\n\nUnder-proposing is the expensive mistake at this stage. Include a candidate\neven when you suspect it is fine, and in particular whenever the code's\ncorrectness depends on something you cannot see in the changed files — a\ncaller, a constructor, an invariant asserted in a comment, a value's origin.\nThose are the candidates the investigation stage exists to settle, and it can\nonly settle the ones you raise.",
+      "user": "## Change under review\n\nA new `health` module reports the total shard count, the id of the coordinator shard, and how many shards are currently unhealthy. The first shard acts as the coordinator by convention. The module is exported from the crate root.\n\n## Diff\n\n```diff\n--- /dev/null\r\n+++ b/src/health.rs\r\n@@ -0,0 +1,56 @@\r\n+//! Health reporting for a router's shard set.\r\n+\r\n+use crate::router::Router;\r\n+\r\n+#[derive(Debug, PartialEq, Eq)]\r\n+pub struct Summary {\r\n+    /// Total number of shards.\r\n+    pub total: usize,\r\n+    /// Id of the coordinator shard.\r\n+    pub coordinator: String,\r\n+    /// How many shards are currently unhealthy.\r\n+    pub unhealthy: usize,\r\n+}\r\n+\r\n+impl Summary {\r\n+    /// True when every shard is reporting healthy.\r\n+    pub fn all_healthy(&self) -> bool {\r\n+        self.unhealthy == 0\r\n+    }\r\n+}\r\n+\r\n+/// Summarise the health of `router`'s shards.\r\n+///\r\n+/// The first shard acts as the coordinator by convention.\r\n+pub fn summary(router: &Router) -> Summary {\r\n+    let shards = router.shards();\r\n+\r\n+    Summary {\r\n+        total: shards.len(),\r\n+        coordinator: shards[0].id().to_string(),\r\n+        unhealthy: shards.iter().filter(|s| !s.is_healthy()).count(),\r\n+    }\r\n+}\r\n+\r\n+#[cfg(test)]\r\n+mod tests {\r\n+    use super::*;\r\n+    use crate::shard::Shard;\r\n+\r\n+    #[test]\r\n+    fn reports_the_first_shard_as_coordinator() {\r\n+        let r = Router::new(vec![Shard::new(\"a\"), Shard::new(\"b\")]).unwrap();\r\n+        let s = summary(&r);\r\n+        assert_eq!(s.coordinator, \"a\");\r\n+        assert_eq!(s.total, 2);\r\n+        assert!(s.all_healthy());\r\n+    }\r\n+\r\n+    #[test]\r\n+    fn counts_unhealthy_shards() {\r\n+        let mut down = Shard::new(\"b\");\r\n+        down.set_healthy(false);\r\n+        let r = Router::new(vec![Shard::new(\"a\"), down]).unwrap();\r\n+        assert_eq!(summary(&r).unhealthy, 1);\r\n+    }\r\n+}\r\n--- a/src/lib.rs\r\n+++ b/src/lib.rs\r\n@@ -1,7 +1,9 @@\r\n //! A minimal sharded routing crate.\r\n \r\n+pub mod health;\r\n pub mod router;\r\n pub mod shard;\r\n \r\n+pub use health::{summary, Summary};\r\n pub use router::{Router, RouterError};\r\n pub use shard::Shard;\r\n\n```\n\n## Current contents of the changed files\n\n\n### src/health.rs\n\n```rust\n    1 | //! Health reporting for a router's shard set.\n    2 | \n    3 | use crate::router::Router;\n    4 | \n    5 | #[derive(Debug, PartialEq, Eq)]\n    6 | pub struct Summary {\n    7 |     /// Total number of shards.\n    8 |     pub total: usize,\n    9 |     /// Id of the coordinator shard.\n   10 |     pub coordinator: String,\n   11 |     /// How many shards are currently unhealthy.\n   12 |     pub unhealthy: usize,\n   13 | }\n   14 | \n   15 | impl Summary {\n   16 |     /// True when every shard is reporting healthy.\n   17 |     pub fn all_healthy(&self) -> bool {\n   18 |         self.unhealthy == 0\n   19 |     }\n   20 | }\n   21 | \n   22 | /// Summarise the health of `router`'s shards.\n   23 | ///\n   24 | /// The first shard acts as the coordinator by convention.\n   25 | pub fn summary(router: &Router) -> Summary {\n   26 |     let shards = router.shards();\n   27 | \n   28 |     Summary {\n   29 |         total: shards.len(),\n   30 |         coordinator: shards[0].id().to_string(),\n   31 |         unhealthy: shards.iter().filter(|s| !s.is_healthy()).count(),\n   32 |     }\n   33 | }\n   34 | \n   35 | #[cfg(test)]\n   36 | mod tests {\n   37 |     use super::*;\n   38 |     use crate::shard::Shard;\n   39 | \n   40 |     #[test]\n   41 |     fn reports_the_first_shard_as_coordinator() {\n   42 |         let r = Router::new(vec![Shard::new(\"a\"), Shard::new(\"b\")]).unwrap();\n   43 |         let s = summary(&r);\n   44 |         assert_eq!(s.coordinator, \"a\");\n   45 |         assert_eq!(s.total, 2);\n   46 |         assert!(s.all_healthy());\n   47 |     }\n   48 | \n   49 |     #[test]\n   50 |     fn counts_unhealthy_shards() {\n   51 |         let mut down = Shard::new(\"b\");\n   52 |         down.set_healthy(false);\n   53 |         let r = Router::new(vec![Shard::new(\"a\"), down]).unwrap();\n   54 |         assert_eq!(summary(&r).unhealthy, 1);\n   55 |     }\n   56 | }\n```\n\n### src/lib.rs\n\n```rust\n    1 | //! A minimal sharded routing crate.\n    2 | \n    3 | pub mod health;\n    4 | pub mod router;\n    5 | pub mod shard;\n    6 | \n    7 | pub use health::{summary, Summary};\n    8 | pub use router::{Router, RouterError};\n    9 | pub use shard::Shard;\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Correctness\",\n      \"severity\": \"Medium\",\n      \"file\": \"src/health.rs\",\n      \"start_line\": 30,\n      \"end_line\": 30,\n      \"claim\": \"Calling `summary` on a `Router` with no shards panics due to an out-of-bounds index on `shards[0]`.\",\n      \"reasoning\": \"`summary` directly indexes `shards[0]` without checking if `router.shards()` is empty. If a router has zero shards, this causes a runtime panic for callers attempting to inspect shard health.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 2200,
+        "output_tokens": 888,
+        "total_tokens": 3088
+      },
+      "latency_ms": 7404,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "c02-shard-index-trap-adv-1",
+        "issue_type": "Correctness",
+        "severity": "Medium",
+        "location": {
+          "file": "src/health.rs",
+          "start_line": 30,
+          "end_line": 30
+        },
+        "claim": "Calling `summary` on a `Router` with no shards panics due to an out-of-bounds index on `shards[0]`.",
+        "reasoning": "`summary` directly indexes `shards[0]` without checking if `router.shards()` is empty. If a router has zero shards, this causes a runtime panic for callers attempting to inspect shard health."
+      }
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Falsify",
+      "prompt_version": "advanced-falsify/v2",
+      "system": "You are helping test a code-review finding.\n\nGiven a claim about a defect, write the single most decisive question whose\nanswer would show the claim is WRONG. The question must be answerable by\ninspecting the repository: callers, implementations, tests, configuration, or\ntype definitions.\n\nAsk about the thing the claim actually depends on, not about the mechanism.\nWhether a function panics on a bad input is usually not in doubt and can be\nread off the body; whether anything ever hands it a bad input is the question.\nSo when a claim rests on how the code is used, ask about the call sites by\nname.\n\nGood: \"Does every caller of parse_row check is_empty() before indexing?\"\nBad:  \"Does parse_row panic when the row is empty?\"  (asks the mechanism)\nBad:  \"Is this code correct?\"                        (unanswerable)\n\nNever make a comment the answer. If a doc comment already asserts the\nprecondition, the question is whether the callers honour it.\n\nReturn JSON of exactly this shape:\n\n{\"falsification_question\": \"<one question>\"}",
+      "user": "Claim: Calling `summary` on a `Router` with no shards panics due to an out-of-bounds index on `shards[0]`.\nLocation: src/health.rs:30\nReviewer's reasoning: `summary` directly indexes `shards[0]` without checking if `router.shards()` is empty. If a router has zero shards, this causes a runtime panic for callers attempting to inspect shard health.\n\nWhat evidence would prove this claim wrong?",
+      "response_text": "{\"falsification_question\": \"Does Router construction or validation enforce that `shards` is never empty?\"}",
+      "usage": {
+        "input_tokens": 344,
+        "output_tokens": 210,
+        "total_tokens": 554
+      },
+      "latency_ms": 15283,
+      "attempts": 3
+    },
+    {
+      "event": "FalsificationQuestion",
+      "candidate_id": "c02-shard-index-trap-adv-1",
+      "question": "Does Router construction or validation enforce that `shards` is never empty?"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nCalling `summary` on a `Router` with no shards panics due to an out-of-bounds index on `shards[0]`.\n\nLocation: src/health.rs:30\n\n## Falsification question\n\nDoes Router construction or validation enforce that `shards` is never empty?\n\n## Diff that produced the claim\n\n```diff\n--- /dev/null\r\n+++ b/src/health.rs\r\n@@ -0,0 +1,56 @@\r\n+//! Health reporting for a router's shard set.\r\n+\r\n+use crate::router::Router;\r\n+\r\n+#[derive(Debug, PartialEq, Eq)]\r\n+pub struct Summary {\r\n+    /// Total number of shards.\r\n+    pub total: usize,\r\n+    /// Id of the coordinator shard.\r\n+    pub coordinator: String,\r\n+    /// How many shards are currently unhealthy.\r\n+    pub unhealthy: usize,\r\n+}\r\n+\r\n+impl Summary {\r\n+    /// True when every shard is reporting healthy.\r\n+    pub fn all_healthy(&self) -> bool {\r\n+        self.unhealthy == 0\r\n+    }\r\n+}\r\n+\r\n+/// Summarise the health of `router`'s shards.\r\n+///\r\n+/// The first shard acts as the coordinator by convention.\r\n+pub fn summary(router: &Router) -> Summary {\r\n+    let shards = router.shards();\r\n+\r\n+    Summary {\r\n+        total: shards.len(),\r\n+        coordinator: shards[0].id().to_string(),\r\n+        unhealthy: shards.iter().filter(|s| !s.is_healthy()).count(),\r\n+    }\r\n+}\r\n+\r\n+#[cfg(test)]\r\n+mod tests {\r\n+    use super::*;\r\n+    use crate::shard::Shard;\r\n+\r\n+    #[test]\r\n+    fn reports_the_first_shard_as_coordinator() {\r\n+        let r = Router::new(vec![Shard::new(\"a\"), Shard::new(\"b\")]).unwrap();\r\n+        let s = summary(&r);\r\n+        assert_eq!(s.coordinator, \"a\");\r\n+        assert_eq!(s.total, 2);\r\n+        assert!(s.all_healthy());\r\n+    }\r\n+\r\n+    #[test]\r\n+    fn counts_unhealthy_shards() {\r\n+        let mut down = Shard::new(\"b\");\r\n+        down.set_healthy(false);\r\n+        let r = Router::new(vec![Shard::new(\"a\"), down]).unwrap();\r\n+        assert_eq!(summary(&r).unhealthy, 1);\r\n+    }\r\n+}\r\n--- a/src/lib.rs\r\n+++ b/src/lib.rs\r\n@@ -1,7 +1,9 @@\r\n //! A minimal sharded routing crate.\r\n \r\n+pub mod health;\r\n pub mod router;\r\n pub mod shard;\r\n \r\n+pub use health::{summary, Summary};\r\n pub use router::{Router, RouterError};\r\n pub use shard::Shard;\r\n\n```\n\n## Investigation so far\n\n(nothing yet)\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": false,\n  \"tool\": \"search\",\n  \"arguments\": {\n    \"pattern\": \"impl Router\"\n  },\n  \"rationale\": \"Find Router implementation to check how Router is constructed and validated.\"\n}",
+      "usage": {
+        "input_tokens": 1029,
+        "output_tokens": 142,
+        "total_tokens": 1171
+      },
+      "latency_ms": 2626,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "c02-shard-index-trap-adv-1-t1",
+      "candidate_id": "c02-shard-index-trap-adv-1",
+      "tool": "search",
+      "arguments": {
+        "pattern": "impl Router"
+      },
+      "response": "1 match(es) for \"impl Router\":\nsrc/router.rs:22: impl Router {\n",
+      "ok": true,
+      "duration_ms": 1
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nCalling `summary` on a `Router` with no shards panics due to an out-of-bounds index on `shards[0]`.\n\nLocation: src/health.rs:30\n\n## Falsification question\n\nDoes Router construction or validation enforce that `shards` is never empty?\n\n## Diff that produced the claim\n\n```diff\n--- /dev/null\r\n+++ b/src/health.rs\r\n@@ -0,0 +1,56 @@\r\n+//! Health reporting for a router's shard set.\r\n+\r\n+use crate::router::Router;\r\n+\r\n+#[derive(Debug, PartialEq, Eq)]\r\n+pub struct Summary {\r\n+    /// Total number of shards.\r\n+    pub total: usize,\r\n+    /// Id of the coordinator shard.\r\n+    pub coordinator: String,\r\n+    /// How many shards are currently unhealthy.\r\n+    pub unhealthy: usize,\r\n+}\r\n+\r\n+impl Summary {\r\n+    /// True when every shard is reporting healthy.\r\n+    pub fn all_healthy(&self) -> bool {\r\n+        self.unhealthy == 0\r\n+    }\r\n+}\r\n+\r\n+/// Summarise the health of `router`'s shards.\r\n+///\r\n+/// The first shard acts as the coordinator by convention.\r\n+pub fn summary(router: &Router) -> Summary {\r\n+    let shards = router.shards();\r\n+\r\n+    Summary {\r\n+        total: shards.len(),\r\n+        coordinator: shards[0].id().to_string(),\r\n+        unhealthy: shards.iter().filter(|s| !s.is_healthy()).count(),\r\n+    }\r\n+}\r\n+\r\n+#[cfg(test)]\r\n+mod tests {\r\n+    use super::*;\r\n+    use crate::shard::Shard;\r\n+\r\n+    #[test]\r\n+    fn reports_the_first_shard_as_coordinator() {\r\n+        let r = Router::new(vec![Shard::new(\"a\"), Shard::new(\"b\")]).unwrap();\r\n+        let s = summary(&r);\r\n+        assert_eq!(s.coordinator, \"a\");\r\n+        assert_eq!(s.total, 2);\r\n+        assert!(s.all_healthy());\r\n+    }\r\n+\r\n+    #[test]\r\n+    fn counts_unhealthy_shards() {\r\n+        let mut down = Shard::new(\"b\");\r\n+        down.set_healthy(false);\r\n+        let r = Router::new(vec![Shard::new(\"a\"), down]).unwrap();\r\n+        assert_eq!(summary(&r).unhealthy, 1);\r\n+    }\r\n+}\r\n--- a/src/lib.rs\r\n+++ b/src/lib.rs\r\n@@ -1,7 +1,9 @@\r\n //! A minimal sharded routing crate.\r\n \r\n+pub mod health;\r\n pub mod router;\r\n pub mod shard;\r\n \r\n+pub use health::{summary, Summary};\r\n pub use router::{Router, RouterError};\r\n pub use shard::Shard;\r\n\n```\n\n## Investigation so far\n\n\n--- step 1 : search {\"pattern\":\"impl Router\"} ---\n1 match(es) for \"impl Router\":\nsrc/router.rs:22: impl Router {\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": false,\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"file\": \"src/router.rs\",\n    \"start_line\": 1,\n    \"end_line\": 50\n  },\n  \"rationale\": \"Read the definition and constructor of Router in src/router.rs to see if empty shards are rejected or prevented during construction/validation.\"\n}",
+      "usage": {
+        "input_tokens": 1062,
+        "output_tokens": 147,
+        "total_tokens": 1209
+      },
+      "latency_ms": 2198,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "c02-shard-index-trap-adv-1-t2",
+      "candidate_id": "c02-shard-index-trap-adv-1",
+      "tool": "read",
+      "arguments": {
+        "end_line": 50,
+        "file": "src/router.rs",
+        "start_line": 1
+      },
+      "response": "src/router.rs lines 1-50 of 79:\n    1 | //! Shard routing.\n    2 | \n    3 | use crate::shard::Shard;\n    4 | \n    5 | #[derive(Debug, PartialEq, Eq)]\n    6 | pub enum RouterError {\n    7 |     /// A router with no shards cannot route anything.\n    8 |     NoShards,\n    9 | }\n   10 | \n   11 | /// Routes keys to shards.\n   12 | ///\n   13 | /// # Invariant\n   14 | ///\n   15 | /// `shards` is never empty. [`Router::new`] is the only constructor and it\n   16 | /// rejects an empty vector, and no method removes a shard once the router is\n   17 | /// built. Callers may therefore index `shards` at 0 without checking.\n   18 | pub struct Router {\n   19 |     shards: Vec<Shard>,\n   20 | }\n   21 | \n   22 | impl Router {\n   23 |     /// Build a router over `shards`.\n   24 |     ///\n   25 |     /// Returns [`RouterError::NoShards`] when `shards` is empty, which is what\n   26 |     /// establishes the non-empty invariant for the rest of the type.\n   27 |     pub fn new(shards: Vec<Shard>) -> Result<Self, RouterError> {\n   28 |         if shards.is_empty() {\n   29 |             return Err(RouterError::NoShards);\n   30 |         }\n   31 |         Ok(Self { shards })\n   32 |     }\n   33 | \n   34 |     /// The router's shards. Never empty.\n   35 |     pub fn shards(&self) -> &[Shard] {\n   36 |         &self.shards\n   37 |     }\n   38 | \n   39 |     /// Pick the shard that owns `key`.\n   40 |     pub fn shard_for(&self, key: &str) -> &Shard {\n   41 |         let h = key.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));\n   42 |         &self.shards[(h % self.shards.len() as u64) as usize]\n   43 |     }\n   44 | \n   45 |     /// Replace a shard in place. The shard count does not change.\n   46 |     pub fn replace(&mut self, index: usize, shard: Shard) -> bool {\n   47 |         match self.shards.get_mut(index) {\n   48 |             Some(slot) => {\n   49 |                 *slot = shard;\n   50 |                 true\n",
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v1",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nCalling `summary` on a `Router` with no shards panics due to an out-of-bounds index on `shards[0]`.\n\nLocation: src/health.rs:30\n\n## Falsification question\n\nDoes Router construction or validation enforce that `shards` is never empty?\n\n## Diff that produced the claim\n\n```diff\n--- /dev/null\r\n+++ b/src/health.rs\r\n@@ -0,0 +1,56 @@\r\n+//! Health reporting for a router's shard set.\r\n+\r\n+use crate::router::Router;\r\n+\r\n+#[derive(Debug, PartialEq, Eq)]\r\n+pub struct Summary {\r\n+    /// Total number of shards.\r\n+    pub total: usize,\r\n+    /// Id of the coordinator shard.\r\n+    pub coordinator: String,\r\n+    /// How many shards are currently unhealthy.\r\n+    pub unhealthy: usize,\r\n+}\r\n+\r\n+impl Summary {\r\n+    /// True when every shard is reporting healthy.\r\n+    pub fn all_healthy(&self) -> bool {\r\n+        self.unhealthy == 0\r\n+    }\r\n+}\r\n+\r\n+/// Summarise the health of `router`'s shards.\r\n+///\r\n+/// The first shard acts as the coordinator by convention.\r\n+pub fn summary(router: &Router) -> Summary {\r\n+    let shards = router.shards();\r\n+\r\n+    Summary {\r\n+        total: shards.len(),\r\n+        coordinator: shards[0].id().to_string(),\r\n+        unhealthy: shards.iter().filter(|s| !s.is_healthy()).count(),\r\n+    }\r\n+}\r\n+\r\n+#[cfg(test)]\r\n+mod tests {\r\n+    use super::*;\r\n+    use crate::shard::Shard;\r\n+\r\n+    #[test]\r\n+    fn reports_the_first_shard_as_coordinator() {\r\n+        let r = Router::new(vec![Shard::new(\"a\"), Shard::new(\"b\")]).unwrap();\r\n+        let s = summary(&r);\r\n+        assert_eq!(s.coordinator, \"a\");\r\n+        assert_eq!(s.total, 2);\r\n+        assert!(s.all_healthy());\r\n+    }\r\n+\r\n+    #[test]\r\n+    fn counts_unhealthy_shards() {\r\n+        let mut down = Shard::new(\"b\");\r\n+        down.set_healthy(false);\r\n+        let r = Router::new(vec![Shard::new(\"a\"), down]).unwrap();\r\n+        assert_eq!(summary(&r).unhealthy, 1);\r\n+    }\r\n+}\r\n--- a/src/lib.rs\r\n+++ b/src/lib.rs\r\n@@ -1,7 +1,9 @@\r\n //! A minimal sharded routing crate.\r\n \r\n+pub mod health;\r\n pub mod router;\r\n pub mod shard;\r\n \r\n+pub use health::{summary, Summary};\r\n pub use router::{Router, RouterError};\r\n pub use shard::Shard;\r\n\n```\n\n## Investigation so far\n\n\n--- step 1 : search {\"pattern\":\"impl Router\"} ---\n1 match(es) for \"impl Router\":\nsrc/router.rs:22: impl Router {\n\n\n--- step 2 : read {\"end_line\":50,\"file\":\"src/router.rs\",\"start_line\":1} ---\nsrc/router.rs lines 1-50 of 79:\n    1 | //! Shard routing.\n    2 | \n    3 | use crate::shard::Shard;\n    4 | \n    5 | #[derive(Debug, PartialEq, Eq)]\n    6 | pub enum RouterError {\n    7 |     /// A router with no shards cannot route anything.\n    8 |     NoShards,\n    9 | }\n   10 | \n   11 | /// Routes keys to shards.\n   12 | ///\n   13 | /// # Invariant\n   14 | ///\n   15 | /// `shards` is never empty. [`Router::new`] is the only constructor and it\n   16 | /// rejects an empty vector, and no method removes a shard once the router is\n   17 | /// built. Callers may therefore index `shards` at 0 without checking.\n   18 | pub struct Router {\n   19 |     shards: Vec<Shard>,\n   20 | }\n   21 | \n   22 | impl Router {\n   23 |     /// Build a router over `shards`.\n   24 |     ///\n   25 |     /// Returns [`RouterError::NoShards`] when `shards` is empty, which is what\n   26 |     /// establishes the non-empty invariant for the rest of the type.\n   27 |     pub fn new(shards: Vec<Shard>) -> Result<Self, RouterError> {\n   28 |         if shards.is_empty() {\n   29 |             return Err(RouterError::NoShards);\n   30 |         }\n   31 |         Ok(Self { shards })\n   32 |     }\n   33 | \n   34 |     /// The router's shards. Never empty.\n   35 |     pub fn shards(&self) -> &[Shard] {\n   36 |         &self.shards\n   37 |     }\n   38 | \n   39 |     /// Pick the shard that owns `key`.\n   40 |     pub fn shard_for(&self, key: &str) -> &Shard {\n   41 |         let h = key.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));\n   42 |         &self.shards[(h % self.shards.len() as u64) as usize]\n   43 |     }\n   44 | \n   45 |     /// Replace a shard in place. The shard count does not change.\n   46 |     pub fn replace(&mut self, index: usize, shard: Shard) -> bool {\n   47 |         match self.shards.get_mut(index) {\n   48 |             Some(slot) => {\n   49 |                 *slot = shard;\n   50 |                 true\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": true,\n  \"tool\": null,\n  \"arguments\": null,\n  \"rationale\": \"`Router::new` validates `shards.is_empty()` and returns `Err(RouterError::NoShards)` if empty, while `shards` is a private field with no other public constructors or shard-removal methods. Thus, a `Router` instance can never have empty `shards`, falsifying the claim.\"\n}",
+      "usage": {
+        "input_tokens": 1771,
+        "output_tokens": 312,
+        "total_tokens": 2083
+      },
+      "latency_ms": 2757,
+      "attempts": 1
+    },
+    {
+      "event": "EvidenceAssembled",
+      "candidate_id": "c02-shard-index-trap-adv-1",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/health.rs",
+          "start_line": 15,
+          "end_line": 45,
+          "excerpt": "   15 | impl Summary {\n   16 |     /// True when every shard is reporting healthy.\n   17 |     pub fn all_healthy(&self) -> bool {\n   18 |         self.unhealthy == 0\n   19 |     }\n   20 | }\n   21 | \n   22 | /// Summarise the health of `router`'s shards.\n   23 | ///\n   24 | /// The first shard acts as the coordinator by convention.\n   25 | pub fn summary(router: &Router) -> Summary {\n   26 |     let shards = router.shards();\n   27 | \n   28 |     Summary {\n   29 |         total: shards.len(),\n   30 |         coordinator: shards[0].id().to_string(),\n   31 |         unhealthy: shards.iter().filter(|s| !s.is_healthy()).count(),\n   32 |     }\n   33 | }\n   34 | \n   35 | #[cfg(test)]\n   36 | mod tests {\n   37 |     use super::*;\n   38 |     use crate::shard::Shard;\n   39 | \n   40 |     #[test]\n   41 |     fn reports_the_first_shard_as_coordinator() {\n   42 |         let r = Router::new(vec![Shard::new(\"a\"), Shard::new(\"b\")]).unwrap();\n   43 |         let s = summary(&r);\n   44 |         assert_eq!(s.coordinator, \"a\");\n   45 |         assert_eq!(s.total, 2);",
+          "tool_call_id": "c02-shard-index-trap-adv-1-claimed-region"
+        },
+        {
+          "kind": "Search",
+          "file": "src/router.rs",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "impl Router",
+          "excerpt": "impl Router {",
+          "tool_call_id": "c02-shard-index-trap-adv-1-t1"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/router.rs",
+          "start_line": 1,
+          "end_line": 50,
+          "excerpt": "    1 | //! Shard routing.\n    2 | \n    3 | use crate::shard::Shard;\n    4 | \n    5 | #[derive(Debug, PartialEq, Eq)]\n    6 | pub enum RouterError {\n    7 |     /// A router with no shards cannot route anything.\n    8 |     NoShards,\n    9 | }\n   10 | \n   11 | /// Routes keys to shards.\n   12 | ///\n   13 | /// # Invariant\n   14 | ///\n   15 | /// `shards` is never empty. [`Router::new`] is the only constructor and it\n   16 | /// rejects an empty vector, and no method removes a shard once the router is\n   17 | /// built. Callers may therefore index `shards` at 0 without checking.\n   18 | pub struct Router {\n   19 |     shards: Vec<Shard>,\n   20 | }\n   21 | \n   22 | impl Router {\n   23 |     /// Build a router over `shards`.\n   24 |     ///\n   25 |     /// Returns [`RouterError::NoShards`] when `shards` is empty, which is what\n   26 |     /// establishes the non-empty invariant for the rest of the type.\n   27 |     pub fn new(shards: Vec<Shard>) -> Result<Self, RouterError> {\n   28 |         if shards.is_empty() {\n   29 |             return Err(RouterError::NoShards);\n   30 |         }\n   31 |         Ok(Self { shards })\n   32 |     }\n   33 | \n   34 |     /// The router's shards. Never empty.\n   35 |     pub fn shards(&self) -> &[Shard] {\n   36 |         &self.shards\n   37 |     }\n   38 | \n   39 |     /// Pick the shard that owns `key`.\n   40 |     pub fn shard_for(&self, key: &str) -> &Shard {\n   41 |         let h = key.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));\n   42 |         &self.shards[(h % self.shards.len() as u64) as usize]\n   43 |     }\n   44 | \n   45 |     /// Replace a shard in place. The shard count does not change.\n   46 |     pub fn replace(&mut self, index: usize, shard: Shard) -> bool {\n   47 |         match self.shards.get_mut(index) {\n   48 |             Some(slot) => {\n   49 |                 *slot = shard;\n   50 |                 true",
+          "tool_call_id": "c02-shard-index-trap-adv-1-t2"
+        }
+      ]
+    },
+    {
+      "event": "Decision",
+      "candidate_id": "c02-shard-index-trap-adv-1",
+      "status": "Verified",
+      "reason": "ablation no-falsification: reported on 2 evidence item(s),                          unadjudicated"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "c02-shard-index-trap-adv-1",
+      "issue_type": "Correctness",
+      "severity": "Medium",
+      "location": {
+        "file": "src/health.rs",
+        "start_line": 30,
+        "end_line": 30
+      },
+      "claim": "Calling `summary` on a `Router` with no shards panics due to an out-of-bounds index on `shards[0]`.",
+      "reasoning": "`summary` directly indexes `shards[0]` without checking if `router.shards()` is empty. If a router has zero shards, this causes a runtime panic for callers attempting to inspect shard health.",
+      "falsification_question": "Does Router construction or validation enforce that `shards` is never empty?",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/health.rs",
+          "start_line": 15,
+          "end_line": 45,
+          "excerpt": "   15 | impl Summary {\n   16 |     /// True when every shard is reporting healthy.\n   17 |     pub fn all_healthy(&self) -> bool {\n   18 |         self.unhealthy == 0\n   19 |     }\n   20 | }\n   21 | \n   22 | /// Summarise the health of `router`'s shards.\n   23 | ///\n   24 | /// The first shard acts as the coordinator by convention.\n   25 | pub fn summary(router: &Router) -> Summary {\n   26 |     let shards = router.shards();\n   27 | \n   28 |     Summary {\n   29 |         total: shards.len(),\n   30 |         coordinator: shards[0].id().to_string(),\n   31 |         unhealthy: shards.iter().filter(|s| !s.is_healthy()).count(),\n   32 |     }\n   33 | }\n   34 | \n   35 | #[cfg(test)]\n   36 | mod tests {\n   37 |     use super::*;\n   38 |     use crate::shard::Shard;\n   39 | \n   40 |     #[test]\n   41 |     fn reports_the_first_shard_as_coordinator() {\n   42 |         let r = Router::new(vec![Shard::new(\"a\"), Shard::new(\"b\")]).unwrap();\n   43 |         let s = summary(&r);\n   44 |         assert_eq!(s.coordinator, \"a\");\n   45 |         assert_eq!(s.total, 2);",
+          "tool_call_id": "c02-shard-index-trap-adv-1-claimed-region"
+        },
+        {
+          "kind": "Search",
+          "file": "src/router.rs",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "impl Router",
+          "excerpt": "impl Router {",
+          "tool_call_id": "c02-shard-index-trap-adv-1-t1"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/router.rs",
+          "start_line": 1,
+          "end_line": 50,
+          "excerpt": "    1 | //! Shard routing.\n    2 | \n    3 | use crate::shard::Shard;\n    4 | \n    5 | #[derive(Debug, PartialEq, Eq)]\n    6 | pub enum RouterError {\n    7 |     /// A router with no shards cannot route anything.\n    8 |     NoShards,\n    9 | }\n   10 | \n   11 | /// Routes keys to shards.\n   12 | ///\n   13 | /// # Invariant\n   14 | ///\n   15 | /// `shards` is never empty. [`Router::new`] is the only constructor and it\n   16 | /// rejects an empty vector, and no method removes a shard once the router is\n   17 | /// built. Callers may therefore index `shards` at 0 without checking.\n   18 | pub struct Router {\n   19 |     shards: Vec<Shard>,\n   20 | }\n   21 | \n   22 | impl Router {\n   23 |     /// Build a router over `shards`.\n   24 |     ///\n   25 |     /// Returns [`RouterError::NoShards`] when `shards` is empty, which is what\n   26 |     /// establishes the non-empty invariant for the rest of the type.\n   27 |     pub fn new(shards: Vec<Shard>) -> Result<Self, RouterError> {\n   28 |         if shards.is_empty() {\n   29 |             return Err(RouterError::NoShards);\n   30 |         }\n   31 |         Ok(Self { shards })\n   32 |     }\n   33 | \n   34 |     /// The router's shards. Never empty.\n   35 |     pub fn shards(&self) -> &[Shard] {\n   36 |         &self.shards\n   37 |     }\n   38 | \n   39 |     /// Pick the shard that owns `key`.\n   40 |     pub fn shard_for(&self, key: &str) -> &Shard {\n   41 |         let h = key.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));\n   42 |         &self.shards[(h % self.shards.len() as u64) as usize]\n   43 |     }\n   44 | \n   45 |     /// Replace a shard in place. The shard count does not change.\n   46 |     pub fn replace(&mut self, index: usize, shard: Shard) -> bool {\n   47 |         match self.shards.get_mut(index) {\n   48 |             Some(slot) => {\n   49 |                 *slot = shard;\n   50 |                 true",
+          "tool_call_id": "c02-shard-index-trap-adv-1-t2"
+        }
+      ],
+      "status": "Verified",
+      "status_reason": "ablation no-falsification: reported on 2 evidence item(s),                          unadjudicated"
+    }
+  ],
+  "usage": {
+    "input_tokens": 6406,
+    "output_tokens": 1699,
+    "total_tokens": 8105
+  },
+  "cost_usd": 0.01117575,
+  "runtime_ms": 30272,
+  "llm_calls": 5,
+  "tool_calls": 2,
+  "retries": 2
+}
