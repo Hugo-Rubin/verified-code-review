@@ -1,0 +1,237 @@
+# Architecture
+
+One rule organises the whole codebase: **the LLM reasons, and Rust decides.**
+
+The model generates hypotheses, chooses what to look at, interprets what comes
+back, and offers a judgement. Rust supplies the evidence, enforces the
+boundaries, assigns the final status, and does all the scoring. Wherever a
+decision could be made either way, it is made in Rust — because that is the
+half that can be tested, and 174 tests do test it.
+
+---
+
+## Module map
+
+| Module | Responsibility | Why it is separate |
+|---|---|---|
+| `finding.rs` | Controlled `IssueType` taxonomy, locations, statuses, evidence | Predictions and ground truth share one type, so scoring cannot drift |
+| `bench.rs` | Loading cases and ground truth | `Case` has no path to `GroundTruth` — a type-level guarantee, not a convention |
+| `repo.rs` | Sandboxed filesystem access | The single boundary between an agent and the disk |
+| `tools.rs` | `search`, `read`, `list_files` | The only source of `Evidence` in the system |
+| `llm/` | Vertex client, retries, JSON extraction, offline stub | Isolates every provider quirk |
+| `prompts.rs` | All prompt text, versioned | A result can always be traced to the exact instructions that produced it |
+| `agent/baseline.rs` | One-pass reviewer | The fair comparison point |
+| `agent/advanced.rs` | Five-stage pipeline and the decision gate | The system under test |
+| `eval.rs` | Deterministic matching and metrics | No model anywhere near scoring |
+| `trajectory.rs` | Full execution record | Auditability |
+| `runner.rs` | Orchestration and aggregation | Keeps `main.rs` thin |
+
+---
+
+## The advanced pipeline
+
+```
+  case.json + diff.patch + changed-file contents
+                     │
+                     ▼
+  ┌──────────────────────────────────┐
+  │ 1. propose_candidates            │  advanced-review/v5
+  │    "err toward proposing"        │  a wrong candidate is cheap here;
+  └──────────────┬───────────────────┘  a missed one is never checked
+                 │  CandidateFinding { issue_type, severity, location,
+                 │                     claim, reasoning }
+                 ▼
+  ┌──────────────────────────────────┐
+  │ 2. falsification_question        │  advanced-falsify/v2
+  │    "what would show this WRONG?" │  a separate call, so the question is
+  └──────────────┬───────────────────┘  on the record BEFORE any evidence
+                 ▼
+  ┌──────────────────────────────────┐
+  │ 3. investigate (loop, bounded)   │  advanced-investigate/v1
+  │                                  │
+  │    model picks a tool ──────────►│  search / read / list_files
+  │    Rust executes it    ◄─────────│  RepoRoot sandbox
+  │    verbatim output fed back      │  refusals fed back too, so the
+  │    ...until done or budget spent │  agent can correct a bad path
+  └──────────────┬───────────────────┘
+                 │  Vec<Evidence>  — file, lines, verbatim excerpt,
+                 │                   tool_call_id.  Constructed by Rust.
+                 ▼
+  ┌──────────────────────────────────┐
+  │ 4. verify_fresh                  │  fresh-verify/v5
+  │                                  │
+  │    receives: claim + evidence    │  NOT the reviewer's reasoning
+  │    stateless request             │  NOT "a previous stage believed this"
+  └──────────────┬───────────────────┘
+                 │  Supports | Contradicts | Insufficient
+                 ▼
+  ┌──────────────────────────────────┐
+  │ 5. decide()  — pure Rust         │
+  └──────────────┬───────────────────┘
+                 ▼
+     Verified │ Rejected │ Uncertain
+                 │
+                 ▼
+        human reviewer decides
+```
+
+### Why the falsification question is its own call
+
+If the same request produced both the question and the answer, the question
+would be written to fit the answer. Splitting them fixes the question on the
+record first. It is stored in the trajectory and travels with the finding.
+
+### Why the verifier is a separate request
+
+`LlmRequest` is deliberately stateless: every call carries its whole context
+and there is no conversation object. The verifier therefore *cannot* inherit
+the reviewer's reasoning — not by discipline, but because there is no channel
+for it. Its prompt is written as if the reader has never seen the review, and
+`prompts::tests::verifier_prompt_never_mentions_the_reviewer` fails the build
+if words like "reviewer", "candidate", or "previous" appear in it.
+
+### The decision gate
+
+`agent::advanced::decide()` is where "I verified this" stops being enough:
+
+| Condition | Status |
+|---|---|
+| Location does not resolve to a real file in the sandbox | `Rejected` |
+| No verdict obtained (call failed, unparseable, unknown outcome) | `Uncertain` |
+| `Contradicts` | `Rejected` |
+| `Insufficient` | `Uncertain` |
+| `Supports` **but zero investigation-derived evidence** | `Uncertain` |
+| `Supports` **with** investigation-derived evidence | `Verified` |
+
+The orchestrator seeds the claimed code region into the evidence package so the
+verifier can see what is being discussed, but that item is tagged `DiffHunk`
+and **does not count** toward the gate. If it did, every candidate would clear
+the gate for free. To be `Verified`, a claim needs at least one thing the
+investigation actually went and retrieved.
+
+---
+
+## Evidence
+
+`Evidence` values are constructed **only** in `tools.rs`, from bytes read off
+disk:
+
+```rust
+pub struct Evidence {
+    pub kind: EvidenceKind,     // Search | FileRegion | DiffHunk | FileList
+    pub file: Option<String>,
+    pub start_line: Option<u32>,
+    pub end_line: Option<u32>,
+    pub symbol: Option<String>,
+    pub excerpt: String,        // verbatim, never model-authored prose
+    pub tool_call_id: String,   // cross-references the trajectory
+}
+```
+
+The model may request a tool call and interpret the result. It cannot author an
+evidence item. That is the mechanism behind "a model saying 'verified' is not
+verification" — a claim is backed by excerpts a reader can go and check, or it
+is not backed.
+
+`FileList` never counts as evidence about a claim: a directory listing says
+nothing about whether code is wrong.
+
+---
+
+## The sandbox
+
+Every filesystem read on behalf of an agent goes through `RepoRoot`, rooted at
+the case's `repository/` directory.
+
+Rejected before any filesystem call: absolute paths, Windows drive prefixes,
+UNC paths, and any `..` component. After canonicalisation, a path that no
+longer starts with the root is rejected too, which catches symlinks pointing
+outward. Any file named `ground_truth.json` is refused by name regardless of
+location — belt and braces, since ground truth lives outside the sandbox
+anyway.
+
+There is no write path. The reviewer reads repositories and writes JSON to
+`results/`. It cannot modify, merge, reject, or deploy anything.
+
+---
+
+## Deterministic evaluation
+
+No model is involved in scoring.
+
+A prediction matches an expected finding when the `issue_type` is acceptable
+for that defect and the locations overlap within a fixed tolerance (default
+±3 lines). Matching is one-to-one, closest-first by range midpoint, with both
+sides sorted before matching so the result cannot depend on input order.
+
+Two predictions on one defect produce one true positive and one false positive:
+telling a reviewer the same thing twice still costs a second triage.
+
+Only `Verified` findings are scored. `Rejected` and `Uncertain` are counted as
+withheld — and withholding is not free, because a suppressed real defect still
+costs a false negative. "Reject everything" scores zero.
+
+`ExpectedFinding::also_accept` lists alternative categories that are defensible
+readings of the same defect. Without it the benchmark would partly measure
+agreement with our taxonomy rather than whether the bug was found. The
+concession is on the category axis only; location must still overlap.
+
+---
+
+## Provider handling
+
+`LlmClient` is a plain enum over two backends rather than a trait object — two
+implementations do not justify the dependency or the boxing.
+
+**Rate limiting is a first-class error.** `LlmError::RateLimited` is separate
+from generic HTTP statuses because an agent making seven calls per case meets a
+quota seven times sooner than one making a single call, so treating it as a
+generic failure quietly penalises the more elaborate system. `Retry-After` is
+honoured; otherwise quota errors back off from 4 s exponentially, capped at
+60 s. A configurable minimum interval between requests keeps a sweep under
+quota in the first place. This is not theoretical — it invalidated an entire
+12-case comparison, which is written up in the changelog.
+
+**JSON extraction is layered.** Strict parse, then code-fence stripping, then
+the outermost balanced span (ignoring braces inside string literals), and
+finally a repair pass that removes commas sitting directly before `}` or `]`.
+The repair runs only after every strict parse has failed and cannot rescue
+genuinely broken JSON. It exists because a real run discarded a correct finding
+over one trailing comma.
+
+**The mock provider reports zero tokens** so it cannot contribute
+plausible-looking numbers to a cost table, and every run records its provider
+so `report` can refuse to present stub output as a measurement.
+
+---
+
+## Cost accounting
+
+Token usage is recorded per request and aggregated per case. Dollar cost is
+computed **only** from operator-supplied rates: pricing must be fully
+configured or fully absent, and absent pricing is reported as "unavailable"
+rather than as zero.
+
+Cost is recomputed at evaluation time from the token counts already stored, so
+rates can be supplied after a run without spending the model again.
+
+---
+
+## What was deliberately not built
+
+- **AST or call-graph analysis.** The masterplan said not to build one without
+  evidence that simpler tools were insufficient. Literal search plus bounded
+  reads resolved every case in this benchmark, including all four traps. The
+  limitation this leaves — dynamic dispatch, trait objects, macro-generated
+  call paths — is stated in the README rather than papered over.
+- **A multi-agent verifier.** The fresh-context request already provides
+  independence without a second agent architecture. Nothing measured suggested
+  a second agent would add more than it cost.
+- **Sandboxed test execution.** Never needed: no failure in any run was of the
+  kind that running the tests would have settled. In this benchmark the tests
+  pass *despite* the defects by construction, so executing them would have been
+  actively misleading.
+- **Planner, critic, manager, editor roles.** No experiment suggested the
+  orchestration was the bottleneck. The one time the pipeline underperformed,
+  the cause was a single instruction telling the candidate stage that silence
+  was acceptable.

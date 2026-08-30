@@ -855,3 +855,157 @@ Remaining known failure: c12 is missed by both arms. Both accept a bounds
 check that calls `Store::len`, and neither reads far enough to discover that
 `len` returns capacity rather than fill. That is the main failure mode and it
 goes in the README as measured, not as a footnote.
+
+---
+
+## 2026-08-30 12:30 UTC — Correction to the 12:05 entry
+
+### Context
+
+This log is append-only, so the earlier entry stands as written and is
+corrected here.
+
+### Evidence
+
+The 12:05 entry ("Reported result: advanced 0.933 vs baseline 0.857") says the
+advanced arm "additionally resolves c03" and that "c12 is missed by both arms".
+Both statements are **wrong**, and reversed. Checking the per-case evaluation
+for that run:
+
+```text
+c03-session-touch-context   Challenging   TP=0 FP=0 FN=1  (withheld 1)
+c12-slot-guard-capacity     Challenging   TP=1 FP=0 FN=0
+```
+
+The advanced arm resolved **c12** and missed **c03**. The aggregate figures in
+that entry (P 1.000, R 0.875, F1 0.933, one challenging case solved) were
+correct; only the attribution of *which* case was wrong.
+
+### Decision
+
+Correction recorded. The mistake matters because the two cases fail for
+opposite reasons, and the wrong attribution would have pointed the next
+investigation at the wrong thing. Reading the c03 trajectory is what produced
+the `fresh-verify/v4` experiment below.
+
+### Consequence
+
+The claim "the main failure mode is c12" in that entry is withdrawn. The
+failure mode in that run was c03, and it is analysed in the next entry.
+
+---
+
+## 2026-08-30 13:10 UTC — Verifier v4 and v5: what counts as evidence
+
+### Context
+
+Run 2 (`fresh-verify/v3`, F1 0.933) still missed c03. The reason turned out to
+be the most on-thesis failure in the project.
+
+### Evidence
+
+The c03 trajectory shows the reviewer proposing the correct claim, then having
+it rejected:
+
+> **Candidate:** "Existing or third-party callers that pass an expired or
+> missing session ID to `touch` without first checking `contains` will cause an
+> unhandled panic."
+>
+> **Falsification question:** "Does `touch` in `src/store.rs` panic when called
+> with a missing or expired session ID?"
+>
+> **Verdict — Contradicts:** "The `touch` method explicitly documents its
+> precondition: 'Callers check `contains` first, so the session is known to be
+> present.' Panicking on `.unwrap()` when a caller violates this documented
+> precondition is expected behavior rather than a defect in the method."
+
+Two compounding faults. The falsification question asked about the *mechanism*
+(does it panic?) rather than about the thing the claim depends on (does any
+caller violate the precondition?), so the investigation only read `store.rs`
+and never enumerated callers. And the verifier then accepted the function's own
+doc comment as settling the question — the comment that c03 exists to make
+false.
+
+**`fresh-verify/v4`** was the direct fix: the code's own claims about itself
+are not evidence, and when a claim depends on callers only the call sites
+settle it. The falsification prompt was matched, pushing questions toward call
+sites and stating that a comment must never be the answer.
+
+Measured on the frozen benchmark:
+
+```text
+                     run 2 (v3)   run 3 (v4)
+precision                 1.000        1.000
+recall                    0.875        0.750
+F1                        0.933        0.857
+RealIssue    n=6      6/0/0        4/0/2
+Trap         n=4      0/0/0        0/0/0
+Challenging  n=2      1/0/1        2/0/0
+```
+
+v4 did exactly what it was designed to do — **both** challenging cases now
+resolve — and regressed overall by rejecting two genuine defects:
+
+```text
+c06  "the only mention of batch sizes reaching 100,000 to 500,000 elements
+      appears in a module doc comment rather than in concrete call sites"
+c08  "the evidence does not include the database schema or insert queries to
+      confirm that orders.name has a 64-character limit"
+```
+
+Told to distrust comments, it distrusted facts the repository has no way to
+state anywhere else. A repository can settle whether callers honour a
+precondition; it cannot contain the database schema of the service it talks to.
+
+**`fresh-verify/v5`** keeps the distinction the repository can actually make: a
+comment asserting something the repo can check is a claim, so go read the call
+sites; a comment stating a fact from outside the repo is the best evidence
+available and is reasoned from, not dismissed.
+
+```text
+                     run 4 (v5)  — FINAL
+precision                 0.889
+recall                    1.000
+F1                        0.941
+RealIssue    n=6      6/1/0
+Trap         n=4      0/0/0
+Challenging  n=2      2/0/0
+```
+
+### Decision
+
+v5 is the reported configuration. It is the only version that resolves both
+challenging cases *and* keeps all six real defects, and it clears all four
+traps. The single false positive is a design observation about the notes length
+limit in c08.
+
+The baseline was re-run in the same session afterwards so both arms come from
+identical conditions. It scored P 1.000, R 0.750, F1 0.857 — unchanged from the
+previous run, as expected given its prompt and configuration did not change.
+
+### Rejected alternatives
+
+- **Reporting v3 (F1 0.933) and not attempting v4.** Rejected: c03 was failing
+  for the exact reason the project exists to address, and leaving it unexamined
+  to protect a number would have been the wrong trade.
+- **Reverting to v3 after v4 regressed.** Rejected: v4's regression was
+  informative rather than fatal. The rule was right and too broad, and
+  narrowing it produced the best configuration measured.
+- **Keeping v4 because it scored 2/2 on the challenging cases.** Rejected:
+  headline F1 fell, and trading two real defects for two challenging ones is
+  not an improvement.
+- **Tuning the c06 and c08 ground truth so the facts live in code rather than
+  comments.** Rejected outright as benchmark tampering after seeing results.
+  The benchmark was frozen; the system was wrong.
+
+### Consequence
+
+Five configurations of the advanced arm have now been measured on the frozen
+benchmark (A4, v3, v4, v5) plus the seed-phase runs, and every one is preserved
+under `results-archive/`. The improvement changelog carries them all, including
+the three that made things worse.
+
+Remaining known failure: one false positive on c08, a true but immaterial
+observation that survived the materiality rule. Falsification filters for truth
+and, with the v5 wording, for consequence — but the boundary is a judgement the
+model still makes, and it will not always draw it where a reviewer would.
