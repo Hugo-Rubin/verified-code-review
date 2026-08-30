@@ -139,14 +139,31 @@ impl VertexClient {
 
 /// Build the `generateContent` URL.
 ///
-/// The `global` location uses the unprefixed host; regional locations use a
-/// `{location}-` prefix.
+/// Two shapes exist:
+///
+/// * **Express mode** — an API key with no project. The URL carries no project
+///   or location segment; the key identifies everything.
+/// * **Full Vertex** — a project and location path. Required for bearer-token
+///   auth, and available to API keys that name a project.
+///
+/// For the full form, the `global` location uses the unprefixed host while
+/// regional locations use a `{location}-` prefix.
 fn build_endpoint(cfg: &LlmConfig) -> Result<String> {
     let location = if cfg.location.trim().is_empty() {
         "global"
     } else {
         cfg.location.trim()
     };
+
+    // An API key authenticates against the express endpoint, which carries no
+    // project or location segment — the key identifies both. A project may
+    // still be configured for reference; it simply does not belong in this URL.
+    if cfg.auth == VertexAuth::ApiKey {
+        return Ok(format!(
+            "https://aiplatform.googleapis.com/v1/publishers/google/models/{}:generateContent",
+            cfg.model
+        ));
+    }
 
     let project = match &cfg.project_id {
         Some(p) => p.clone(),
@@ -311,9 +328,15 @@ mod tests {
         }
     }
 
+    fn bearer(location: &str) -> LlmConfig {
+        let mut c = cfg(location);
+        c.auth = VertexAuth::AccessToken;
+        c
+    }
+
     #[test]
     fn global_location_uses_unprefixed_host() {
-        let url = build_endpoint(&cfg("global")).unwrap();
+        let url = build_endpoint(&bearer("global")).unwrap();
         assert!(url.starts_with(
             "https://aiplatform.googleapis.com/v1/projects/my-project/locations/global/"
         ));
@@ -322,16 +345,39 @@ mod tests {
 
     #[test]
     fn regional_location_is_prefixed() {
-        let url = build_endpoint(&cfg("us-central1")).unwrap();
+        let url = build_endpoint(&bearer("us-central1")).unwrap();
         assert!(url.starts_with("https://us-central1-aiplatform.googleapis.com/"));
         assert!(url.contains("/locations/us-central1/"));
     }
 
     #[test]
-    fn missing_project_is_an_error_not_a_bad_url() {
+    fn api_key_without_a_project_uses_the_express_endpoint() {
         let mut c = cfg("global");
         c.project_id = None;
+        let url = build_endpoint(&c).unwrap();
+        assert_eq!(
+            url,
+            "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-test:generateContent"
+        );
+        assert!(!url.contains("/projects/"));
+        assert!(!url.contains("/locations/"));
+    }
+
+    #[test]
+    fn bearer_auth_without_a_project_is_an_error_not_a_bad_url() {
+        let mut c = bearer("global");
+        c.project_id = None;
         assert!(build_endpoint(&c).is_err());
+    }
+
+    #[test]
+    fn api_key_ignores_a_configured_project() {
+        // Express keys authenticate against the project-less endpoint. A
+        // stray VERTEX_PROJECT_ID must not push the URL onto the full path,
+        // where the key would be rejected.
+        let url = build_endpoint(&cfg("us-central1")).unwrap();
+        assert!(!url.contains("/projects/"));
+        assert!(!url.contains("/locations/"));
     }
 
     #[test]

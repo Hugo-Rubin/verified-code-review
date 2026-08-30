@@ -1,0 +1,6 @@
+{
+  "case_id": "c01-pool-counter-leak",
+  "title": "Simplify the capacity check in Pool::acquire",
+  "description": "The capacity check in `Pool::acquire` was rewritten so that the active counter is incremented first and the limit is then compared with `>` instead of `>=`. The author's stated intent was to remove the duplicated increment and make the comparison read more naturally against the number of connections that would be outstanding.",
+  "category": "RealIssue"
+}

@@ -1,0 +1,6 @@
+{
+  "case_id": "c03-session-touch-context",
+  "title": "Tighten SessionStore::touch now that callers check first",
+  "description": "`SessionStore::touch` previously ignored unknown session ids silently. Since callers are expected to establish that the session exists before recording activity, the silent no-op was hiding mistakes rather than preventing them. The lookup is now unwrapped and the contract is stated in the doc comment.",
+  "category": "Challenging"
+}

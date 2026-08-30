@@ -11,8 +11,8 @@
 
 use crate::finding::IssueType;
 
-pub const BASELINE_REVIEW_V: &str = "baseline-review/v1";
-pub const ADVANCED_REVIEW_V: &str = "advanced-review/v1";
+pub const BASELINE_REVIEW_V: &str = "baseline-review/v2";
+pub const ADVANCED_REVIEW_V: &str = "advanced-review/v2";
 pub const INVESTIGATE_V: &str = "advanced-investigate/v1";
 pub const FALSIFY_V: &str = "advanced-falsify/v1";
 pub const VERIFY_V: &str = "fresh-verify/v1";
@@ -64,9 +64,7 @@ problem in one sentence.
 
 Be precise and be selective:
 - Report an issue only when you are confident the code is genuinely wrong.
-- A pattern that merely looks risky is not a defect. `unwrap()` on a value that
-  cannot be `None`, an index that cannot be out of bounds, and a lock that
-  cannot deadlock are all correct code.
+- A pattern that merely looks risky is not a defect.
 - Do not report style preferences, naming, formatting, or missing comments.
 - Do not invent a defect to have something to say.
 
@@ -92,8 +90,8 @@ or refute.
 
 - Anchor each candidate to a specific file and line range.
 - Do not report style preferences, naming, formatting, or missing comments.
-- Prefer claims about behaviour ("this can panic when x is empty") over vague
-  concerns ("this looks fragile").
+- Prefer claims about behaviour, stated as something that either happens or
+  does not, over vague concerns such as "this looks fragile".
 
 {}"#,
         finding_schema()
@@ -327,6 +325,35 @@ mod tests {
     #[test]
     fn investigate_prompt_states_the_call_budget() {
         assert!(investigate_system(5).contains("up to 5 tool calls"));
+    }
+
+    #[test]
+    fn review_prompts_contain_no_benchmark_specific_tells() {
+        // v1 of the baseline prompt named `unwrap()` on a non-None value and
+        // an in-bounds index as examples of correct code. Those are almost
+        // verbatim descriptions of benchmark cases c03 and c02, so the prompt
+        // was coaching the reviewer past the exact situations under test.
+        // Guidance must stay general.
+        let tells = [
+            "unwrap",
+            "index",
+            "out of bounds",
+            "deadlock",
+            "shard",
+            "session",
+            "counter",
+            "heartbeat",
+            "pool",
+        ];
+        for prompt in [baseline_system(), advanced_system()] {
+            let lower = prompt.to_lowercase();
+            for tell in tells {
+                assert!(
+                    !lower.contains(tell),
+                    "review prompt leaks a case-specific tell: {tell:?}"
+                );
+            }
+        }
     }
 
     #[test]

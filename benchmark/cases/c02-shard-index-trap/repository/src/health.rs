@@ -1,0 +1,56 @@
+//! Health reporting for a router's shard set.
+
+use crate::router::Router;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Summary {
+    /// Total number of shards.
+    pub total: usize,
+    /// Id of the coordinator shard.
+    pub coordinator: String,
+    /// How many shards are currently unhealthy.
+    pub unhealthy: usize,
+}
+
+impl Summary {
+    /// True when every shard is reporting healthy.
+    pub fn all_healthy(&self) -> bool {
+        self.unhealthy == 0
+    }
+}
+
+/// Summarise the health of `router`'s shards.
+///
+/// The first shard acts as the coordinator by convention.
+pub fn summary(router: &Router) -> Summary {
+    let shards = router.shards();
+
+    Summary {
+        total: shards.len(),
+        coordinator: shards[0].id().to_string(),
+        unhealthy: shards.iter().filter(|s| !s.is_healthy()).count(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shard::Shard;
+
+    #[test]
+    fn reports_the_first_shard_as_coordinator() {
+        let r = Router::new(vec![Shard::new("a"), Shard::new("b")]).unwrap();
+        let s = summary(&r);
+        assert_eq!(s.coordinator, "a");
+        assert_eq!(s.total, 2);
+        assert!(s.all_healthy());
+    }
+
+    #[test]
+    fn counts_unhealthy_shards() {
+        let mut down = Shard::new("b");
+        down.set_healthy(false);
+        let r = Router::new(vec![Shard::new("a"), down]).unwrap();
+        assert_eq!(summary(&r).unhealthy, 1);
+    }
+}

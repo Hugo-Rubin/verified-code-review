@@ -1,0 +1,10 @@
+# Standalone: this crate is benchmark material, not part of the reviewer's
+# workspace.
+[workspace]
+
+[package]
+name = "connpool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]

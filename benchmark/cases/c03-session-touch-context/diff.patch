@@ -1,0 +1,19 @@
+--- a/src/store.rs
++++ b/src/store.rs
+@@ -47,11 +47,12 @@
+         self.sessions.is_empty()
+     }
+ 
+-    /// Record activity on a session. Does nothing when the session is unknown.
++    /// Record activity on a session.
++    ///
++    /// Callers check `contains` first, so the session is known to be present.
+     pub fn touch(&mut self, id: &SessionId, now: u64) {
+-        if let Some(session) = self.sessions.get_mut(id) {
+-            session.last_seen = now;
+-        }
++        let session = self.sessions.get_mut(id).unwrap();
++        session.last_seen = now;
+     }
+ 
+     /// Drop every session whose last activity is older than `cutoff`.

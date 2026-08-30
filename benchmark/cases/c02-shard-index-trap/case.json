@@ -1,0 +1,6 @@
+{
+  "case_id": "c02-shard-index-trap",
+  "title": "Add a health summary for the router's shard set",
+  "description": "A new `health` module reports the total shard count, the id of the coordinator shard, and how many shards are currently unhealthy. The first shard acts as the coordinator by convention. The module is exported from the crate root.",
+  "category": "Trap"
+}

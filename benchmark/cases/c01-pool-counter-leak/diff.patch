@@ -1,0 +1,17 @@
+--- a/src/pool.rs
++++ b/src/pool.rs
+@@ -53,12 +53,12 @@
+     /// Lease a connection, or fail if the pool is at capacity.
+     pub fn acquire(&self) -> Result<Conn, PoolError> {
+         let mut n = self.active.lock().expect("pool counter poisoned");
++        *n += 1;
+ 
+-        if *n >= self.max {
++        if *n > self.max {
+             return Err(PoolError::Exhausted);
+         }
+ 
+-        *n += 1;
+         drop(n);
+         Ok(Conn {
+             active: Arc::clone(&self.active),

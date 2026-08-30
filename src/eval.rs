@@ -154,7 +154,7 @@ pub fn evaluate_case(
             .enumerate()
             .filter(|(i, _)| !prediction_used[*i])
             .filter(|(_, p)| {
-                p.candidate.issue_type == exp.issue_type
+                exp.accepts_type(p.candidate.issue_type)
                     && p.candidate.location.overlaps(&exp_loc, line_tolerance)
             })
             .min_by_key(|(_, p)| midpoint_distance(&p.candidate.location, &exp_loc));
@@ -241,6 +241,7 @@ mod tests {
         ExpectedFinding {
             id: id.to_string(),
             issue_type: ty,
+            also_accept: Vec::new(),
             file: file.to_string(),
             start_line: s,
             end_line: e,
@@ -384,6 +385,59 @@ mod tests {
         assert_eq!(e.counts.true_positives, 0);
         assert_eq!(e.counts.false_positives, 1);
         assert_eq!(e.counts.false_negatives, 1);
+    }
+
+    #[test]
+    fn an_also_accepted_issue_type_matches() {
+        let mut e = expect("g1", IssueType::ResourceManagement, "src/a.rs", 10, 12);
+        e.also_accept = vec![IssueType::StateManagement];
+        let gt = truth(vec![e]);
+        let preds = vec![pred(
+            "p1",
+            IssueType::StateManagement,
+            "src/a.rs",
+            10,
+            12,
+            FindingStatus::Verified,
+        )];
+        let r = eval(&preds, &gt);
+        assert_eq!(r.counts.true_positives, 1);
+        assert_eq!(r.counts.false_positives, 0);
+    }
+
+    #[test]
+    fn also_accept_does_not_admit_an_unlisted_type() {
+        let mut e = expect("g1", IssueType::ResourceManagement, "src/a.rs", 10, 12);
+        e.also_accept = vec![IssueType::StateManagement];
+        let gt = truth(vec![e]);
+        let preds = vec![pred(
+            "p1",
+            IssueType::Performance,
+            "src/a.rs",
+            10,
+            12,
+            FindingStatus::Verified,
+        )];
+        assert_eq!(eval(&preds, &gt).counts.true_positives, 0);
+    }
+
+    #[test]
+    fn also_accept_still_requires_location_overlap() {
+        // The concession is on the category axis only. It must not let a
+        // finding somewhere else in the file count as the same defect.
+        let mut e = expect("g1", IssueType::ResourceManagement, "src/a.rs", 10, 12);
+        e.also_accept = vec![IssueType::StateManagement];
+        let gt = truth(vec![e]);
+        let preds = vec![pred(
+            "p1",
+            IssueType::StateManagement,
+            "src/a.rs",
+            300,
+            310,
+            FindingStatus::Verified,
+        )];
+        assert_eq!(eval(&preds, &gt).counts.true_positives, 0);
+        assert_eq!(eval(&preds, &gt).counts.false_positives, 1);
     }
 
     #[test]

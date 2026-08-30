@@ -56,7 +56,23 @@ impl Case {
 pub struct ExpectedFinding {
     /// Stable identifier, unique within the case.
     pub id: String,
+    /// The canonical category, used when reporting this finding.
     pub issue_type: IssueType,
+    /// Other categories that are a defensible reading of the same defect.
+    ///
+    /// Several real defects sit legitimately between two categories — a
+    /// counter that is never decremented is both `ResourceManagement` and
+    /// `StateManagement`, and neither reading is wrong. Without this, the
+    /// benchmark would partly measure agreement with our taxonomy choices
+    /// rather than whether the defect was found, and a reviewer that
+    /// correctly identified the bug under the other name would be charged a
+    /// false positive *and* a false negative for it.
+    ///
+    /// This is a matching concession on the category axis only. Location
+    /// still has to overlap, so it cannot turn an unrelated finding into a
+    /// true positive.
+    #[serde(default)]
+    pub also_accept: Vec<IssueType>,
     pub file: String,
     pub start_line: u32,
     pub end_line: u32,
@@ -67,6 +83,11 @@ pub struct ExpectedFinding {
 impl ExpectedFinding {
     pub fn location(&self) -> Location {
         Location::new(&self.file, self.start_line, self.end_line)
+    }
+
+    /// Whether `candidate` is an acceptable category for this defect.
+    pub fn accepts_type(&self, candidate: IssueType) -> bool {
+        self.issue_type == candidate || self.also_accept.contains(&candidate)
     }
 }
 

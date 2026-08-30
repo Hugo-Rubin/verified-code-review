@@ -315,3 +315,191 @@ The baseline is deliberately a *strong* direct reviewer: same model, an
 explicit instruction to avoid speculation, and the full contents of every
 changed file. If the hypothesis survives against that, the result means
 something.
+
+---
+
+## 2026-08-30 09:10 UTC — Seed benchmark built and ground truth verified by execution
+
+### Context
+
+Phase 2: three seed cases, one per required shape. All are standalone Rust
+crates that compile and whose test suites pass.
+
+### Evidence
+
+```text
+c01-pool-counter-leak       RealIssue    1 expected finding
+c02-shard-index-trap        Trap         0 expected findings
+c03-session-touch-context   Challenging  1 expected finding
+```
+
+Ground truth was not asserted by inspection. A throwaway harness linked all
+three crates as dependencies and executed each claim:
+
+```text
+c01  2 successful acquires         -> active = 2
+     2 REJECTED acquires           -> active = 4      (leak observed)
+     both connections released     -> active = 2      (expected 0)
+     pool permanently exhausted    -> true
+c02  Router::new(vec![])           -> Err(NoShards)
+     replace() then shards().len() -> 1               (count preserved)
+     summary() on a 1-shard router -> ok
+c03  sweep() drops the idle session, then on_heartbeat() panics at
+     store.rs:54 with "called Option::unwrap() on a None value"
+```
+
+The observed panic line for c03, 54, falls inside the recorded ground-truth
+range 53-55, so the location is confirmed against real behaviour rather than by
+counting lines.
+
+Each case's test suite passes *despite* the defect, which is what makes c01 and
+c03 realistic: `refuses_beyond_the_limit` never asserts that the counter
+recovers, and `touch_updates_last_seen` performs the `contains` check that the
+buggy caller omits.
+
+### Decision
+
+Seed benchmark accepted. One evaluator change was made before any run, and is
+recorded because it affects every number the project will report:
+`ExpectedFinding` gained an `also_accept` list of alternative `issue_type`
+values.
+
+Rationale: a counter that is never decremented is defensibly
+`ResourceManagement`, `StateManagement`, or `Correctness`. Without
+`also_accept`, a reviewer that found the defect precisely but filed it under
+the other name would be charged a false positive *and* a false negative, making
+the benchmark partly a measure of agreement with our taxonomy rather than of
+whether the bug was found. The concession is on the category axis only —
+location overlap is still required, so it cannot turn an unrelated finding into
+a true positive. Tested in both directions.
+
+This turned out to matter immediately: the baseline filed c01 as
+`StateManagement` while the ground-truth primary is `ResourceManagement`.
+
+### Rejected alternatives
+
+- Free-text or embedding similarity matching on the claim. Rejected as
+  non-deterministic and unreproducible.
+- Restricting the benchmark to defects with an unambiguous category. Rejected:
+  it would bias the benchmark toward unrealistically tidy bugs.
+- Putting ground truth inside `repository/`. Rejected: the agent reads that
+  tree.
+
+### Consequence
+
+Benchmark is loadable and the baseline can run. Proceeding to the GO/NO-GO
+checkpoint.
+
+---
+
+## 2026-08-30 09:19 UTC — Baseline GO/NO-GO: GO, with the failure mode reframed
+
+### Context
+
+Masterplan Phase 3. The baseline ran against all three seed cases before any
+advanced work began. The question is whether the baseline actually exhibits a
+verification problem worth solving.
+
+### Evidence
+
+Two runs, same model (`gemini-3.7-flash`, Vertex, temperature 0), same cases.
+
+Run 1 used baseline prompt v1. While reading its output I found a
+methodological flaw of my own making. The v1 prompt contained this line:
+
+> "A pattern that merely looks risky is not a defect. `unwrap()` on a value
+> that cannot be `None`, an index that cannot be out of bounds, and a lock that
+> cannot deadlock are all correct code."
+
+An `unwrap()` on a non-`None` value and an in-bounds index are near-verbatim
+descriptions of c03 and c02. The baseline prompt was coaching the reviewer past
+the exact situations the benchmark exists to test. That is prompt-level leakage
+of case knowledge, and it had to go before the sweep was contaminated.
+
+Run 2 used prompt v2, with those examples removed and the general principle
+kept. A regression test now fails the build if a review prompt mentions
+`unwrap`, `index`, `deadlock`, or any benchmark-specific noun.
+
+Both runs produced identical scores:
+
+```text
+                      run 1 (v1 prompt)   run 2 (v2 prompt)
+TP / FP / FN               1 / 0 / 1           1 / 0 / 1
+precision                    1.000               1.000
+recall                       0.500               0.500
+F1                           0.667               0.667
+findings to triage        0.33/case           0.33/case
+runtime                  5241 ms/case        5849 ms/case
+```
+
+Per case, in both runs:
+
+```text
+c01 RealIssue    FOUND, precisely, at the right lines, filed as StateManagement
+c02 Trap         reported nothing            -> correct, no false positive
+c03 Challenging  reported nothing            -> MISSED a real, reachable panic
+```
+
+Run 1 artifacts are preserved under `results-archive/baseline-prompt-v1/`.
+
+### Decision
+
+**GO** — but the hypothesised failure mode was wrong, and the record says so.
+
+The prediction was that a direct reviewer would over-report: plausible-looking
+false positives on clean code, later cleared by falsification. That is not what
+happened. This baseline is *conservative*. It produced zero false positives on
+the trap, and on the case that mattered it stayed silent about a genuine bug.
+
+The real failure mode is the mirror image: **the baseline accepts an
+unverifiable claim made by the code itself, and goes quiet.** The c03 diff adds
+a doc comment asserting "Callers check `contains` first, so the session is
+known to be present." That assertion is false — `Server::on_heartbeat`, in a
+file the change does not touch, calls `touch` without checking — but nothing in
+the diff or in the changed file contradicts it, and the file's own unit test
+appears to corroborate it. The baseline had no way to check, and trusted it.
+The panic is reachable, and was demonstrated by execution.
+
+That is still squarely a verification problem, and still exactly what
+repository-aware investigation is for. Trustworthiness runs in both directions:
+a reviewer that silently drops real defects is as untrustworthy as one that
+invents them. What changes is the mechanism the advanced system must
+demonstrate — investigation supplying evidence the reviewer could not otherwise
+obtain, rather than falsification pruning overconfident guesses.
+
+Both halves remain under test. The advanced reviewer's prompt deliberately asks
+for every plausible candidate, which should raise its false-positive exposure
+on c02; falsification then has to earn its place by clearing them. If it does
+not, that is a reportable negative result and it will be reported.
+
+### Rejected alternatives
+
+- **Declaring NO-GO.** Rejected: F1 0.667 with a demonstrated, reproducible
+  miss of a real defect is a meaningful problem, not a baseline performing
+  extremely well.
+- **Weakening the baseline prompt to manufacture false positives.** Rejected
+  outright. The masterplan forbids artificially degrading the baseline and it
+  would invalidate the central claim. Note that removing the v1 tells changed
+  nothing, which is itself evidence that the conservatism belongs to the model
+  rather than to the prompt.
+- **Rewriting c02 into an easier trap.** Rejected: the case is doing its job.
+  It is currently unfalsified rather than passed, and one clean case is not
+  evidence about false-positive rates in either direction.
+- **Keeping the v1 prompt because it scored identically.** Rejected: identical
+  scores do not make case-specific coaching acceptable, and a reader auditing
+  the prompts would rightly object.
+
+### Consequence
+
+Proceed to Phase 4 on the same three seed cases. Two limitations are now on the
+record and must reach the README:
+
+1. n=3 is far too small to conclude anything. One trap in particular is not
+   evidence about false-positive rates.
+2. If the baseline continues to produce no false positives as the benchmark
+   grows, the falsification half of the thesis will have little to bite on, and
+   the contribution will rest on investigation improving recall. That must be
+   reported as measured, not narrated around.
+
+Phase 5 expansion will therefore weight toward traps and context-dependent
+cases, so that both halves of the hypothesis get a fair test.
