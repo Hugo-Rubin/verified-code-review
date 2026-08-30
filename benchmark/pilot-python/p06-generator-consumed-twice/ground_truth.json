@@ -1,0 +1,15 @@
+{
+  "case_id": "p06-generator-consumed-twice",
+  "expected_findings": [
+    {
+      "id": "p06-f1",
+      "issue_type": "Correctness",
+      "also_accept": ["StateManagement", "ApiContract"],
+      "file": "src/pipeline.py",
+      "start_line": 24,
+      "end_line": 28,
+      "description": "`summarise` iterates its argument twice: once in the `sum(1 for _ in records)` and again in the `[r.key for r in records]` comprehension. That was correct while `parse_records` returned a list, but a generator is exhausted by the first pass, so the second yields nothing. Every caller passing the new return value straight to `summarise` now gets a correct count with an empty `keys` list - a silently wrong result rather than an error."
+    }
+  ],
+  "notes": "PILOT CASE - Python. Not part of the frozen Rust benchmark and not included in any headline figure.\n\nSingle-consumption of an iterator has no Rust analogue that behaves this way silently: Rust's borrow checker and `Iterator` semantics would force the issue at compile time, and a consumed iterator cannot be silently re-read into an empty result. This case exists to test a defect class the Rust benchmark structurally cannot contain.\n\nThe defect is also split across two functions in the SAME file, which makes it a different investigation shape from p01 and p03 - the reviewer does not need to leave the changed file, but does need to connect the change at line 11 to the unchanged consumer at line 24. A reviewer reading only the diff hunk sees a defensible laziness optimisation.\n\nWhy the tests miss it: all three call `list(parse_records(...))` before doing anything, materialising the generator first. `test_summarise_counts_a_list` passes an explicit `list(...)`, so it exercises `summarise` only against the old contract and passes unchanged.\n\nVerified by execution: `summarise(parse_records(LINES))` returns count 3 with keys [], where the pre-change version returned count 3 with keys ['a','b','c'].\n\nalso_accept covers StateManagement and ApiContract."
+}

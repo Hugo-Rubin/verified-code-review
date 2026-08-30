@@ -1,0 +1,7 @@
+{
+  "case_id": "p06-generator-consumed-twice",
+  "language": "Python",
+  "title": "Stream records instead of building a list",
+  "description": "`parse_records` built the whole list of records in memory. It now returns a generator expression so a large input is processed lazily rather than held all at once.",
+  "category": "RealIssue"
+}

@@ -36,3 +36,9 @@ runs/
 
 # Third-party hackathon material. Redistributing it is not ours to do.
 micro1 - First Hackathon*.pdf
+
+# Local TTS model weights for the video narration. Downloaded once by
+# tools/tts/README.md; too large to track and freely re-downloadable.
+tools/tts/*.onnx
+tools/tts/*.bin
+tools/tts/audio/

@@ -52,7 +52,7 @@ Investigation supplies the recall (0.750 → 1.000). Falsification is what makes
 that recall affordable, taking precision from 0.707 to 0.963. Remove either and
 you have something worse than the simple prompt you started with.
 
-Full numbers: [`results-trials/`](results-trials/) and [`results/`](results/).
+Full numbers: [`results-trials/`](results-trials/) and [`results/`](results-final/).
 Full history, including four changes that made things worse and one feature
 that did nothing at all:
 [`docs/improvement-changelog.md`](docs/improvement-changelog.md).
@@ -627,7 +627,7 @@ the feedback that shaped the next step, retries, and the human checkpoint.
 Every trajectory records each role's full prompt text and its prompt version
 string, so any output can be traced to the exact instructions that produced it.
 
-Every run in [`results/trajectories/`](results/trajectories/) records the full
+Every run in [`results/trajectories/`](results-final/t1/trajectories/) records the full
 prompts, every tool call and its verbatim response, the falsification question,
 the fresh-context verdict, the orchestrator's decision and reason, token usage,
 retries, and runtime.

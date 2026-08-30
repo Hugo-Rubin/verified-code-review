@@ -1,0 +1,17 @@
+--- a/src/registry.py
++++ b/src/registry.py
+@@ -7,13 +7,11 @@
+         self.enabled = enabled
+ 
+ 
+-def collect_enabled(flags, into=None):
++def collect_enabled(flags, into=[]):
+     """Append the names of every enabled flag to ``into`` and return it.
+ 
+     ``into`` lets a caller accumulate across several flag sets.
+     """
+-    if into is None:
+-        into = []
+     for flag in flags:
+         if flag.enabled:
+             into.append(flag.name)

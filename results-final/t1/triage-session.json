@@ -1,0 +1,35 @@
+{
+  "started_at": "2026-08-30T22:16:34.004914300+00:00",
+  "finished_at": "2026-08-30T22:20:34.729193500+00:00",
+  "reviewer": "hugo",
+  "shuffle_seed": 20260830,
+  "blind": true,
+  "evidence_shown": false,
+  "arms": [
+    {
+      "arm": "baseline",
+      "findings_triaged": 0,
+      "total_seconds": -0.0,
+      "mean_seconds_per_finding": 0.0,
+      "seconds_per_case": -0.0,
+      "case_count": 12,
+      "verdict_counts": {}
+    },
+    {
+      "arm": "advanced",
+      "findings_triaged": 0,
+      "total_seconds": -0.0,
+      "mean_seconds_per_finding": 0.0,
+      "seconds_per_case": -0.0,
+      "case_count": 12,
+      "verdict_counts": {}
+    }
+  ],
+  "decisions": [],
+  "notes": [
+    "Findings from all arms were pooled, shuffled, and presented without identifying which system produced them.",
+    "Only the claim and its location were shown. Evidence and verifier verdicts were withheld to keep the arms indistinguishable, which understates the advanced system's benefit.",
+    "seconds_per_case divides an arm's total triage time by the number of benchmark cases, including cases where that arm reported nothing.",
+    "session ended early by the reviewer"
+  ]
+}

@@ -7,14 +7,14 @@
 | Model | `gemini-3.7-flash` |
 | Provider | Vertex |
 | Temperature | 0.0 |
-| Trajectory id | `2ab359d8-aa4e-4241-982f-21cf83f2c07f` |
-| Started | 2026-08-30T11:04:54.381701700+00:00 |
-| Runtime | 5876 ms |
+| Trajectory id | `a0c7c66b-b159-440f-9473-6db0f44e974c` |
+| Started | 2026-08-30T21:30:21.723427800+00:00 |
+| Runtime | 4080 ms |
 | Model calls | 1 |
 | Tool calls | 0 |
 | Retries | 0 |
-| Tokens | 1812 in / 294 out |
-| Cost | not configured |
+| Tokens | 1812 in / 363 out |
+| Cost | $0.002720 |
 | Match tolerance | ±3 lines |
 | Tool-call budget | 8 per candidate |
 
@@ -24,7 +24,7 @@
 
 ### 1. Model call — Review
 
-Prompt version `baseline-review/v2` · 1812 in / 294 out · 5875 ms · attempt(s) 1
+Prompt version `baseline-review/v2` · 1812 in / 363 out · 4080 ms · attempt(s) 1
 
 <details><summary>System instructions</summary>
 

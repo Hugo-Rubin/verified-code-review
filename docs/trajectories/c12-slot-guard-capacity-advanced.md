@@ -7,14 +7,14 @@
 | Model | `gemini-3.7-flash` |
 | Provider | Vertex |
 | Temperature | 0.0 |
-| Trajectory id | `25e9041e-16aa-4282-b328-f943516fd235` |
-| Started | 2026-08-30T11:02:26.111030800+00:00 |
-| Runtime | 47050 ms |
-| Model calls | 7 |
-| Tool calls | 3 |
+| Trajectory id | `3f5d15dd-d32e-4dab-a098-0c6f300edba7` |
+| Started | 2026-08-30T21:14:57.528977300+00:00 |
+| Runtime | 29872 ms |
+| Model calls | 6 |
+| Tool calls | 2 |
 | Retries | 0 |
-| Tokens | 11252 in / 3062 out |
-| Cost | not configured |
+| Tokens | 9889 in / 2719 out |
+| Cost | $0.017613 |
 | Match tolerance | ±3 lines |
 | Tool-call budget | 8 per candidate |
 
@@ -24,7 +24,7 @@
 
 ### 1. Model call — Review
 
-Prompt version `advanced-review/v5` · 2219 in / 1092 out · 18575 ms · attempt(s) 1
+Prompt version `advanced-review/v6` · 2333 in / 864 out · 7630 ms · attempt(s) 1
 
 <details><summary>System instructions</summary>
 
@@ -60,20 +60,15 @@ fine.
 - Pay particular attention to anything whose correctness depends on facts that
   are not visible in the changed files. If the code is only correct given some
   assumption about the rest of the repository, that assumption is a candidate.
-- Do not report style preferences, naming, formatting, or missing comments.
-- Avoid vague concerns such as "this looks fragile"; say what would go wrong.
+- Apply that concretely. Where this change calls something whose definition you
+  cannot see here, ask what it must return or do for this code to be right, and
+  raise that as a candidate stating the assumption. A guard is only as good as
+  the thing it calls; a name suggests what a function does but does not
+  establish it. This is the single most common way a change that looks correct
+  in isolation turns out not to be, and it is precisely what the investigation
+  stage can
 
-Return JSON of exactly this shape and nothing else:
-
-{
-  "findings": [
-    {
-      "issue_type": "<one of the values below, spelled exactly>",
-      "severity": "Low" | "Medium" | "High",
-      "file": "<repository-relative path, forward slashes>",
-      "start_line": <integer, 1-based, in the file's CURRENT state after the
-
-[... 849 more characters of system prompt; full text in the JSON ...]
+[... 1352 more characters of system prompt; full text in the JSON ...]
 ```
 
 </details>
@@ -193,8 +188,8 @@ A new `api` module exposes `fetch` for a single slot and `fetch_many` for severa
       "file": "src/api.rs",
       "start_line": 8,
       "end_line": 13,
-      "claim": "fetch assumes store.record_at(index) is valid and non-panicking for every index below store.len(), which fails if Store allows sparse slots or deletions.",
-      "reasoning": "The module documentation describes the crate as 'Slot-based record storage', but fetch only checks index >= store.len() before calling store.record_at(index). If Store allows vacant slots or uses len() to track element count rather than highest allocated slot index, calling fetch will panic on unoccupied slots."
+      "claim": "Callers passing an index for an unoccupied or deleted slot in `Store` will cause `store.record_at(index)` to panic despite `index < store.len()`.",
+      "reasoning": "The crate is described as a slot-based record storage, which commonly supports sparse or deleted slots where slot indices do not correspond 1:1 to dense sequential indices under `store.len()`. If `store.record_at(index)` expects an occupied slot or dense index, checking only `index >= store.len()` may fail to guard against panics on vacant slots."
     }
   ]
 }
@@ -204,13 +199,13 @@ A new `api` module exposes `fetch` for a single slot and `fetch_many` for severa
 
 **Correctness** · severity Medium · `src/api.rs:8-13`
 
-> fetch assumes store.record_at(index) is valid and non-panicking for every index below store.len(), which fails if Store allows sparse slots or deletions.
+> Callers passing an index for an unoccupied or deleted slot in `Store` will cause `store.record_at(index)` to panic despite `index < store.len()`.
 
-Reasoning: The module documentation describes the crate as 'Slot-based record storage', but fetch only checks index >= store.len() before calling store.record_at(index). If Store allows vacant slots or uses len() to track element count rather than highest allocated slot index, calling fetch will panic on unoccupied slots.
+Reasoning: The crate is described as a slot-based record storage, which commonly supports sparse or deleted slots where slot indices do not correspond 1:1 to dense sequential indices under `store.len()`. If `store.record_at(index)` expects an occupied slot or dense index, checking only `index >= store.len()` may fail to guard against panics on vacant slots.
 
 ### 3. Model call — Falsify
 
-Prompt version `advanced-falsify/v2` · 369 in / 205 out · 2810 ms · attempt(s) 1
+Prompt version `advanced-falsify/v2` · 387 in / 380 out · 3752 ms · attempt(s) 1
 
 <details><summary>System instructions</summary>
 
@@ -245,9 +240,9 @@ Return JSON of exactly this shape:
 <details><summary>User message</summary>
 
 ```
-Claim: fetch assumes store.record_at(index) is valid and non-panicking for every index below store.len(), which fails if Store allows sparse slots or deletions.
+Claim: Callers passing an index for an unoccupied or deleted slot in `Store` will cause `store.record_at(index)` to panic despite `index < store.len()`.
 Location: src/api.rs:8-13
-Reviewer's reasoning: The module documentation describes the crate as 'Slot-based record storage', but fetch only checks index >= store.len() before calling store.record_at(index). If Store allows vacant slots or uses len() to track element count rather than highest allocated slot index, calling fetch will panic on unoccupied slots.
+Reviewer's reasoning: The crate is described as a slot-based record storage, which commonly supports sparse or deleted slots where slot indices do not correspond 1:1 to dense sequential indices under `store.len()`. If `store.record_at(index)` expects an occupied slot or dense index, checking only `index >= store.len()` may fail to guard against panics on vacant slots.
 
 What evidence would prove this claim wrong?
 ```
@@ -257,18 +252,18 @@ What evidence would prove this claim wrong?
 **Response**
 
 ```json
-{"falsification_question": "Does the Store implementation allow deletions, vacant slots, or any index below store.len() to be unoccupied?"}
+{"falsification_question": "Does `Store::record_at(index)` return an `Option` or otherwise handle unoccupied/deleted slots without panicking for any `index < store.len()`?"}
 ```
 
 ### 4. Falsification question — `c12-slot-guard-capacity-adv-1`
 
 Fixed before any evidence is gathered, so it cannot be written to fit the verdict.
 
-> **Does the Store implementation allow deletions, vacant slots, or any index below store.len() to be unoccupied?**
+> **Does `Store::record_at(index)` return an `Option` or otherwise handle unoccupied/deleted slots without panicking for any `index < store.len()`?**
 
 ### 5. Model call — Investigate
 
-Prompt version `advanced-investigate/v1` · 1056 in / 92 out · 3680 ms · attempt(s) 1
+Prompt version `advanced-investigate/v2` · 1071 in / 187 out · 4533 ms · attempt(s) 1
 
 <details><summary>System instructions</summary>
 
@@ -318,13 +313,13 @@ calls confirming something you have already established.
 ````
 ## Claim under investigation
 
-fetch assumes store.record_at(index) is valid and non-panicking for every index below store.len(), which fails if Store allows sparse slots or deletions.
+Callers passing an index for an unoccupied or deleted slot in `Store` will cause `store.record_at(index)` to panic despite `index < store.len()`.
 
 Location: src/api.rs:8-13
 
 ## Falsification question
 
-Does the Store implementation allow deletions, vacant slots, or any index below store.len() to be unoccupied?
+Does `Store::record_at(index)` return an `Option` or otherwise handle unoccupied/deleted slots without panicking for any `index < store.len()`?
 
 ## Diff that produced the claim
 
@@ -415,9 +410,9 @@ What is your next step?
   "done": false,
   "tool": "search",
   "arguments": {
-    "pattern": "struct Store"
+    "pattern": "fn record_at"
   },
-  "rationale": "Find where Store is defined to inspect its implementation."
+  "rationale": "Locate the definition of record_at in Store to inspect its signature and implementation."
 }
 ```
 
@@ -429,20 +424,21 @@ For candidate `c12-slot-guard-capacity-adv-1` · call id `c12-slot-guard-capacit
 
 ```json
 {
-  "pattern": "struct Store"
+  "pattern": "fn record_at"
 }
 ```
 
 **Tool response** (verbatim, this is what the agent saw next)
 
 ```
-1 match(es) for "struct Store":
-src/store.rs:13: pub struct Store {
+2 match(es) for "fn record_at":
+src/store.rs:53:     pub fn record_at(&self, index: usize) -> &Record {
+src/store.rs:86:     fn record_at_returns_the_slot() {
 ```
 
 ### 7. Model call — Investigate
 
-Prompt version `advanced-investigate/v1` · 1090 in / 113 out · 3965 ms · attempt(s) 1
+Prompt version `advanced-investigate/v2` · 1208 in / 157 out · 3063 ms · attempt(s) 1
 
 <details><summary>System instructions</summary>
 
@@ -492,13 +488,13 @@ calls confirming something you have already established.
 ````
 ## Claim under investigation
 
-fetch assumes store.record_at(index) is valid and non-panicking for every index below store.len(), which fails if Store allows sparse slots or deletions.
+Callers passing an index for an unoccupied or deleted slot in `Store` will cause `store.record_at(index)` to panic despite `index < store.len()`.
 
 Location: src/api.rs:8-13
 
 ## Falsification question
 
-Does the Store implementation allow deletions, vacant slots, or any index below store.len() to be unoccupied?
+Does `Store::record_at(index)` return an `Option` or otherwise handle unoccupied/deleted slots without panicking for any `index < store.len()`?
 
 ## Diff that produced the claim
 
@@ -573,16 +569,19 @@ Does the Store implementation allow deletions, vacant slots, or any index below 
 
 ```
 
+## Already looked up during this review
+
+These are results of earlier tool calls on this repository, recorded so you do
+not have to repeat them. They are lookups, not conclusions.
+
+search {"pattern":"fn record_at"} -> 2 match(es) for "fn record_at":
+
 ## Investigation so far
 
 
---- step 1 : search {"pattern":"struct Store"} ---
-1 match(es) for "struct Store":
-src/store.rs:13: pub struct Store {
+--- step 1 : search {"pattern":"fn record
 
-
-
-What is your next step?
+[... 195 more characters of user message; full text in the JSON ...]
 ````
 
 </details>
@@ -591,14 +590,14 @@ What is your next step?
 
 ```json
 {
-  "done": false,
-  "tool": "read",
   "arguments": {
     "file": "src/store.rs",
     "start_line": 1,
-    "end_line": 60
+    "end_line": 95
   },
-  "rationale": "Read the Store struct definition and its methods to see if deletions, vacant slots, or sparse indices are supported."
+  "done": false,
+  "rationale": "Read the definition and implementation of Store, its methods including record_at, len, and any deletion/slot occupancy handling.",
+  "tool": "read"
 }
 ```
 
@@ -610,7 +609,7 @@ For candidate `c12-slot-guard-capacity-adv-1` · call id `c12-slot-guard-capacit
 
 ```json
 {
-  "end_line": 60,
+  "end_line": 95,
   "file": "src/store.rs",
   "start_line": 1
 }
@@ -619,7 +618,7 @@ For candidate `c12-slot-guard-capacity-adv-1` · call id `c12-slot-guard-capacit
 **Tool response** (verbatim, this is what the agent saw next)
 
 ```
-src/store.rs lines 1-60 of 91:
+src/store.rs lines 1-91 of 91:
     1 | //! Fixed-slot record storage.
     2 | 
     3 | #[derive(Debug, Clone, PartialEq, Eq)]
@@ -668,12 +667,12 @@ src/store.rs lines 1-60 of 91:
    46 |             return false;
    47 |         }
 
-[... 328 more characters of tool output; full text in the JSON ...]
+[... 1340 more characters of tool output; full text in the JSON ...]
 ```
 
 ### 9. Model call — Investigate
 
-Prompt version `advanced-investigate/v1` · 1792 in / 478 out · 4036 ms · attempt(s) 1
+Prompt version `advanced-investigate/v2` · 2352 in / 501 out · 4800 ms · attempt(s) 1
 
 <details><summary>System instructions</summary>
 
@@ -723,13 +722,13 @@ calls confirming something you have already established.
 ````
 ## Claim under investigation
 
-fetch assumes store.record_at(index) is valid and non-panicking for every index below store.len(), which fails if Store allows sparse slots or deletions.
+Callers passing an index for an unoccupied or deleted slot in `Store` will cause `store.record_at(index)` to panic despite `index < store.len()`.
 
 Location: src/api.rs:8-13
 
 ## Falsification question
 
-Does the Store implementation allow deletions, vacant slots, or any index below store.len() to be unoccupied?
+Does `Store::record_at(index)` return an `Option` or otherwise handle unoccupied/deleted slots without panicking for any `index < store.len()`?
 
 ## Diff that produced the claim
 
@@ -804,239 +803,15 @@ Does the Store implementation allow deletions, vacant slots, or any index below 
 
 ```
 
-## Investigation so far
+## Already looked up during this review
 
+These are results of earlier tool calls on this repository, recorded so you do
+not have to repeat them. They are lookups, not conclusions.
 
---- step 1 : search {"pattern":"struct Store"} ---
-1 match(es) for "struct Store":
-src/store.rs:13: pub struct Store {
+search {"pattern":"fn record_at"} -> 2 match(es) for "fn record_at":
+read {"end_line":95,"file":"src/store.rs","start_line":1} -> src/sto
 
-
---- step 2 : read {"end_line":60,"file":"src/store.rs","start_line":1} ---
-src/store.rs lines 1-60 of 91:
-    1 | //! Fixed-slot record storage.
-    2 | 
-    3 | #[derive(Debug, Clone, PartialEq, E
-
-[... 1833 more characters of user message; full text in the JSON ...]
-````
-
-</details>
-
-**Response**
-
-```json
-{
-  "done": false,
-  "tool": "read",
-  "arguments": {
-    "file": "src/store.rs",
-    "start_line": 61,
-    "end_line": 91
-  },
-  "rationale": "Verify the rest of store.rs to confirm no additional methods exist that affect slot occupancy or deletions."
-}
-```
-
-### 10. Tool call — `read` (ok)
-
-For candidate `c12-slot-guard-capacity-adv-1` · call id `c12-slot-guard-capacity-adv-1-t3` · 0 ms
-
-**Arguments**
-
-```json
-{
-  "end_line": 91,
-  "file": "src/store.rs",
-  "start_line": 61
-}
-```
-
-**Tool response** (verbatim, this is what the agent saw next)
-
-```
-src/store.rs lines 61-91 of 91:
-   61 | 
-   62 |     fn record(id: u64) -> Record {
-   63 |         Record {
-   64 |             id,
-   65 |             value: format!("v{id}"),
-   66 |         }
-   67 |     }
-   68 | 
-   69 |     #[test]
-   70 |     fn len_reports_configured_capacity() {
-   71 |         let s = Store::with_capacity(10);
-   72 |         assert_eq!(s.len(), 10);
-   73 |         assert_eq!(s.filled(), 0);
-   74 |     }
-   75 | 
-   76 |     #[test]
-   77 |     fn push_fills_slots_until_capacity() {
-   78 |         let mut s = Store::with_capacity(2);
-   79 |         assert!(s.push(record(1)));
-   80 |         assert!(s.push(record(2)));
-   81 |         assert!(!s.push(record(3)));
-   82 |         assert_eq!(s.filled(), 2);
-   83 |     }
-   84 | 
-   85 |     #[test]
-   86 |     fn record_at_returns_the_slot() {
-   87 |         let mut s = Store::with_capacity(4);
-   88 |         s.push(record(7));
-   89 |         assert_eq!(s.record_at(0).id, 7);
-   90 |     }
-   91 | }
-```
-
-### 11. Model call — Investigate
-
-Prompt version `advanced-investigate/v1` · 2225 in / 466 out · 6533 ms · attempt(s) 1
-
-<details><summary>System instructions</summary>
-
-```
-You are investigating a code-review claim by inspecting the repository.
-
-Your job is to gather the evidence that answers the falsification question —
-evidence that could show the claim is wrong, not only evidence that supports it.
-Actively look for the disproof.
-
-You may issue up to 8 tool calls in total. Each turn, either request
-one tool call or declare the investigation complete.
-
-Available tools:
-
-  search      {"pattern": "<literal substring>", "glob": "<optional path filter, e.g. src/**/*.rs>"}
-              Case-sensitive literal substring match, not a regular
-              expression. Returns matching lines with file and line number.
-
-  read        {"file": "<repository-relative path>", "start_line": <int>, "end_line": <int>}
-              Returns the requested line range with line numbers.
-
-  list_files  {}
-              Returns every file path in the repository.
-
-Return JSON of exactly this shape:
-
-{
-  "done": false,
-  "tool": "search" | "read" | "list_files",
-  "arguments": { ... },
-  "rationale": "<what you expect this to tell you about the falsification question>"
-}
-
-or, when you have gathered what you need:
-
-{ "done": true, "tool": null, "arguments": null, "rationale": "<what the evidence shows>" }
-
-Stop as soon as the falsification question is answered either way. Do not spend
-calls confirming something you have already established.
-```
-
-</details>
-
-<details><summary>User message</summary>
-
-````
-## Claim under investigation
-
-fetch assumes store.record_at(index) is valid and non-panicking for every index below store.len(), which fails if Store allows sparse slots or deletions.
-
-Location: src/api.rs:8-13
-
-## Falsification question
-
-Does the Store implementation allow deletions, vacant slots, or any index below store.len() to be unoccupied?
-
-## Diff that produced the claim
-
-```diff
---- /dev/null
-+++ b/src/api.rs
-@@ -0,0 +1,54 @@
-+//! Read endpoints over a record store.
-+
-+use crate::store::{Record, Store};
-+
-+/// Fetch the record in slot `index`.
-+///
-+/// Returns `None` when `index` is out of range rather than panicking.
-+pub fn fetch(store: &Store, index: usize) -> Option<&Record> {
-+    if index >= store.len() {
-+        return None;
-+    }
-+    Some(store.record_at(index))
-+}
-+
-+/// Fetch several slots at once, skipping any that are out of range.
-+pub fn fetch_many<'a>(store: &'a Store, indices: &[usize]) -> Vec<&'a Record> {
-+    indices.iter().filter_map(|&i| fetch(store, i)).collect()
-+}
-+
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+
-+    fn store_with(n: u64, capacity: usize) -> Store {
-+        let mut s = Store::with_capacity(capacity);
-+        for id in 0..n {
-+            s.push(Record {
-+                id,
-+                value: format!("v{id}"),
-+            });
-+        }
-+        s
-+    }
-+
-+    #[test]
-+    fn fetches_a_present_record() {
-+        let s = store_with(3, 3);
-+        assert_eq!(fetch(&s, 1).unwrap().id, 1);
-+    }
-+
-+    #[test]
-+    fn returns_none_past_the_end() {
-+        let s = store_with(3, 3);
-+        assert!(fetch(&s, 3).is_none());
-+        assert!(fetch(&s, 99).is_none());
-+    }
-+
-+    #[test]
-+    fn fetch_many_skips_out_of_range() {
-+        let s = store_with(2, 2);
-+        let got = fetch_many(&s, &[0, 5, 1]);
-+        assert_eq!(got.len(), 2);
-+    }
-+}
---- a/src/lib.rs
-+++ b/src/lib.rs
-@@ -1,5 +1,7 @@
- //! Slot-based record storage with read endpoints.
- 
-+pub mod api;
- pub mod store;
- 
-+pub use api::{fetch, fetch_many};
- pub use store::{Record, Store};
-
-```
-
-## Investigation so far
-
-
---- step 1 : search {"pattern":"struct Store"} ---
-1 match(es) for "struct Store":
-src/store.rs:13: pub struct Store {
-
-
---- step 2 : read {"end_line":60,"file":"src/store.rs","start_line":1} ---
-src/store.rs lines 1-60 of 91:
-    1 | //! Fixed-slot record storage.
-    2 | 
-    3 | #[derive(Debug, Clone, PartialEq, E
-
-[... 2909 more characters of user message; full text in the JSON ...]
+[... 3305 more characters of user message; full text in the JSON ...]
 ````
 
 </details>
@@ -1048,29 +823,29 @@ src/store.rs lines 1-60 of 91:
   "done": true,
   "tool": null,
   "arguments": null,
-  "rationale": "In `src/store.rs`, `Store::len(&self)` returns `self.capacity` (the configured slot count) rather than `self.records.len()`. As a result, when fewer records have been pushed than the store's capacity (`self.records.len() < self.capacity`), any index in the range `store.filled()..store.len()` is unoccupied, causing `store.record_at(index)` (which indexes `self.records[index]`) to panic."
+  "rationale": "In `src/store.rs`, `Store::len()` returns `self.capacity`, while `Store::record_at(index)` returns `&Record` and directly indexes `&self.records[index]`. For any unoccupied slot where `self.records.len() <= index < self.capacity` (`index < store.len()`), indexing `self.records[index]` panics. It does not return an `Option` or handle unoccupied slots without panicking."
 }
 ```
 
-### 12. Evidence package — `c12-slot-guard-capacity-adv-1`
+### 10. Evidence package — `c12-slot-guard-capacity-adv-1`
 
 4 item(s) handed to the fresh verifier. Every one was produced by a Rust tool from bytes on disk; the model cannot author an evidence item.
 
 | # | Kind | Location | Excerpt (first line) |
 |---|---|---|---|
 | 1 | DiffHunk | `src/api.rs:1-28` | `1 \| //! Read endpoints over a record store.` |
-| 2 | Search | `src/store.rs:13` | `pub struct Store {` |
-| 3 | FileRegion | `src/store.rs:1-60` | `1 \| //! Fixed-slot record storage.` |
-| 4 | FileRegion | `src/store.rs:61-91` | `61 \| ` |
+| 2 | Search | `src/store.rs:53` | `pub fn record_at(&self, index: usize) -> &Record {` |
+| 3 | Search | `src/store.rs:86` | `fn record_at_returns_the_slot() {` |
+| 4 | FileRegion | `src/store.rs:1-91` | `1 \| //! Fixed-slot record storage.` |
 
-### 13. Model call — Verify
+### 11. Model call — Verify
 
-Prompt version `fresh-verify/v5` · 2501 in / 616 out · 7443 ms · attempt(s) 1
+Prompt version `fresh-verify/v5` · 2538 in / 630 out · 6087 ms · attempt(s) 1
 
 <details><summary>System instructions</summary>
 
 ```
-You are deciding whether a body of evidence establishes that a Rust codebase has a real defect.
+You are deciding whether a body of evidence establishes that a codebase has a real defect.
 
 You did not write the claim and have no stake in it. Someone asserted it; your
 task is to weigh the evidence.
@@ -1115,9 +890,10 @@ A true statement is not automatically a defect:
 - You are judging the finding, not the sentence. Many claims are accurate
   descriptions of the code that identify nothing wrong with it: a type that
   does not derive a trait nobody needs, a function returning `Option` that
-  never returns `None`, a name someone dislikes. Confirming the description i
+  never returns `None`, a name someone dislikes. Confirming the description is
+  a
 
-[... 1603 more characters of system prompt; full text in the JSON ...]
+[... 1598 more characters of system prompt; full text in the JSON ...]
 ```
 
 </details>
@@ -1127,13 +903,13 @@ A true statement is not automatically a defect:
 ```
 ## Claim
 
-fetch assumes store.record_at(index) is valid and non-panicking for every index below store.len(), which fails if Store allows sparse slots or deletions.
+Callers passing an index for an unoccupied or deleted slot in `Store` will cause `store.record_at(index)` to panic despite `index < store.len()`.
 
 Stated location: src/api.rs:8-13
 
 ## Question the evidence was gathered to answer
 
-Does the Store implementation allow deletions, vacant slots, or any index below store.len() to be unoccupied?
+Does `Store::record_at(index)` return an `Option` or otherwise handle unoccupied/deleted slots without panicking for any `index < store.len()`?
 
 ## Evidence gathered from the repository
 
@@ -1167,10 +943,13 @@ Does the Store implementation allow deletions, vacant slots, or any index below 
    27 |             s.push(Record {
    28 |                 id,
 
-[E2] Search from src/store.rs:13
-pub struct Store {
+[E2] Search from src/store.rs:53
+    pub fn record_at(&self, index: usize) -> &Record {
 
-[E3] FileRegion from src/store.rs:1-60
+[E3] Search from src/store.rs:86
+    fn record_at_returns_the_slot() {
+
+[E4] FileRegion from src/store.rs:1-91
     1 | //! Fixed-slot record storage.
     2 | 
     3 | #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1194,13 +973,9 @@ pub struct Store {
    21 |             records: Vec::new(),
    22 |             capacity,
    23 |         }
-   24 |     }
-   25 | 
-   26 |     /// The number of slots this store was configured with.
-   27 |     ///
-   28 |     /// Note this is the con
+   24 |
 
-[... 2118 more characters of user message; full text in the JSON ...]
+[... 2211 more characters of user message; full text in the JSON ...]
 ```
 
 </details>
@@ -1210,7 +985,7 @@ pub struct Store {
 ```json
 {
   "outcome": "Supports",
-  "rationale": "`Store::len()` returns the configured `capacity`, whereas `Store::record_at(index)` indexes directly into `self.records` with `&self.records[index]`. When a store is not completely filled, any index `index` where `store.filled() <= index < store.len()` passes the guard in `fetch` (`index < store.len()`) and panics on the vector index operation.",
+  "rationale": "In `Store`, `store.len()` returns `self.capacity`, while `store.records` only holds the pushed records (`self.records.len()`). When a store has unoccupied slots (e.g., `records.len() < capacity`), any index where `records.len() <= index < store.len()` passes the `if index >= store.len()` check in `fetch` and invokes `store.record_at(index)`, which performs `&self.records[index]` and panics due to out-of-bounds indexing.",
   "decisive_evidence": [
     "src/api.rs:9-12",
     "src/store.rs:30-32",
@@ -1219,13 +994,13 @@ pub struct Store {
 }
 ```
 
-### 14. Fresh-context verification — `c12-slot-guard-capacity-adv-1`
+### 12. Fresh-context verification — `c12-slot-guard-capacity-adv-1`
 
 A separate stateless request. It received the claim and the evidence and nothing else — not the reviewer's reasoning, and no indication that an earlier stage believed the claim.
 
 **Verdict: Supports**
 
-> `Store::len()` returns the configured `capacity`, whereas `Store::record_at(index)` indexes directly into `self.records` with `&self.records[index]`. When a store is not completely filled, any index `index` where `store.filled() <= index < store.len()` passes the guard in `fetch` (`index < store.len()`) and panics on the vector index operation.
+> In `Store`, `store.len()` returns `self.capacity`, while `store.records` only holds the pushed records (`self.records.len()`). When a store has unoccupied slots (e.g., `records.len() < capacity`), any index where `records.len() <= index < store.len()` passes the `if index >= store.len()` check in `fetch` and invokes `store.record_at(index)`, which performs `&self.records[index]` and panics due to out-of-bounds indexing.
 
 Decisive evidence:
 
@@ -1233,13 +1008,13 @@ Decisive evidence:
 - `src/store.rs:30-32`
 - `src/store.rs:53-55`
 
-### 15. Decision — `c12-slot-guard-capacity-adv-1`
+### 13. Decision — `c12-slot-guard-capacity-adv-1`
 
 **Verified**
 
 Assigned by the orchestrator, not the model: fresh-context verification found the evidence supports the claim, backed by 3 repository evidence item(s)
 
-### 16. Human checkpoint
+### 14. Human checkpoint
 
 > 1 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything.
 
@@ -1251,9 +1026,9 @@ Assigned by the orchestrator, not the model: fresh-context verification found th
 
 **Correctness** at `src/api.rs:8-13`
 
-> fetch assumes store.record_at(index) is valid and non-panicking for every index below store.len(), which fails if Store allows sparse slots or deletions.
+> Callers passing an index for an unoccupied or deleted slot in `Store` will cause `store.record_at(index)` to panic despite `index < store.len()`.
 
-Falsification question: *Does the Store implementation allow deletions, vacant slots, or any index below store.len() to be unoccupied?*
+Falsification question: *Does `Store::record_at(index)` return an `Option` or otherwise handle unoccupied/deleted slots without panicking for any `index < store.len()`?*
 
 Status reason: fresh-context verification found the evidence supports the claim, backed by 3 repository evidence item(s)
 

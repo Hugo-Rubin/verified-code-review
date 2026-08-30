@@ -10,9 +10,9 @@ them. Representative trajectories covering every role are below.
 | System | Roles | Prompt |
 |---|---|---|
 | Baseline | Reviewer | `baseline-review/v2` |
-| Advanced | Reviewer | `advanced-review/v5` |
+| Advanced | Reviewer | `advanced-review/v6` |
 | | Falsifier | `advanced-falsify/v2` |
-| | Investigator | `advanced-investigate/v1` |
+| | Investigator | `advanced-investigate/v2` |
 | | Fresh verifier | `fresh-verify/v5` |
 
 Each role is a separate stateless request with its own instructions. In a
@@ -21,18 +21,18 @@ on every `LlmCall`, so you can read any single role's contribution in
 isolation:
 
 ```bash
-python -c "import json,sys; t=json.load(open(sys.argv[1])); [print(e['stage'], e['prompt_version']) for e in t['events'] if e['event']=='LlmCall']" results/trajectories/advanced/c12-slot-guard-capacity-advanced.json
+python -c "import json,sys; t=json.load(open(sys.argv[1])); [print(e['stage'], e['prompt_version']) for e in t['events'] if e['event']=='LlmCall']" results-final/t1/trajectories/advanced/c12-slot-guard-capacity-advanced.json
 ```
 
-- **Raw records:** [`../results/trajectories/`](../results/trajectories/) —
-  24 JSON files, one per (case, agent).
+- **Raw records:** [`../results-final/t1/trajectories/`](../results-final/t1/trajectories/)
+  — every case for all four arms of the reported run.
 - **Rendered for reading:** [`trajectories/`](trajectories/) — the five
   discussed here, as Markdown.
 
 To render any other run:
 
 ```bash
-python scripts/render_trajectory.py results/trajectories/advanced/c04-*.json --out /tmp
+python scripts/render_trajectory.py results-final/t1/trajectories/advanced/c04-*.json --out /tmp
 ```
 
 ---
@@ -111,32 +111,31 @@ question, and evidence built by Rust from bytes on disk.
 
 ### [`c12-slot-guard-capacity-advanced.md`](trajectories/c12-slot-guard-capacity-advanced.md) — the headline execution
 
-The same case the baseline missed. **7 model calls, 3 tool calls, 47 s.**
+The same case the baseline missed. **6 model calls, 2 tool calls.**
 
-1. **Candidate** — *"fetch assumes store.record_at(index) is valid and
-   non-panicking for every index below store.len(), which fails if Store allows
-   sparse slots or deletions."*
-2. **Falsification question** — *"Does the Store implementation allow
-   deletions, vacant slots, or any index below store.len() to be unoccupied?"*
-   Note this asks about the thing the claim depends on, not about the
-   mechanism.
-3. **Investigation** — `search {"pattern": "struct Store"}` locates
-   `src/store.rs:13`; two bounded `read` calls pull in the whole file. The
-   agent goes to the file the change never touched.
+1. **Candidate** — *"Callers passing an index for an unoccupied or deleted slot
+   in `Store` will cause `store.record_at(index)` to panic despite the index
+   being below `store.len()`."* Note it names a consequence and asserts
+   something that can happen, rather than a conditional.
+2. **Falsification question** — *"Does `Store::record_at(index)` return an
+   `Option` or otherwise handle unoccupied slots without panicking for any
+   `index < store.len()`?"* This asks about the thing the claim depends on, not
+   about the mechanism.
+3. **Investigation** — `search {"pattern": "fn record_at"}` finds the
+   definition, then one bounded `read` of `src/store.rs`. The agent goes
+   straight to the file the change never touched.
 4. **Fresh verification** — Supports:
 
-   > `Store::len()` returns the configured `capacity`, whereas
-   > `Store::record_at(index)` indexes directly into `self.records`. When a
-   > store is not completely filled, any index where
-   > `store.filled() <= index < store.len()` passes the guard in `fetch` and
-   > panics on the vector index operation.
+   > In `Store`, `store.len()` returns `self.capacity`, while `store.records`
+   > only holds the pushed records. When a store has unoccupied slots, an index
+   > below `len()` passes the guard and panics.
 
-   Decisive evidence: `src/api.rs:9-12`, `src/store.rs:30-32`,
-   `src/store.rs:53-55`.
-5. **Decision** — `Verified`, backed by 3 investigation-derived evidence items.
+5. **Decision** — `Verified`, backed by investigation-derived evidence.
 
-The verifier reached the ground-truth mechanism independently, and cited the
-exact lines.
+The verifier reached the ground-truth mechanism independently. This is also the
+case that motivated `advanced-review/v6`: under the previous prompt the
+reviewer proposed *nothing at all* here in 2 of 3 trials, so none of the above
+happened.
 
 ### [`c11-asset-path-check-trap-advanced.md`](trajectories/c11-asset-path-check-trap-advanced.md) — falsification doing its job
 
@@ -144,15 +143,15 @@ A trap. The change deletes a path-traversal guard, which is the shape of a real
 vulnerability, and the reviewer duly proposes it.
 
 The falsification question goes straight at usage rather than at the mechanism:
-*"Do any callers of `asset_path` pass dynamic, user-controlled inputs rather
-than hardcoded string literals?"* Three tool calls later:
+*"Does every call site of `asset_path` pass only static string literals or
+values returned by `AssetKind::file_name()`?"* Three tool calls later — a
+`search` for the function, then reads of both `src/assets.rs` and
+`src/serve.rs`:
 
-> `asset_path` is crate-internal (`pub(crate)`) and all call sites pass fixed
-> string literals returned by `AssetKind::file_name()`. In `src/serve.rs:23`
-> the only production caller invokes `asset_path(&self.root,
-> kind.file_name())`, where `kind` is mapped from a closed enum with hardcoded
-> filenames. No caller passes arbitrary string inputs, preventing directory
-> traversal.
+> `asset_path` is crate-internal (`pub(crate)`), and all call sites in the
+> repository pass only static file names produced by `AssetKind::file_name()`.
+> Because the set of inputs is closed, no caller-supplied path reaches the
+> join.
 
 `Contradicts` → **Rejected**. The reviewer never sees it.
 
@@ -168,17 +167,17 @@ decision working on a single case.
 
 Two candidates were proposed and they ended differently:
 
-- *"Existing callers or consumers passing an unverified or expired session ID
-  to `touch` will trigger an unexpected panic."* → **Verified**. The verifier
-  worked past the doc comment: `touch` unconditionally unwraps
-  `get_mut(id)`, and while `on_request` does check, another caller does not.
-- *"Requiring callers to call `contains` before `touch` causes redundant hash
-  map lookups on every session touch."* → **Rejected**. True, and not a defect.
+> *"Existing callers that invoke `touch` with an unknown or expired session ID
+> will panic at runtime on `.unwrap()`."*
 
-One case, one finding shown and one suppressed, both decided on evidence. This
-is the behaviour the materiality rule was added to produce, and it is why the
-false-positive count stayed at one across the whole benchmark while candidate
-generation was deliberately broadened.
+The investigation searched for `touch(`, read `src/handler.rs`, and the
+verifier worked past the doc comment:
+
+> `touch` unconditionally calls `.unwrap()` on `self.sessions.get_mut(id)`.
+> While `on_request` checks `contains(id)` beforehand, `on_heartbeat` does not.
+
+**Verified.** The comment claiming callers check first is true of one caller
+and false of the other, and only reading the call sites separates those.
 
 Worth reading beside the archived run at
 [`../results-archive/n12-run2-verify-v3/`](../results-archive/n12-run2-verify-v3/),

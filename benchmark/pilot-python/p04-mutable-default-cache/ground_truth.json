@@ -1,0 +1,18 @@
+{
+  "case_id": "p04-mutable-default-cache",
+  "expected_findings": [
+    {
+      "id": "p04-f1",
+      "issue_type": "StateManagement",
+      "also_accept": [
+        "Correctness",
+        "ApiContract"
+      ],
+      "file": "src/registry.py",
+      "start_line": 9,
+      "end_line": 9,
+      "description": "The default argument `into=[]` is evaluated once at function-definition time, so every call that omits `into` appends to the same shared list. `summarise` omits it, so successive calls accumulate: the second call returns the first call's names as well as its own, and the list grows without bound for the lifetime of the process. The `into=None` sentinel it replaced allocated a fresh list per call, which is why the docstring's promise of 'a fresh list each call' held before the change and does not now."
+    }
+  ],
+  "notes": "PILOT CASE - Python. Not part of the frozen Rust benchmark and not included in any headline figure.\n\nThe canonical Python footgun, and included deliberately because it has no Rust analogue at all: Rust has no mutable default arguments, so this is a defect class the Rust benchmark cannot express. It tests whether the reviewer brings language-appropriate knowledge rather than pattern-matching shapes it saw in Rust.\n\nIt is also a case where the change is genuinely a simplification in every respect except the one that matters, and where the surrounding docstring still claims the old behaviour ('as a fresh list each call') - so the code contains its own contradiction if a reviewer reads carefully.\n\nWhy the tests miss it: exactly one test reaches the default path, and it reaches it once. `test_accumulates_into_a_supplied_list` and `test_ignores_disabled_flags` both pass an accumulator explicitly, so they never touch the shared default at all. A second call to `summarise` anywhere in the suite would expose the bug immediately - which is a fair description of how this defect usually survives review and then bites in production. Verified by execution: two successive `summarise` calls return ['a'] then ['a', 'b'].\n\nalso_accept covers Correctness and ApiContract."
+}

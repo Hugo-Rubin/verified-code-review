@@ -7,14 +7,14 @@
 | Model | `gemini-3.7-flash` |
 | Provider | Vertex |
 | Temperature | 0.0 |
-| Trajectory id | `0ebde541-4f23-4244-a466-a5db08ec41d6` |
-| Started | 2026-08-30T11:03:45.740139300+00:00 |
-| Runtime | 10545 ms |
+| Trajectory id | `0bbf2a83-2f1d-4fcf-90bf-fa6880e2d41b` |
+| Started | 2026-08-30T21:26:04.483206500+00:00 |
+| Runtime | 6628 ms |
 | Model calls | 1 |
 | Tool calls | 0 |
 | Retries | 0 |
-| Tokens | 1619 in / 746 out |
-| Cost | not configured |
+| Tokens | 1619 in / 711 out |
+| Cost | $0.003881 |
 | Match tolerance | ±3 lines |
 | Tool-call budget | 8 per candidate |
 
@@ -24,7 +24,7 @@
 
 ### 1. Model call — Review
 
-Prompt version `baseline-review/v2` · 1619 in / 746 out · 10545 ms · attempt(s) 1
+Prompt version `baseline-review/v2` · 1619 in / 711 out · 6627 ms · attempt(s) 1
 
 <details><summary>System instructions</summary>
 
@@ -177,8 +177,8 @@ The capacity check in `Pool::acquire` was rewritten so that the active counter i
       "file": "src/pool.rs",
       "start_line": 56,
       "end_line": 60,
-      "claim": "Failed connection acquisitions leave the active counter incremented, permanently leaking permits and causing pool exhaustion.",
-      "reasoning": "When `*n > self.max`, `acquire` returns an `Err` without decrementing `*n` back to its previous value. Since no `Conn` handle is returned to decrement the counter on drop or release, every failed acquire permanently inflates `self.active` and will eventually prevent valid acquisitions even after existing connections are released."
+      "claim": "Failed acquisition attempts increment the active connection counter without rolling it back.",
+      "reasoning": "When `*n > self.max`, `acquire` returns `Err(PoolError::Exhausted)` after already incrementing `*n`. Because no `Conn` is created to decrement the counter upon release or drop, the counter permanently leaks, eventually preventing any new connections from ever being acquired."
     }
   ]
 }
@@ -188,9 +188,9 @@ The capacity check in `Pool::acquire` was rewritten so that the active counter i
 
 **StateManagement** · severity High · `src/pool.rs:56-60`
 
-> Failed connection acquisitions leave the active counter incremented, permanently leaking permits and causing pool exhaustion.
+> Failed acquisition attempts increment the active connection counter without rolling it back.
 
-Reasoning: When `*n > self.max`, `acquire` returns an `Err` without decrementing `*n` back to its previous value. Since no `Conn` handle is returned to decrement the counter on drop or release, every failed acquire permanently inflates `self.active` and will eventually prevent valid acquisitions even after existing connections are released.
+Reasoning: When `*n > self.max`, `acquire` returns `Err(PoolError::Exhausted)` after already incrementing `*n`. Because no `Conn` is created to decrement the counter upon release or drop, the counter permanently leaks, eventually preventing any new connections from ever being acquired.
 
 ### 3. Human checkpoint
 
@@ -204,7 +204,7 @@ Reasoning: When `*n > self.max`, `acquire` returns an `Err` without decrementing
 
 **StateManagement** at `src/pool.rs:56-60`
 
-> Failed connection acquisitions leave the active counter incremented, permanently leaking permits and causing pool exhaustion.
+> Failed acquisition attempts increment the active connection counter without rolling it back.
 
 Status reason: baseline: reported as produced, no verification stage
 

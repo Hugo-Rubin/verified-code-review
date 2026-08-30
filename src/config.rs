@@ -69,6 +69,11 @@ pub struct LlmConfig {
     /// makes one, so it reaches a per-minute quota roughly six times sooner.
     /// Without pacing, a comparison run under quota pressure measures the
     /// quota as much as the systems, and penalises only the arm under test.
+    ///
+    /// Defaulted on deserialize so trajectories written before this field
+    /// existed stay loadable. Recorded runs are evidence; a new setting must
+    /// never make an old artifact unreadable.
+    #[serde(default)]
     pub min_request_interval_ms: u64,
     /// `None` means "operator did not configure pricing"; cost is then
     /// reported as unavailable rather than as zero.
@@ -128,6 +133,11 @@ pub struct RunConfig {
     ///
     /// 0 disables the feedback loop, which is what the `no-followup` ablation
     /// measures.
+    ///
+    /// Defaulted on deserialize for the same reason as
+    /// [`LlmConfig::min_request_interval_ms`]: older trajectories predate the
+    /// field, and they must still load.
+    #[serde(default = "default_followups")]
     pub max_followup_investigations: u32,
     /// Upper bound on lines returned by a single bounded file read.
     pub max_read_lines: u32,
@@ -140,6 +150,10 @@ pub struct RunConfig {
 
 fn ablation_none() -> Ablation {
     Ablation::None
+}
+
+fn default_followups() -> u32 {
+    1
 }
 
 fn env_opt(key: &str) -> Option<String> {
@@ -268,6 +282,36 @@ mod tests {
     #[test]
     fn pricing_is_none_when_unset() {
         assert!(RunConfig::mock().llm.pricing.is_none());
+    }
+
+    #[test]
+    fn a_trajectory_written_before_newer_settings_existed_still_loads() {
+        // Recorded runs are evidence. Adding a config field must never make an
+        // older artifact unreadable — this exact break stopped `vcr triage`
+        // from opening runs recorded a few commits earlier.
+        let older = r#"{
+            "llm": {
+                "provider": "Vertex",
+                "model": "gemini-3.7-flash",
+                "location": "global",
+                "auth": "ApiKey",
+                "temperature": 0.0,
+                "max_output_tokens": 8192,
+                "timeout_secs": 180,
+                "max_retries": 3
+            },
+            "match_line_tolerance": 3,
+            "max_tool_calls_per_finding": 8,
+            "max_read_lines": 200,
+            "max_search_results": 40
+        }"#;
+
+        let cfg: RunConfig = serde_json::from_str(older).expect("older config must still load");
+        assert_eq!(cfg.llm.model, "gemini-3.7-flash");
+        assert_eq!(cfg.llm.min_request_interval_ms, 0);
+        assert_eq!(cfg.max_followup_investigations, 1);
+        assert_eq!(cfg.ablation, Ablation::None);
+        assert!(cfg.llm.project_id.is_none());
     }
 
     #[test]

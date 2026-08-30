@@ -1,0 +1,7 @@
+{
+  "case_id": "p05-shared-config-trap",
+  "language": "Python",
+  "title": "Add client construction from the shared defaults",
+  "description": "A new `client` module builds a `Client` from the shared default settings plus any caller overrides, stamping a user-agent onto the resulting settings. It also exposes the configured retry count for callers that need it without building a client.",
+  "category": "Trap"
+}

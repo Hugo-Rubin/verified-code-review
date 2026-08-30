@@ -1,0 +1,30 @@
+--- /dev/null
++++ b/src/client.py
+@@ -0,0 +1,27 @@
++"""HTTP client construction."""
++
++from defaults import BASE, with_overrides
++
++
++class Client:
++    def __init__(self, settings):
++        self.settings = settings
++
++    def describe(self):
++        return (
++            f"retries={self.settings['retries']} "
++            f"timeout={self.settings['timeout_secs']} "
++            f"tls={self.settings['verify_tls']}"
++        )
++
++
++def build_client(overrides=None):
++    """Build a client from the shared defaults plus any overrides."""
++    settings = with_overrides(overrides or {})
++    settings["user_agent"] = "vcr/1.0"
++    return Client(settings)
++
++
++def default_retry_budget():
++    """The configured retry count, read straight from the shared defaults."""
++    return BASE["retries"]

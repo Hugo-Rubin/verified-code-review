@@ -10,6 +10,9 @@
 
 param(
     [int]$Trials = 3,
+    # First trial number to write. Use this to add trials to an existing set
+    # without re-running the ones already recorded.
+    [int]$StartTrial = 1,
     [string]$Root = "results-trials",
     [string]$Benchmark = "benchmark/cases",
     # Each entry is "agent" or "agent:ablation".
@@ -29,10 +32,11 @@ cargo build --release --quiet
 
 $overall = [Diagnostics.Stopwatch]::StartNew()
 
-for ($t = 1; $t -le $Trials; $t++) {
+$last = $StartTrial + $Trials - 1
+for ($t = $StartTrial; $t -le $last; $t++) {
     $out = Join-Path $Root "t$t"
     Write-Output ""
-    Write-Output "===================== TRIAL $t of $Trials -> $out ====================="
+    Write-Output "===================== TRIAL $t (of $StartTrial..$last) -> $out ====================="
 
     foreach ($spec in $Arms) {
         $parts = $spec.Split(":")

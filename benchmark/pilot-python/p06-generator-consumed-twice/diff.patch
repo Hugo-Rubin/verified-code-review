@@ -1,0 +1,21 @@
+--- a/src/pipeline.py
++++ b/src/pipeline.py
+@@ -8,12 +8,15 @@
+ 
+ 
+ def parse_records(lines):
+-    """Parse ``lines`` into records, skipping blanks."""
+-    return [
++    """Parse ``lines`` into records, skipping blanks.
++
++    Returns a generator so a large input is not held in memory at once.
++    """
++    return (
+         Record(*line.split("=", 1))
+         for line in lines
+         if line.strip() and "=" in line
+-    ]
++    )
+ 
+ 
+ def summarise(records):

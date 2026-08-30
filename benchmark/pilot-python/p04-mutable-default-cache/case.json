@@ -1,0 +1,7 @@
+{
+  "case_id": "p04-mutable-default-cache",
+  "language": "Python",
+  "title": "Simplify the accumulator default in collect_enabled",
+  "description": "`collect_enabled` took `into=None` and allocated a list when the caller did not supply one. Since the sentinel only ever became an empty list, the parameter now defaults to an empty list directly and the branch is gone.",
+  "category": "RealIssue"
+}
