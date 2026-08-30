@@ -261,6 +261,26 @@ measurement to justify the code.
 
 ---
 
+## Sprint 4 — widening the evidence, and a benchmark defect we caught by result
+
+| Stage | What was tried and why | Evidence | Decision |
+|---|---|---|---|
+| **Trials 4 and 5 on the headline arms** | Three trials is enough to see spread, not enough to trust it. Two more, same configuration, same frozen benchmark. | Advanced **F1 0.988 ± 0.026** over 5 trials (was 0.980 ± 0.034 over 3), recall **1.000 ± 0.000**, precision 0.978. Baseline **identical on all 12 cases in all 5 trials**, σ = 0.000 on every metric. | Kept. Headline figures are now means over 5 trials. |
+| **Python pilot expanded 3 → 6** | The first three cases were all ports of Rust cases, so the pilot could only confirm transfer, never discover a Python-specific failure. Three new cases were written against defect classes Rust **cannot express**: a mutable default argument, a generator consumed twice, and a shared-module-state trap that is safe only because the accessor copies and the values are scalars. | Baseline **F1 0.667**, advanced **F1 0.857**, precision **1.000 in both arms**, zero false positives, both traps cleared on repository evidence, evidence accuracy 1.000 (51/51 citations). | Kept as a pilot. Six cases, one run per arm; still not a headline figure. |
+| **`v6` did not transfer to Python** ❌ | The v6 rule ("name what unseen code must do for this to be right") took `c12` from found-in-1-of-3 to found-in-5-of-5. Its Python twin `p03` tests the same shape. | `p03` **missed again**, and the trajectory shows why: candidate generation never proposed the defect. The two candidates it did propose were investigated and correctly rejected. Verification was not the failure. | Reported, not patched. A prompt change made to fix one named case would be exactly the overfitting this project's ablations exist to catch. |
+| **Ground-truth anchoring defect, found via a result** ❌ | `p06`'s expected finding was anchored at the *consumer* (lines 24-28) rather than at the changed lines. The advanced arm reported the defect at the change (15-19) with a fully correct diagnosis and was scored a false positive **plus** a false negative. | It was **1 of 18** findings in the project anchored outside its case's changed hunk; the other 17 already followed the convention. Corrected to 15-19. Advanced pilot F1 **0.571 → 0.857**; baseline **0.667 either way**, because its location at 22-27 overlaps both anchors. | Corrected, with both figures reported side by side in [`pilot-python.md`](pilot-python.md). The correction moves one arm and not the other, which is the shape a convenient edit would have — so the reader gets both numbers rather than our word for the motive. |
+| **The convention is now checked, not remembered** | A benchmark defect found because a result looked wrong is the dangerous direction. A promise not to do it again is worth nothing. | `bench::findings_outside_the_diff` parses each case's own diff and reports any expected finding outside the changed ranges; `vcr check` prints it as a warning. Four unit tests cover single-line hunks, new files and deleted files. Both benchmarks are clean under it. | Kept. This is how we know 17 of 18 followed the convention rather than believing it. |
+
+**On re-running the pilot.** `p01`–`p03` were re-executed as part of the
+six-case sweep, so the three-case figures earlier in this document are a
+different sample, not merely a re-scoring. The most visible change: the
+duplicate false positive on `p01` in the three-case run did not recur — that
+same second claim was investigated and **rejected** this time, which is why
+pilot precision reads 1.000 rather than 0.500. One run either way; do not read
+a trend into it.
+
+---
+
 ## Every measured run
 
 | Directory | n | Configuration | Baseline F1 | Advanced F1 |
@@ -278,10 +298,11 @@ measurement to justify the code.
 | `results-trials/t1..t3/` | 12 | ablation: no falsification ❌ | 0.857 | 0.725 mean |
 | `results-trials-v6/t1..t3/` | 12 | v6, assumptions about unseen code | 0.857 | 0.961 mean |
 | `results-trials-v6/t1..t3/` | 12 | ablation: candidates only ❌ | 0.857 | 0.787 mean |
-| `results-final/t1..t3/` | 12 | **final: v6 + dedup + memory, 3 trials** | **0.857** | **0.980 mean** |
+| `results-final/t1..t5/` | 12 | **final: v6 + dedup + memory, 5 trials** | **0.857** | **0.988 mean** |
 | `results-final/t1..t3/` | 12 | ablation: no falsification ❌ | 0.857 | 0.828 mean |
 | `results-final/t1..t3/` | 12 | ablation: candidates only ❌ | 0.857 | 0.742 mean |
-| `results-pilot/` | 3 | Python pilot (separate benchmark) | 0.000 | 0.500 |
+| `results-pilot/` | 3 | Python pilot, first three cases (superseded by the run below) | 0.000 | 0.500 |
+| `results-pilot/` | 6 | Python pilot, expanded and re-run (separate benchmark) | 0.667 | 0.857 |
 | `results-sonnet/` | 12 | cross-model: baseline on Claude Sonnet 5 | 0.857 | — |
 
 Nothing has been removed from this table. The ❌ rows are changes that made the
@@ -293,7 +314,14 @@ Two things this table records that a summary would hide.
 **A single run flattered us once already.** `results/` produced 0.941 and was
 quoted in earlier drafts of this document. Three trials of that same
 configuration average 0.917, range 0.875–0.941 — the single run was the best of
-three. Every headline figure here is now a mean over three trials.
+three. Every headline figure here is now a mean over **five** trials.
+
+**The Python pilot appears twice, and both rows stay.** The first three cases
+were re-executed as part of the six-case sweep, so the second row is a new
+sample rather than a re-scoring of the first. The `p06` ground-truth anchor was
+also corrected between them; under the anchor as originally authored the
+six-case advanced figure is 0.571 rather than 0.857, and both numbers are
+reported in [`pilot-python.md`](pilot-python.md).
 
 **The cross-model row has no advanced figure, deliberately.** Only the baseline
 was run on Sonnet 5; reproducing the advanced arm's multi-turn tool loop

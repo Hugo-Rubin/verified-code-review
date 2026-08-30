@@ -1,0 +1,6 @@
+{
+  "case_id": "h01-registry-swap-remove",
+  "title": "Use swap_remove for deregistration in Registry::remove",
+  "description": "`Registry::remove` used `Vec::remove`, which shifts every element after the removed one and then required a pass over the index map to renumber the shifted positions. The author's stated intent was to make deregistration constant-time by using `Vec::swap_remove` and dropping the renumbering pass, since the registry does not promise a stable ordering to callers.",
+  "category": "RealIssue"
+}

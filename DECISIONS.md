@@ -1387,3 +1387,74 @@ memory enabled but measured as inert. F1 0.980 ± 0.034 against a baseline of
 
 Outstanding: the blind stopwatch session has still not been run, so human review
 time in the headline table remains a labelled proxy.
+
+---
+
+## 2026-08-31 00:20 UTC — Sprint 4a: the Python pilot, expanded and corrected
+
+### Context
+
+The pilot was three cases, all ports of Rust cases. It could confirm that the
+architecture transfers; it could not discover a Python failure mode we had not
+already seen in Rust. Trials 4 and 5 of the headline arms also completed.
+
+### Decisions
+
+1. **Three new pilot cases, chosen for defect classes Rust cannot express.**
+   `p04` a mutable default argument (Rust has none), `p06` a generator consumed
+   twice (Rust's iterator semantics cannot fail this silently), and `p05` a
+   shared-module-state trap that is safe only because the accessor copies *and*
+   every value is a scalar. Ground truth for all three verified by execution and
+   re-verified before documenting; all six suites pass with their defects in
+   place.
+
+2. **`p06`'s ground-truth anchor corrected, and both figures reported.** It was
+   anchored at the consumer (24-28) rather than the changed lines (15-19), the
+   only 1 of 18 findings in the project outside its case's changed hunk. The
+   advanced arm reported the defect at the change with a fully correct
+   diagnosis and was charged a false positive *and* a false negative. Corrected
+   to 15-19. Advanced pilot F1 **0.571 → 0.857**; baseline **0.667 either way**,
+   because its location at 22-27 overlaps both anchors. Both numbers appear in
+   `docs/pilot-python.md`. The as-authored figure was not recomputed by hand:
+   the anchor was temporarily reverted and the evaluator re-run, then restored.
+
+3. **The convention is enforced, not promised.** This defect was found because
+   a *result* looked wrong, which is the direction that ends in a tuned
+   benchmark. `bench::findings_outside_the_diff` parses each case's own diff and
+   reports any expected finding outside the changed ranges; `vcr check` prints
+   it as a warning; four unit tests cover single-line hunks, added files and
+   deleted files. Both benchmarks are clean under it, which is how we know 17
+   of 18 already followed the convention rather than believing it.
+
+4. **`v6` did not transfer to Python, and is not being patched.** `p03` is
+   `c12`'s twin, and the v6 rule took `c12` from 1-of-3 to 5-of-5. `p03` was
+   missed again. The trajectory shows candidate generation never proposed the
+   defect — the two candidates it did propose were investigated and correctly
+   rejected — so verification was not the failure.
+
+### Rejected alternatives
+
+- **Editing the v6 prompt until `p03` is found.** Rejected. A prompt change
+  aimed at one named case is precisely the overfitting the ablation ladder
+  exists to detect, and the pilot is not a headline figure, so there is nothing
+  to gain but a nicer sentence.
+- **Reporting only the corrected pilot figure.** Rejected. The correction moves
+  the advanced arm and leaves the baseline untouched, which is exactly the
+  shape a self-serving benchmark edit would have. The reader gets both numbers
+  and the reason the baseline does not move.
+- **Silently re-running `p01`–`p03` and comparing to the old three-case
+  numbers.** Rejected. They were re-executed, so it is a new sample, not a
+  re-scoring; the changelog says so, and the disappeared `p01` duplicate false
+  positive is called out rather than absorbed into a "precision improved" line.
+- **Rewriting the sprint-2 changelog row that says "three Python cases".**
+  Rejected: it was true when written. The expansion is a new entry.
+
+### Consequence
+
+Python pilot: 6 cases, baseline F1 0.667, advanced F1 0.857, precision 1.000 in
+both arms, zero false positives, both traps cleared on repository evidence,
+evidence accuracy 1.000 (51/51). Still a pilot, still not a headline figure.
+
+Headline arms now at 5 trials: advanced F1 **0.988 ± 0.026**, recall
+**1.000 ± 0.000**, precision 0.978; baseline identical on all 12 cases in all 5
+trials, σ = 0.000 on every metric.

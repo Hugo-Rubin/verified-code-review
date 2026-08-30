@@ -1,0 +1,6 @@
+{
+  "case_id": "h02-status-class-guard",
+  "title": "Classify vendor-specific codes above the standard ranges",
+  "description": "Several upstreams in front of us emit non-standard codes such as 600 and 999, which `classify` was reporting as `Unknown` and callers were treating as unclassifiable. The author's stated intent was to widen the client-error arm into a guard so that any code at or above 400 lands in a defined class, with a test covering the 600 case.",
+  "category": "RealIssue"
+}

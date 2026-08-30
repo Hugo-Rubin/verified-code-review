@@ -517,10 +517,13 @@ commands, required configuration, expected output, runtime, and cost.
   wrong only in combination has no representation in the schema.
 - **One model, one provider.** Everything here is `gemini-3.7-flash` on Vertex
   AI. Nothing has been checked for generalisation across models.
-- **One language, plus a three-case pilot.** The measured benchmark is Rust.
-  A Python pilot exists ([`docs/pilot-python.md`](docs/pilot-python.md)) and
-  shows the same pattern, but three cases and one run establish nothing on
-  their own.
+- **One language, plus a six-case pilot.** The measured benchmark is Rust. A
+  Python pilot exists ([`docs/pilot-python.md`](docs/pilot-python.md)) and
+  shows the same pattern — baseline F1 0.667, advanced 0.857, zero false
+  positives in either arm, both traps cleared on repository evidence — but six
+  cases and one run per arm establish nothing on their own. It also produced a
+  concrete counter-example: the `v6` candidate-generation rule that fixed
+  `c12` in Rust did **not** transfer to its Python twin `p03`.
 
 ## Main failure mode
 

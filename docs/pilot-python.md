@@ -1,8 +1,8 @@
 # Python pilot
 
-**This is a pilot, not a result.** Three cases, one run, one model. Nothing
-here appears in any headline figure, and it is not evidence that the reviewer
-works on Python in general.
+**This is a pilot, not a result.** Six cases, one run per arm, one model.
+Nothing here appears in any headline figure, and it is not evidence that the
+reviewer works on Python in general.
 
 It exists to convert one claim from an assertion into a measurement. The
 README states that the verification architecture is language-independent and
@@ -20,14 +20,24 @@ is narrower and more useful:
 > evidence, when the failure mode is an `IndexError` rather than a panic and
 > "private" is a convention rather than a compiler rule?
 
-So two of the three cases are deliberate analogues of Rust cases whose
-behaviour we already understand.
+So three of the six cases are deliberate analogues of Rust cases whose
+behaviour we already understand, and three are defect classes the Rust
+benchmark **structurally cannot contain**.
 
 ## The cases
 
 Located in [`../benchmark/pilot-python/`](../benchmark/pilot-python/), in the
 same layout as the Rust benchmark. Each is a small package whose test suite
 passes **despite** the defect.
+
+| Case | Category | Rust analogue |
+|---|---|---|
+| `p01-retry-swallows-failure` | Challenging | ported shape |
+| `p02-primary-node-trap` | Trap | `c02-shard-index-trap` |
+| `p03-len-is-capacity` | Challenging | `c12-slot-guard-capacity` |
+| `p04-mutable-default-cache` | RealIssue | **none possible** |
+| `p05-shared-config-trap` | Trap | `c02`/`c10` in shape only |
+| `p06-generator-consumed-twice` | RealIssue | **none possible** |
 
 ### `p01-retry-swallows-failure` — Challenging
 
@@ -76,10 +86,54 @@ is a Python-specific footgun with no direct Rust equivalent. Every test builds
 a cache with `n == capacity`, so `len()` and `filled` always coincide and the
 suite never touches the failing configuration.
 
+### `p04-mutable-default-cache` — RealIssue
+
+`collect_enabled` took `into=None` and allocated a list when the caller did not
+supply one. The sentinel branch is removed and the parameter now defaults to
+`into=[]` directly — presented, accurately, as a simplification.
+
+The canonical Python footgun, and included because Rust **has no mutable
+default arguments at all**: this is a defect class the Rust benchmark cannot
+express. The default is evaluated once at definition time, so every call that
+omits `into` appends to one shared list. The docstring still promises "a fresh
+list each call", so the file contains its own contradiction.
+
+Exactly one test reaches the default path, and reaches it once. A second call
+anywhere in the suite would expose it — a fair description of how this defect
+survives review and then bites in production.
+
+### `p05-shared-config-trap` — Trap (clean)
+
+A new `client` module stamps a user-agent onto settings derived from a
+module-level `BASE` dict. Shared mutable module state is a real and common
+Python defect, and the change appears to write into it.
+
+It does not. `with_overrides` calls `base_settings()`, which returns
+`dict(BASE)` — a new dict — and every value in `BASE` is an immutable scalar,
+so the shallow copy is a complete one. That last point is what makes the case
+require *reading* rather than pattern-matching: a nested value would make the
+same reasoning fail. The deciding facts live in `src/defaults.py`, which the
+change does not touch.
+
+### `p06-generator-consumed-twice` — RealIssue
+
+`parse_records` stops building a list and returns a generator expression,
+presented as a laziness optimisation for large inputs.
+
+`summarise`, unchanged, iterates its argument twice — `sum(1 for _ in records)`
+and then `[r.key for r in records]`. The first pass exhausts the generator, so
+the second yields nothing. Callers get a correct count with an empty key list:
+a silently wrong result rather than an error. Single-consumption of an iterator
+has no Rust analogue that fails this quietly.
+
+All three tests call `list(parse_records(...))` first, materialising the
+generator before anything touches it.
+
 ## Ground truth, verified by execution
 
 As with the Rust benchmark, no ground-truth claim here rests on reading the
-code. Each was executed:
+code. Each was executed, and each was re-executed as a check before this
+document was written:
 
 ```text
 p01  a transport that always raises -> upload_chunk returns None
@@ -93,82 +147,152 @@ p02  Cluster([]) -> ClusterError
 p03  capacity=100, filled=3
      fetch(index=1)  -> page 1
      fetch(index=50) -> IndexError: list index out of range
+
+p04  summarise([Flag("a", True)]) -> ['a']
+     summarise([Flag("b", True)]) -> ['a', 'b']        <- the previous call's result
+
+p05  BASE before -> {'retries': 3, 'timeout_secs': 30, 'verify_tls': True}
+     build_client({'retries': 9})
+     BASE after  -> {'retries': 3, 'timeout_secs': 30, 'verify_tls': True}   (unchanged)
+     client.settings -> {'retries': 9, 'timeout_secs': 30, 'verify_tls': True,
+                         'user_agent': 'vcr/1.0'}
+
+p06  summarise(parse_records(LINES))       -> {'count': 3, 'keys': []}
+     summarise(list(parse_records(LINES))) -> {'count': 3, 'keys': ['a','b','c']}
 ```
 
-Test suites: p01 3 passed, p02 4 passed, p03 5 passed — every one of them
-green with the defects in place.
+Test suites: p01 3 passed, p02 4 passed, p03 5 passed, p04 3 passed, p05 4
+passed, p06 3 passed — every one green with the defects in place.
 
 ## Result
 
-One run per arm, three cases. `gemini-3.7-flash`, temperature 0, same
+One run per arm, six cases. `gemini-3.7-flash`, temperature 0, same
 configuration as the Rust benchmark.
 
 | Metric | Baseline | Advanced |
 |---|---:|---:|
-| Precision | 0.000 | 0.500 |
-| Recall | 0.000 | 0.500 |
-| **F1** | **0.000** | **0.500** |
-| False positives/case | 0.00 | 0.33 |
-| Evidence accuracy | n/a | **1.000** (17/17) |
-| Cost/case | $0.0032 | $0.0184 |
+| Precision | 1.000 | 1.000 |
+| Recall | 0.500 | **0.750** |
+| **F1** | **0.667** | **0.857** |
+| False positives/case | 0.00 | 0.00 |
+| Findings to triage/case | 0.33 | 0.50 |
+| Evidence accuracy | n/a (0 citations) | **1.000** (51/51) |
+| Cost/case | $0.0041 | $0.0243 |
+| Runtime/case | 7.5 s | 63.6 s |
 
 | Case | Baseline | Advanced |
 |---|---|---|
-| `p01-retry-swallows-failure` | missed | **found** (+1 duplicate FP) |
-| `p02-primary-node-trap` | clean | **clean** — both candidates rejected on evidence |
-| `p03-len-is-capacity` | missed | missed |
+| `p01-retry-swallows-failure` | missed | **found** (1 further candidate rejected) |
+| `p02-primary-node-trap` | clean | **clean** — candidate rejected on evidence |
+| `p03-len-is-capacity` | missed | **missed** (2 candidates, both wrong, both rejected) |
+| `p04-mutable-default-cache` | found | **found** |
+| `p05-shared-config-trap` | clean | **clean** — both candidates rejected on evidence |
+| `p06-generator-consumed-twice` | found | **found** |
 
-**The Rust pattern transfers.** The baseline found *nothing at all* — it
-reported zero findings on all three cases, exactly as it does on the Rust
-challenging cases, and for the same reason: the deciding evidence is never in
-the changed file. The advanced arm recovered one of the two real defects and
-correctly cleared the trap.
+**The Rust pattern transfers.** The baseline missed both cases whose deciding
+evidence sits outside the changed file, and found both whose defect is legible
+in the diff — the same split it shows on the Rust benchmark, for the same
+reason. The advanced arm recovered one of the two out-of-file defects and
+cleared both traps.
 
-**Falsification worked on Python.** On `p02` the reviewer proposed two
-candidates — an `IndexError` on `nodes[0]` and a related indexing concern — and
-the verifier rejected **both** after reading `cluster.py`, a file the change
-does not touch. The same reasoning that clears `c02` in Rust cleared its
-Python twin, against a constructor invariant expressed as a raised exception
-rather than an `Err` return.
+**Falsification worked on Python, six times.** Across the run the verifier
+rejected six candidates, every one on repository evidence from a file the
+change does not touch: the `Cluster` constructor invariant on `p02`, the
+`dict(BASE)` copy on `p05`, and on `p03` two plausible-but-wrong claims about
+`page_at` returning `None` and about `cache` possibly lacking `__len__`. The
+same reasoning that clears `c02` in Rust cleared its Python twin, against a
+constructor invariant expressed as a raised exception rather than an `Err`.
 
-**Evidence citation works on Python.** All 17 cited excerpts were verified
+**Zero false positives in either arm**, including on both traps. That is a
+better precision result than the Rust benchmark produces, on a third as many
+cases — read it as "the traps did not fool it", not as "precision is 1.000".
+
+**Evidence citation works on Python.** All 51 cited excerpts were verified
 against the repository at their stated line numbers, using the same
 line-by-line audit as the Rust runs.
 
-**The one false positive is the duplicate-prediction rule, not a hallucination.**
-On `p01` the advanced arm reported the defect twice: once at `upload_chunk`
-(matched) and once at `upload_all`, describing the same failure one frame up
-the stack — *"upload_all continues executing and returns a list containing None
-when any chunk fails"*. That is a correct description of the same bug. Our
-matching is deliberately one-to-one, so the second scores as a false positive:
-telling a reviewer the same thing twice still costs a second triage. Worth
-knowing that this arm's only Python FP is a duplicate rather than an invention.
+### `p03` was missed, and the trajectory says why
 
-**`p03` was missed**, which mirrors `c12` — its Rust twin and the single least
-stable case in the whole benchmark, found in only 1 of 3 Rust trials. Both are
-the "safe-looking guard that is secretly wrong" shape. That this shape is the
-hardest for the system in *both* languages is the most interesting thing the
-pilot found, and it is one observation, not a finding.
+This is the most useful thing in the pilot, so it gets stated plainly. The
+advanced arm did not miss `p03` because verification over-rejected. It missed
+it because **candidate generation never proposed the defect at all**. The two
+candidates it did propose were:
+
+- `fetch_many` drops in-range slots because it filters on `p is not None`
+- `fetch` will raise `TypeError` if some `cache` does not implement `__len__`
+
+Both were investigated and correctly rejected. Neither is the bug. The real
+claim — that `PagedCache.__len__` returns capacity rather than occupancy, so
+the guard admits indices that are out of range — was never raised, so
+falsification never had the chance to confirm it.
+
+That matters because `p03`'s Rust twin `c12` failed in exactly this way, and
+the `v6` prompt change ("where the change calls something whose definition is
+not visible, state what it must do for the code to be right, and raise that as
+a candidate") was written to fix precisely this shape. It took `c12` from found
+in 1 trial of 3 to found in 5 of 5. **It did not transfer to `p03`.** One case
+is not a diagnosis, but it is a concrete counter-example to any claim that the
+v6 rule is language-independent, and it is the first place a Python follow-up
+should look.
+
+### A ground-truth correction, recorded rather than absorbed
+
+`p06`'s expected finding was originally anchored at `summarise` (lines 24-28),
+the *consumer* of the generator. That is a defensible place to fix the defect.
+It was also the only ground-truth finding in the project — 1 of 18 — anchored
+outside the hunk its case changes; every other case anchors at the changed
+code.
+
+The advanced arm reported the defect at lines 15-19, at the change, with a
+fully correct diagnosis naming `summarise`, the double iteration and the empty
+result, and was scored a **false positive plus a false negative** for it.
+
+The anchor was moved to the changed lines, for consistency with the convention
+the other seventeen follow. Both figures are reported:
+
+| Advanced, 6 cases | Precision | Recall | F1 |
+|---|---:|---:|---:|
+| p06 anchored as originally authored (24-28) | 0.667 | 0.500 | **0.571** |
+| p06 anchored at the changed lines (15-19) | 1.000 | 0.750 | **0.857** |
+
+The baseline is **0.667 either way**: it located the defect at 22-27, which
+overlaps both anchors within the matching tolerance, so its score does not
+depend on the choice. That is the reason to report both numbers — the
+correction moves one arm and not the other, which is exactly the shape a
+convenient benchmark edit would have, and the reader should be able to see it
+rather than take our word for the motive.
+
+The correction was prompted by a *result*, not by review, which is the
+dangerous direction. Two guards were added rather than a promise:
+`bench::findings_outside_the_diff` reports any expected finding outside its
+case's changed ranges, and `vcr check` prints it as a warning. Both benchmarks
+are clean under it; that is how we know 17 of 18 already followed the
+convention, rather than believing it.
 
 ## What the pilot does not establish
 
-- **Three cases prove nothing statistically.** One trap and two
-  context-dependent cases, single run.
+- **Six cases prove nothing statistically.** Two traps, two out-of-file
+  defects, two in-diff defects, single run per arm. No variance figure.
 - **No Python-specific tooling exists.** No `pytest` execution, no AST or
   call-graph analysis. The reviewer uses the same literal search and bounded
   reads it uses for Rust.
-- **The case set is biased toward what we already know works.** Two of three
-  are ports of Rust cases the system handles. That is deliberate — it isolates
-  language transfer from case difficulty — but it means the pilot cannot
-  discover Python failure modes we did not think to write.
-- **Idiomatic Python defects are absent.** Mutable default arguments, late
-  binding in closures, `__eq__`/`__hash__` mismatches, generator exhaustion,
-  and the many ways `asyncio` goes wrong are all untested.
+- **Half the case set is biased toward what we already know works.** Three of
+  six are ports of Rust cases the system handles. That is deliberate — it
+  isolates language transfer from case difficulty — but it means those three
+  cannot discover Python failure modes we did not think to write. The other
+  three (`p04`, `p05`, `p06`) were written against Python's own footguns
+  precisely to reduce that bias, and the system handled all three.
+- **Idiomatic Python defects are still largely absent.** Late binding in
+  closures, `__eq__`/`__hash__` mismatches, `__slots__` interactions,
+  decorator ordering, and the many ways `asyncio` goes wrong are untested.
+- **Same author as the reviewer.** The Rust benchmark carries this bias and so
+  does this one.
 
 A real Python capability claim needs a Python benchmark built the way the Rust
-one was — a dozen cases, execution-verified, frozen, with traps designed
-around Python's own failure modes. This pilot is one afternoon's evidence that
-the architecture does not obviously fall over, and nothing more.
+one was — a dozen cases, execution-verified, frozen, repeated trials, with
+traps designed around Python's own failure modes. This pilot is evidence that
+the architecture does not fall over, and that one of its Rust-derived prompt
+rules does not automatically carry across. Nothing more.
 
 ## Running it
 
@@ -185,4 +309,5 @@ cargo run --quiet --bin vcr -- evaluate --agent advanced --benchmark benchmark/p
 ```
 
 The reviewer reads each case's `language` field and addresses itself
-accordingly; nothing else in the pipeline changes.
+accordingly; nothing else in the pipeline changes. The verifier is never told
+what language it is looking at, and a test asserts its prompt names none.

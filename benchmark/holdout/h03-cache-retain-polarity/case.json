@@ -1,0 +1,6 @@
+{
+  "case_id": "h03-cache-retain-polarity",
+  "title": "Replace the eviction loop in TtlCache with a single retain call",
+  "description": "`TtlCache::evict_expired` walked the entry vector with a manual index and called `Vec::remove` for each entry it dropped, which is quadratic and repeats the index bookkeeping already present in `put`. The author's stated intent was to express the same eviction in one `retain` call so that both mutating paths in the file use the same idiom.",
+  "category": "RealIssue"
+}
