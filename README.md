@@ -574,11 +574,21 @@ ablations rather than reasoning about your own architecture from the inside.
 
 **Third, an anti-take.** We also added a feedback loop this sprint: an
 "Insufficient" verdict sends the investigation back for a second, targeted
-look. It is a good idea, it is correctly implemented, and across 36
-verifications in three trials it fired **zero times** — the verifier returned
-only Supports and Contradicts, never Insufficient. It is reported here as
-inert rather than as a feature, because the difference between those two
-descriptions is whether anyone measured.
+look. Good idea, correctly implemented, and across 36 verifications in three
+trials it fired **zero times** — the verifier returned only Supports and
+Contradicts, never Insufficient.
+
+The interesting part is what it took to say that honestly. "Never fired" and
+"is broken" produce identical evidence, so we drove the branch with a scripted
+mock to prove it works when its trigger occurs. Writing that test found a bug:
+the trajectory recorded only the final verdict, so a follow-up would have
+appeared in the record with no visible cause. It had never surfaced because the
+branch had never run.
+
+So: the difference between "a self-correcting agent" and "an agent with an
+unused self-correction branch" is whether someone measured — and the difference
+between "inert" and "broken" is whether someone tested. We report it as inert,
+and we can now defend the word.
 
 ## Agent trajectories
 

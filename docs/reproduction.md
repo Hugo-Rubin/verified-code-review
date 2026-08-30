@@ -61,7 +61,7 @@ works from the project root without adjusting `PATH`.
 
 ## 4. Run the test suite
 
-Nothing here needs an API key or network access — 196 tests covering the
+Nothing here needs an API key or network access — 202 tests covering the
 metrics, the ground-truth matcher, benchmark loading, path-traversal
 prevention, malformed-response handling, and the verification state machine.
 
@@ -69,7 +69,7 @@ prevention, malformed-response handling, and the verification state machine.
 cargo test
 ```
 
-Expected: 193 passed in the library suite and 3 in the binary suite, 0 failed.
+Expected: 199 passed in the library suite and 3 in the binary suite, 0 failed.
 
 ```bash
 cargo clippy --all-targets -- -D warnings

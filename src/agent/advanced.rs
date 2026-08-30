@@ -136,6 +136,17 @@ pub async fn run(case: &Case, client: &LlmClient, cfg: &RunConfig) -> Result<Tra
         let mut verification =
             verify_fresh(&candidate, &question, &evidence, client, cfg, &mut traj).await;
 
+        // Recorded as soon as it exists. If a follow-up replaces it below, both
+        // verdicts appear in the trajectory in order — a reader needs to see
+        // the "Insufficient" that triggered the second look, not just the
+        // answer that superseded it.
+        if let Some(v) = &verification {
+            traj.push(TrajectoryEvent::Verification {
+                candidate_id: candidate.id.clone(),
+                result: v.clone(),
+            });
+        }
+
         // Self-correction: an "Insufficient" verdict is not a dead end, it is
         // a statement of what is missing. Feed that back into one more
         // targeted investigation rather than discarding the candidate.
@@ -180,7 +191,7 @@ pub async fn run(case: &Case, client: &LlmClient, cfg: &RunConfig) -> Result<Tra
             if extra.is_empty() {
                 traj.push(TrajectoryEvent::Note {
                     note: format!(
-                        "{}: follow-up investigation found nothing further; keeping the                          original verdict",
+                        "{}: follow-up investigation found nothing further; keeping the original verdict",
                         candidate.id
                     ),
                 });
@@ -195,14 +206,14 @@ pub async fn run(case: &Case, client: &LlmClient, cfg: &RunConfig) -> Result<Tra
                 // an earlier one was unsure.
                 verification =
                     verify_fresh(&candidate, &question, &evidence, client, cfg, &mut traj).await;
-            }
-        }
 
-        if let Some(v) = &verification {
-            traj.push(TrajectoryEvent::Verification {
-                candidate_id: candidate.id.clone(),
-                result: v.clone(),
-            });
+                if let Some(v) = &verification {
+                    traj.push(TrajectoryEvent::Verification {
+                        candidate_id: candidate.id.clone(),
+                        result: v.clone(),
+                    });
+                }
+            }
         }
 
         let (status, reason) = decide(&candidate, &evidence, verification.as_ref(), &case.repo);
@@ -1092,6 +1103,182 @@ mod tests {
             .any(|e| matches!(e, TrajectoryEvent::HumanCheckpoint { .. })));
         // The stub proposes nothing, so there is nothing to verify.
         assert!(t.final_findings.is_empty());
+    }
+
+    // --- the self-correction loop ---
+    //
+    // These matter more than they look. On the real benchmark the verifier
+    // never returned `Insufficient`, so the follow-up branch never executed in
+    // any measured run. "Never fired" and "cannot fire" are observationally
+    // identical from the results alone, and reporting the loop as inert is
+    // only honest if the loop demonstrably works when the condition it waits
+    // for actually occurs. These tests force that condition.
+
+    /// A case whose repository has something worth finding on a second look.
+    fn loop_case(dir: &Path) -> Case {
+        let d = dir.join("t03");
+        std::fs::create_dir_all(d.join("repository/src")).unwrap();
+        std::fs::write(
+            d.join("case.json"),
+            r#"{"case_id":"t03","title":"t","description":"d","category":"RealIssue"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            d.join("diff.patch"),
+            "--- a/src/lib.rs
++++ b/src/lib.rs
+",
+        )
+        .unwrap();
+        std::fs::write(d.join("ground_truth.json"), r#"{"case_id":"t03"}"#).unwrap();
+        std::fs::write(
+            d.join("repository/src/lib.rs"),
+            "fn a() {}
+fn caller() { a(); }
+",
+        )
+        .unwrap();
+        crate::bench::load_case(&d).unwrap()
+    }
+
+    fn one_candidate() -> String {
+        r#"{"findings":[{"issue_type":"Correctness","severity":"High",
+             "file":"src/lib.rs","start_line":1,"end_line":1,
+             "claim":"a() can be reached with bad state","reasoning":"r"}]}"#
+            .to_string()
+    }
+
+    fn read_then_done() -> Vec<String> {
+        vec![
+            r#"{"done":false,"tool":"read","arguments":{"file":"src/lib.rs","start_line":1,"end_line":2},"rationale":"look"}"#.to_string(),
+            r#"{"done":true,"tool":null,"arguments":null,"rationale":"enough"}"#.to_string(),
+        ]
+    }
+
+    fn scripted_client(verify: Vec<&str>, investigate_turns: usize) -> LlmClient {
+        let mut script = std::collections::HashMap::new();
+        script.insert(Stage::Review, vec![one_candidate()]);
+        script.insert(
+            Stage::Falsify,
+            vec![r#"{"falsification_question":"do callers guard it?"}"#.to_string()],
+        );
+        let mut inv = Vec::new();
+        for _ in 0..investigate_turns {
+            inv.extend(read_then_done());
+        }
+        script.insert(Stage::Investigate, inv);
+        script.insert(
+            Stage::Verify,
+            verify.into_iter().map(|s| s.to_string()).collect(),
+        );
+        LlmClient::Mock(crate::llm::MockClient::scripted(script))
+    }
+
+    #[tokio::test]
+    async fn an_insufficient_verdict_triggers_a_second_investigation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let case = loop_case(tmp.path());
+        let cfg = RunConfig::mock();
+        assert_eq!(cfg.max_followup_investigations, 1);
+
+        let client = scripted_client(
+            vec![
+                r#"{"outcome":"Insufficient","rationale":"no callers shown","decisive_evidence":[]}"#,
+                r#"{"outcome":"Supports","rationale":"caller found","decisive_evidence":["src/lib.rs:2"]}"#,
+            ],
+            2, // one investigation pass, then the follow-up pass
+        );
+
+        let t = run(&case, &client, &cfg).await.unwrap();
+
+        let re_investigated = t.events.iter().any(
+            |e| matches!(e, TrajectoryEvent::Note { note } if note.contains("re-investigating")),
+        );
+        assert!(
+            re_investigated,
+            "the follow-up must be recorded in the trajectory"
+        );
+
+        let verifications = t
+            .events
+            .iter()
+            .filter(|e| matches!(e, TrajectoryEvent::Verification { .. }))
+            .count();
+        assert_eq!(verifications, 2, "the claim must be re-adjudicated");
+
+        assert_eq!(t.final_findings.len(), 1);
+        assert_eq!(
+            t.final_findings[0].status,
+            FindingStatus::Verified,
+            "the second verdict decides the outcome"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_follow_up_is_disabled_when_the_budget_is_zero() {
+        let tmp = tempfile::tempdir().unwrap();
+        let case = loop_case(tmp.path());
+        let mut cfg = RunConfig::mock();
+        cfg.max_followup_investigations = 0;
+
+        let client = scripted_client(
+            vec![
+                r#"{"outcome":"Insufficient","rationale":"no callers shown","decisive_evidence":[]}"#,
+                r#"{"outcome":"Supports","rationale":"should never be reached","decisive_evidence":[]}"#,
+            ],
+            2,
+        );
+
+        let t = run(&case, &client, &cfg).await.unwrap();
+        assert!(!t.events.iter().any(|e| {
+            matches!(e, TrajectoryEvent::Note { note } if note.contains("re-investigating"))
+        }));
+        assert_eq!(t.final_findings[0].status, FindingStatus::Uncertain);
+    }
+
+    #[tokio::test]
+    async fn the_no_followup_ablation_disables_the_loop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let case = loop_case(tmp.path());
+        let mut cfg = RunConfig::mock();
+        cfg.ablation = Ablation::NoFollowup;
+
+        let client = scripted_client(
+            vec![
+                r#"{"outcome":"Insufficient","rationale":"no callers shown","decisive_evidence":[]}"#,
+                r#"{"outcome":"Supports","rationale":"should never be reached","decisive_evidence":[]}"#,
+            ],
+            2,
+        );
+
+        let t = run(&case, &client, &cfg).await.unwrap();
+        assert!(!t.events.iter().any(|e| {
+            matches!(e, TrajectoryEvent::Note { note } if note.contains("re-investigating"))
+        }));
+        assert_eq!(t.final_findings[0].status, FindingStatus::Uncertain);
+    }
+
+    #[tokio::test]
+    async fn a_decisive_verdict_never_triggers_a_second_look() {
+        let tmp = tempfile::tempdir().unwrap();
+        let case = loop_case(tmp.path());
+        let cfg = RunConfig::mock();
+
+        // This is what every real run looked like: Supports first time.
+        let client = scripted_client(
+            vec![r#"{"outcome":"Supports","rationale":"clear","decisive_evidence":["x"]}"#],
+            1,
+        );
+
+        let t = run(&case, &client, &cfg).await.unwrap();
+        assert_eq!(
+            t.events
+                .iter()
+                .filter(|e| matches!(e, TrajectoryEvent::Verification { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(t.final_findings[0].status, FindingStatus::Verified);
     }
 
     #[test]

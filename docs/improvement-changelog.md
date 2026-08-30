@@ -202,11 +202,39 @@ times and `Contradicts` 12 times. It never once said `Insufficient`, so the
 branch was never reachable. The `no-followup` ablation would be bit-identical
 to the full system on this benchmark, which is why it was not spent on.
 
-We kept the code and are reporting it as inert. It costs nothing when it does
-not fire, and it would plausibly matter on a benchmark where evidence is
-thinner or tool budgets tighter. But it contributed exactly nothing here, and
-the difference between "a self-correcting agent" and "an agent with an unused
-self-correction branch" is whether someone counted.
+### "Never fired" is not the same as "cannot fire"
+
+Reporting a branch as inert is only honest if the branch demonstrably works
+when its trigger occurs. From the results alone the two are indistinguishable:
+a loop that never runs and a loop that is broken produce identical evidence.
+
+So the loop is now driven directly. `MockClient::scripted` queues responses per
+stage, and four tests exercise it against a real case:
+
+| Test | Asserts |
+|---|---|
+| `an_insufficient_verdict_triggers_a_second_investigation` | An `Insufficient` first verdict produces the follow-up note, a second investigation pass, a **second** verification, and a final status decided by the later verdict |
+| `a_decisive_verdict_never_triggers_a_second_look` | A `Supports` first verdict yields exactly one verification — the path every real run took |
+| `the_follow_up_is_disabled_when_the_budget_is_zero` | `max_followup_investigations = 0` suppresses it |
+| `the_no_followup_ablation_disables_the_loop` | The ablation flag suppresses it |
+
+Writing them found a real bug. The trajectory recorded only the **final**
+verdict, so when a follow-up replaced an `Insufficient` with a `Supports`, the
+`Insufficient` that caused the second investigation vanished from the record. A
+reader would have seen a second investigation with no visible reason for it.
+Both verdicts are now recorded in order.
+
+That bug had never surfaced, because on the real benchmark the branch never
+ran — which is exactly the class of defect that hides behind an untested path.
+
+### The conclusion, now earned
+
+The loop works and did not fire. We kept the code and report it as inert: it
+costs nothing when idle and would plausibly matter where evidence is thinner or
+tool budgets tighter, but it contributed exactly nothing here. The difference
+between "a self-correcting agent" and "an agent with an unused self-correction
+branch" is whether someone counted — and the difference between "inert" and
+"broken" is whether someone tested.
 
 The tempting move — nudging the verifier to say `Insufficient` more often so
 the feature would have something to do — was not made. That is tuning the

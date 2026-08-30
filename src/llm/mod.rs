@@ -41,7 +41,7 @@ impl Usage {
 
 /// Which pipeline stage issued a request. Local metadata: it is recorded in
 /// the trajectory and drives the mock client, and is never sent to a provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Stage {
     /// Produce candidate findings from the diff.
     Review,
