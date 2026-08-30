@@ -1,0 +1,172 @@
+{
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "provider": "Vertex",
+  "started_at": "2026-08-30T10:34:54.974036600+00:00",
+  "finished_at": "2026-08-30T10:41:34.915065400+00:00",
+  "benchmark_dir": "benchmark/cases",
+  "case_count": 12,
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_read_lines": 200,
+    "max_search_results": 40
+  },
+  "stats": [
+    {
+      "case_id": "c01-pool-counter-leak",
+      "trajectory_id": "4ecc644b-b51f-44de-a1a8-5771c31073cb",
+      "runtime_ms": 31153,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 1,
+      "input_tokens": 5587,
+      "output_tokens": 1906,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c02-shard-index-trap",
+      "trajectory_id": "45e4954f-d188-43fb-931b-30e47e172b75",
+      "runtime_ms": 41179,
+      "llm_calls": 7,
+      "tool_calls": 3,
+      "retries": 0,
+      "input_tokens": 10154,
+      "output_tokens": 2253,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c03-session-touch-context",
+      "trajectory_id": "343ab2b8-fb99-41d0-afd6-335f1946beb7",
+      "runtime_ms": 38848,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 1,
+      "input_tokens": 5803,
+      "output_tokens": 2043,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c04-counter-lost-update",
+      "trajectory_id": "ba130396-f1b2-4443-ad21-d1e5ef53e391",
+      "runtime_ms": 36766,
+      "llm_calls": 7,
+      "tool_calls": 3,
+      "retries": 0,
+      "input_tokens": 9267,
+      "output_tokens": 2079,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c05-timeout-parse-default",
+      "trajectory_id": "ff84097b-5dbc-45dd-9746-fb45d74ac418",
+      "runtime_ms": 46630,
+      "llm_calls": 8,
+      "tool_calls": 4,
+      "retries": 0,
+      "input_tokens": 12072,
+      "output_tokens": 2492,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c06-dedup-quadratic",
+      "trajectory_id": "1deb893f-f16c-48b1-9cbe-e5bf721b066a",
+      "runtime_ms": 22667,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 5078,
+      "output_tokens": 1861,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c07-report-unflushed-writer",
+      "trajectory_id": "e20917b4-a23b-4d11-a6dc-97709b047703",
+      "runtime_ms": 25755,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 5177,
+      "output_tokens": 1583,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c08-order-name-limit",
+      "trajectory_id": "147dc35c-db33-423e-ac1b-76911391f05f",
+      "runtime_ms": 30569,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 1,
+      "input_tokens": 6450,
+      "output_tokens": 2153,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c09-queue-pop-guarded-trap",
+      "trajectory_id": "7a0e5bae-b722-4894-865e-ca74732f8584",
+      "runtime_ms": 26590,
+      "llm_calls": 7,
+      "tool_calls": 3,
+      "retries": 0,
+      "input_tokens": 8666,
+      "output_tokens": 2327,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c10-chunk-total-overflow-trap",
+      "trajectory_id": "4a76e1a6-77be-49c0-a8fe-68bbeb2b9101",
+      "runtime_ms": 36191,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 2,
+      "input_tokens": 9435,
+      "output_tokens": 2095,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c11-asset-path-check-trap",
+      "trajectory_id": "746b1525-ea18-4106-b443-bc60e0553382",
+      "runtime_ms": 22587,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 0,
+      "input_tokens": 6461,
+      "output_tokens": 1882,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c12-slot-guard-capacity",
+      "trajectory_id": "12973109-54cf-46af-8d0a-4823a87dbdfd",
+      "runtime_ms": 40957,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 1,
+      "input_tokens": 9118,
+      "output_tokens": 2736,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ]
+}

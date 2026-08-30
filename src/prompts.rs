@@ -24,8 +24,8 @@ use crate::finding::IssueType;
 pub const BASELINE_REVIEW_V: &str = "baseline-review/v2";
 pub const ADVANCED_REVIEW_V: &str = "advanced-review/v5";
 pub const INVESTIGATE_V: &str = "advanced-investigate/v1";
-pub const FALSIFY_V: &str = "advanced-falsify/v1";
-pub const VERIFY_V: &str = "fresh-verify/v3";
+pub const FALSIFY_V: &str = "advanced-falsify/v2";
+pub const VERIFY_V: &str = "fresh-verify/v5";
 
 /// The controlled taxonomy, rendered for a prompt.
 pub fn issue_type_list() -> String {
@@ -192,8 +192,18 @@ answer would show the claim is WRONG. The question must be answerable by
 inspecting the repository: callers, implementations, tests, configuration, or
 type definitions.
 
+Ask about the thing the claim actually depends on, not about the mechanism.
+Whether a function panics on a bad input is usually not in doubt and can be
+read off the body; whether anything ever hands it a bad input is the question.
+So when a claim rests on how the code is used, ask about the call sites by
+name.
+
 Good: "Does every caller of parse_row check is_empty() before indexing?"
-Bad:  "Is this code correct?"
+Bad:  "Does parse_row panic when the row is empty?"  (asks the mechanism)
+Bad:  "Is this code correct?"                        (unanswerable)
+
+Never make a comment the answer. If a doc comment already asserts the
+precondition, the question is whether the callers honour it.
 
 Return JSON of exactly this shape:
 
@@ -311,6 +321,27 @@ Rules:
   claim depends on, the answer is "Insufficient", not "Supports".
 - "Insufficient" is a perfectly good answer and is expected to be common.
 - Quote the specific excerpts that decided it.
+
+Weigh comments by whether the repository could check them:
+
+- A comment asserting something the repository itself can settle — which
+  callers exist, what they pass, whether a guard runs first, whether a
+  constructor rejects a value — is a CLAIM, not evidence. It is exactly the
+  kind of thing that is wrong when the code is wrong. "Callers check first"
+  written above a function tells you what the author believed, not what the
+  callers do. Go and look at the call sites; if the evidence asserts something
+  about callers but contains no callers, that is "Insufficient", never
+  "Contradicts". A documented precondition does not make violating it
+  acceptable — the question is whether anything violates it.
+
+- A comment stating a fact from outside the repository — a database column
+  type, a wire-protocol constant, the size of production inputs, what a
+  downstream consumer requires — is different. Nothing in the repository can
+  confirm or refute it, and the people who wrote it knew things you do not.
+  Treat it as the best available evidence and reason from it. Do not dismiss a
+  finding merely because such a fact came from a comment rather than from
+  code; that standard would make every claim about the real world
+  unverifiable.
 
 A true statement is not automatically a defect:
 
@@ -490,6 +521,29 @@ result is a correct answer"
     fn candidates_must_name_a_consequence() {
         let s = advanced_system();
         assert!(s.contains("must name a consequence"));
+    }
+
+    #[test]
+    fn the_verifier_distinguishes_checkable_comments_from_external_facts() {
+        // Two real runs pinned both halves of this rule. First, the verifier
+        // rejected a genuine reachable panic because the function's own doc
+        // comment asserted that callers check first — the comment was wrong.
+        // Then, told to distrust comments, it rejected two genuine defects
+        // because the facts they rested on (a VARCHAR(64) column, production
+        // batch sizes) were also stated in comments. The repository can settle
+        // the first kind and cannot settle the second.
+        let s = verify_system();
+        assert!(s.contains("Weigh comments by whether the repository could check them"));
+        assert!(s.contains("Go and look at the call sites"));
+        assert!(s.contains("A comment stating a fact from outside the repository"));
+        assert!(s.contains("best available evidence"));
+    }
+
+    #[test]
+    fn the_falsification_question_targets_usage_not_mechanism() {
+        let s = falsify_system();
+        assert!(s.contains("ask about the call sites by") || s.contains("call sites by name"));
+        assert!(s.contains("Never make a comment the answer"));
     }
 
     #[test]
