@@ -1,0 +1,15 @@
+{
+  "case_id": "c04-counter-lost-update",
+  "expected_findings": [
+    {
+      "id": "c04-f1",
+      "issue_type": "Concurrency",
+      "also_accept": ["Correctness", "StateManagement"],
+      "file": "src/counters.rs",
+      "start_line": 31,
+      "end_line": 42,
+      "description": "`record` acquires the mutex twice, so the read-modify-write is no longer atomic. The guard from the first `lock()` is a temporary that is dropped at the end of the statement that reads the current value, and a second `lock()` is taken to write it back. Two threads recording the same key can both observe the same `current` and both write `current + 1`, losing one increment. The previous entry-API version held a single guard across the whole update."
+    }
+  ],
+  "notes": "A classic lost update, introduced by a refactor whose stated motivation is readability. The defect is visible in the diff without repository investigation.\n\nBoth existing unit tests still pass, because both are single-threaded: `records_sequentially` and `take_resets_the_key` never exercise concurrent access. This is deliberate and realistic - the test suite gives no signal here.\n\nThe struct is `Mutex`-based and the type is plainly intended for sharing across worker threads, as the module doc states, so the concurrent path is the intended use rather than a hypothetical one.\n\nalso_accept covers Correctness and StateManagement, both defensible readings of a lost update at the same location."
+}

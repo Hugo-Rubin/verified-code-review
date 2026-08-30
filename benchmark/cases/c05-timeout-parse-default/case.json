@@ -1,0 +1,6 @@
+{
+  "case_id": "c05-timeout-parse-default",
+  "title": "Simplify request_timeout to return a Duration directly",
+  "description": "`request_timeout` previously returned `Result<Duration, ConfigError>`, which forced every call site to handle an error that in practice never came up. It now returns a `Duration` directly and falls back when the configured value cannot be parsed, removing the error handling from the callers.",
+  "category": "RealIssue"
+}

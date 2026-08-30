@@ -48,7 +48,13 @@ pub struct LlmConfig {
     pub model: String,
     /// Vertex project id. Required when `provider == Vertex` and auth is not
     /// an API key against the express endpoint.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    ///
+    /// Never serialized. `RunConfig` is embedded verbatim in every trajectory
+    /// and summary, and those are part of the submission; a cloud project id
+    /// identifies the operator and is nobody else's business. It is also not
+    /// needed to reproduce a run — whoever reproduces it supplies their own in
+    /// `.env`. `serde(default)` keeps older artifacts loadable.
+    #[serde(skip_serializing, default)]
     pub project_id: Option<String>,
     pub location: String,
     pub auth: VertexAuth,
@@ -197,6 +203,27 @@ mod tests {
     #[test]
     fn pricing_is_none_when_unset() {
         assert!(RunConfig::mock().llm.pricing.is_none());
+    }
+
+    #[test]
+    fn project_id_never_reaches_a_serialized_artifact() {
+        // Trajectories and summaries embed RunConfig verbatim and ship in the
+        // submission. The operator's cloud project id must not travel with
+        // them.
+        let mut cfg = RunConfig::mock();
+        cfg.llm.project_id = Some("some-private-project-4815".to_string());
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(!json.contains("some-private-project-4815"));
+        assert!(!json.contains("project_id"));
+    }
+
+    #[test]
+    fn a_config_without_project_id_still_deserializes() {
+        let cfg = RunConfig::mock();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: RunConfig = serde_json::from_str(&json).unwrap();
+        assert!(back.llm.project_id.is_none());
+        assert_eq!(back.llm.model, cfg.llm.model);
     }
 
     #[test]

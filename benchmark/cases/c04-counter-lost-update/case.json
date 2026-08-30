@@ -1,0 +1,6 @@
+{
+  "case_id": "c04-counter-lost-update",
+  "title": "Make Counters::record read the current value explicitly",
+  "description": "`Counters::record` previously used the entry API to increment in place. It now reads the current value for the key and writes back the incremented value, which the author found easier to follow and to instrument later.",
+  "category": "RealIssue"
+}

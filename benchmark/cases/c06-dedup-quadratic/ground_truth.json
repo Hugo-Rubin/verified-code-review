@@ -1,0 +1,15 @@
+{
+  "case_id": "c06-dedup-quadratic",
+  "expected_findings": [
+    {
+      "id": "c06-f1",
+      "issue_type": "Performance",
+      "also_accept": ["Correctness"],
+      "file": "src/dedup.rs",
+      "start_line": 10,
+      "end_line": 14,
+      "description": "`Vec::contains` is a linear scan, so testing membership against the output vector inside the loop makes `unique_ids` quadratic in the number of distinct ids. The removed `HashSet` gave amortised constant-time membership, making the function linear. The module documents batches of 100_000 to 500_000 ids on the hot path, where the difference is between a linear pass and on the order of 10^10 comparisons."
+    }
+  ],
+  "notes": "The refactor is behaviour-preserving and the reasoning in the commit message is correct as far as it goes: the output vector does contain exactly the ids seen so far, so the set really is redundant *state*. What it is not is redundant *work* - it was there for its lookup complexity, not its contents.\n\nAll three unit tests still pass, and they always will: they operate on batches of at most five elements, where quadratic and linear are indistinguishable. The scale that makes this a defect is stated in the module doc comment at the top of the changed file, not in the tests.\n\nEverything needed is in the diff and the changed file. What the case asks is whether the reviewer notices a complexity regression when the change is presented as a simplification.\n\nalso_accept covers Correctness for a reviewer that frames an unusable-at-scale hot path as a correctness problem rather than a performance one."
+}

@@ -1,0 +1,42 @@
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -16,14 +16,10 @@
+ }
+ 
+ /// Resolve the request timeout from its raw configured value.
+-pub fn request_timeout(raw: Option<&str>) -> Result<Duration, ConfigError> {
++pub fn request_timeout(raw: Option<&str>) -> Duration {
+     match raw {
+-        None => Ok(Duration::from_secs(DEFAULT_TIMEOUT_SECS)),
+-        Some(s) => s
+-            .trim()
+-            .parse()
+-            .map(Duration::from_secs)
+-            .map_err(|_| ConfigError::NotANumber(s.to_string())),
++        None => Duration::from_secs(DEFAULT_TIMEOUT_SECS),
++        Some(s) => Duration::from_secs(s.trim().parse().unwrap_or(0)),
+     }
+ }
+ 
+@@ -38,17 +34,17 @@
+ 
+     #[test]
+     fn uses_the_default_when_unset() {
+-        assert_eq!(request_timeout(None).unwrap(), Duration::from_secs(30));
++        assert_eq!(request_timeout(None), Duration::from_secs(30));
+     }
+ 
+     #[test]
+     fn parses_a_configured_value() {
+-        assert_eq!(request_timeout(Some("5")).unwrap(), Duration::from_secs(5));
+-        assert_eq!(request_timeout(Some(" 90 ")).unwrap(), Duration::from_secs(90));
++        assert_eq!(request_timeout(Some("5")), Duration::from_secs(5));
++        assert_eq!(request_timeout(Some(" 90 ")), Duration::from_secs(90));
+     }
+ 
+     #[test]
+     fn zero_means_unbounded() {
+-        assert!(is_unbounded(request_timeout(Some("0")).unwrap()));
++        assert!(is_unbounded(request_timeout(Some("0"))));
+     }
+ }

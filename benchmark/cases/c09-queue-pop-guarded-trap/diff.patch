@@ -1,0 +1,24 @@
+--- a/src/queue.rs
++++ b/src/queue.rs
+@@ -33,15 +33,13 @@
+         self.items.is_empty()
+     }
+ 
+-    /// Take the next job, or a placeholder when the queue is empty.
++    /// Take the next job.
++    ///
++    /// Callers check `is_empty` first, so the queue is non-empty here.
+     pub(crate) fn pop_front(&mut self) -> Job {
+-        match self.items.pop_front() {
+-            Some(job) => job,
+-            None => Job {
+-                id: 0,
+-                payload: String::new(),
+-            },
+-        }
++        self.items
++            .pop_front()
++            .expect("pop_front called on an empty queue")
+     }
+ }
+ 

@@ -1,0 +1,17 @@
+--- a/src/assets.rs
++++ b/src/assets.rs
+@@ -25,10 +25,11 @@
+ }
+ 
+ /// Resolve `name` inside the asset root.
++///
++/// Callers pass a name obtained from `AssetKind::file_name`, which returns one
++/// of a fixed set of literals, so the name cannot contain a path separator or
++/// a parent-directory component.
+ pub(crate) fn asset_path(root: &Path, name: &str) -> Option<PathBuf> {
+-    if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+-        return None;
+-    }
+     Some(root.join(name))
+ }
+ 

@@ -1,0 +1,15 @@
+{
+  "case_id": "c12-slot-guard-capacity",
+  "expected_findings": [
+    {
+      "id": "c12-f1",
+      "issue_type": "Correctness",
+      "also_accept": ["Validation", "ErrorHandling", "ApiContract"],
+      "file": "src/api.rs",
+      "start_line": 8,
+      "end_line": 13,
+      "description": "The bounds check uses `Store::len`, which returns the configured capacity rather than the number of records present. For a partially filled store - capacity 100 holding 3 records - any index in 3..100 passes the guard and reaches `store.record_at(index)`, which indexes the backing `Vec` directly and panics. The guard should compare against `Store::filled`."
+    }
+  ],
+  "notes": "The hard part of this case is that the defect survives the first look, and the first look is reassuring.\n\nA reviewer inspecting src/api.rs sees an explicit bounds check, a doc comment promising `None` rather than a panic, and three passing tests including `returns_none_past_the_end` that specifically probes out-of-range indices. Everything about the changed file says the case is handled.\n\nIt only comes apart on reading `Store::len` in src/store.rs, which the change does not touch:\n\n    /// The number of slots this store was configured with.\n    /// Note this is the configured slot count, not the number of records\n    /// present. Use [`Store::filled`] for that.\n    pub fn len(&self) -> usize { self.capacity }\n\n`len` is a pre-existing misnomer, documented as such, and `filled` is the accessor the guard needs. `record_at` indexes `self.records` with no check of its own.\n\nWhy the tests do not catch it: every test in src/api.rs builds its store through `store_with(n, capacity)` with `n == capacity`, so the store is always exactly full and `len()` and `filled()` coincide. `fetch_many_skips_out_of_range` uses index 5 against a store of capacity 2, which is past both. The one configuration that fails - a partially filled store - is never constructed. `len_reports_configured_capacity` in src/store.rs states the discrepancy outright, but it lives in the file nobody has a reason to open.\n\nThis case is the mirror of the c02/c09/c11 traps. There, investigation shows a suspicious-looking construct is safe. Here, investigation shows a safe-looking construct is not. A system that only ever uses evidence to clear findings will fail it, which is what makes it a check against the degenerate 'reject everything' solution.\n\nalso_accept covers Validation, ErrorHandling, and ApiContract, all defensible readings of a bounds check against the wrong quantity."
+}

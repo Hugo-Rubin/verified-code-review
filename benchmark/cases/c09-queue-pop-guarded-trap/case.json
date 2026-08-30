@@ -1,0 +1,6 @@
+{
+  "case_id": "c09-queue-pop-guarded-trap",
+  "title": "Stop returning a placeholder job from Queue::pop_front",
+  "description": "`Queue::pop_front` returned a synthetic job with id 0 and an empty payload when the queue was empty, which meant a caller mistake showed up as a phantom job rather than as a failure. It now asserts the queue is non-empty, and the calling contract is stated in the doc comment.",
+  "category": "Trap"
+}

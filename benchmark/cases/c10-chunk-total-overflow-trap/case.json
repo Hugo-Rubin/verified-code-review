@@ -1,0 +1,6 @@
+{
+  "case_id": "c10-chunk-total-overflow-trap",
+  "title": "Add size reporting for staged uploads",
+  "description": "A new `stats` module reports the staged size of a buffer: its label, its chunk count, and the total byte count obtained by multiplying the chunk count by the fixed protocol chunk size. The module is exported from the crate root.",
+  "category": "Trap"
+}

@@ -1,0 +1,23 @@
+--- a/src/counters.rs
++++ b/src/counters.rs
+@@ -28,8 +28,18 @@
+ 
+     /// Record one request against `key`.
+     pub fn record(&self, key: &str) {
+-        let mut guard = self.counts.lock().expect("counters poisoned");
+-        *guard.entry(key.to_string()).or_insert(0) += 1;
++        let current = self
++            .counts
++            .lock()
++            .expect("counters poisoned")
++            .get(key)
++            .copied()
++            .unwrap_or(0);
++
++        self.counts
++            .lock()
++            .expect("counters poisoned")
++            .insert(key.to_string(), current + 1);
+     }
+ 
+     /// Reset a key and return what it held.

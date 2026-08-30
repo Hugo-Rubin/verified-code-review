@@ -1,0 +1,6 @@
+{
+  "case_id": "c12-slot-guard-capacity",
+  "title": "Add read endpoints over the record store",
+  "description": "A new `api` module exposes `fetch` for a single slot and `fetch_many` for several. Both are bounds-checked and return `None` or skip the entry rather than panicking on an out-of-range index.",
+  "category": "Challenging"
+}

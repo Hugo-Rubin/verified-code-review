@@ -1,0 +1,19 @@
+--- a/src/dedup.rs
++++ b/src/dedup.rs
+@@ -3,15 +3,12 @@
+ //! Batches come off the ingest topic and routinely carry 100_000 to 500_000
+ //! ids, so everything in this module runs on the hot path.
+ 
+-use std::collections::HashSet;
+-
+ /// The unique ids in `ids`, in first-seen order.
+ pub fn unique_ids(ids: &[u64]) -> Vec<u64> {
+-    let mut seen: HashSet<u64> = HashSet::with_capacity(ids.len());
+     let mut out: Vec<u64> = Vec::new();
+ 
+     for &id in ids {
+-        if seen.insert(id) {
++        if !out.contains(&id) {
+             out.push(id);
+         }
+     }

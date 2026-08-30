@@ -1,0 +1,6 @@
+{
+  "case_id": "c11-asset-path-check-trap",
+  "title": "Drop the name sanitisation from asset_path",
+  "description": "`asset_path` rejected names containing `..`, a path separator, or an empty string. Those names cannot occur given how the function is called, so the check was removed and the calling contract written into the doc comment instead.",
+  "category": "Trap"
+}

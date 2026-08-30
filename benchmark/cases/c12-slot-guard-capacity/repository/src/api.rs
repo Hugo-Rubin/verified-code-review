@@ -1,0 +1,54 @@
+//! Read endpoints over a record store.
+
+use crate::store::{Record, Store};
+
+/// Fetch the record in slot `index`.
+///
+/// Returns `None` when `index` is out of range rather than panicking.
+pub fn fetch(store: &Store, index: usize) -> Option<&Record> {
+    if index >= store.len() {
+        return None;
+    }
+    Some(store.record_at(index))
+}
+
+/// Fetch several slots at once, skipping any that are out of range.
+pub fn fetch_many<'a>(store: &'a Store, indices: &[usize]) -> Vec<&'a Record> {
+    indices.iter().filter_map(|&i| fetch(store, i)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn store_with(n: u64, capacity: usize) -> Store {
+        let mut s = Store::with_capacity(capacity);
+        for id in 0..n {
+            s.push(Record {
+                id,
+                value: format!("v{id}"),
+            });
+        }
+        s
+    }
+
+    #[test]
+    fn fetches_a_present_record() {
+        let s = store_with(3, 3);
+        assert_eq!(fetch(&s, 1).unwrap().id, 1);
+    }
+
+    #[test]
+    fn returns_none_past_the_end() {
+        let s = store_with(3, 3);
+        assert!(fetch(&s, 3).is_none());
+        assert!(fetch(&s, 99).is_none());
+    }
+
+    #[test]
+    fn fetch_many_skips_out_of_range() {
+        let s = store_with(2, 2);
+        let got = fetch_many(&s, &[0, 5, 1]);
+        assert_eq!(got.len(), 2);
+    }
+}

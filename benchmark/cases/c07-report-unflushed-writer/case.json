@@ -1,0 +1,6 @@
+{
+  "case_id": "c07-report-unflushed-writer",
+  "title": "Remove the redundant flush from write_report",
+  "description": "`write_report` called `flush()` on its `BufWriter` before returning. `BufWriter` already flushes when it is dropped at the end of the function, so the explicit call was removed as redundant.",
+  "category": "RealIssue"
+}

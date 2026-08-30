@@ -1,0 +1,15 @@
+{
+  "case_id": "c08-order-name-limit",
+  "expected_findings": [
+    {
+      "id": "c08-f1",
+      "issue_type": "Validation",
+      "also_accept": ["Correctness"],
+      "file": "src/order.rs",
+      "start_line": 26,
+      "end_line": 28,
+      "description": "The name-length check now compares against `MAX_QUANTITY` (1000) instead of `MAX_NAME_LEN` (64). Names between 65 and 1000 characters pass validation and reach the database, where the doc comment on `MAX_NAME_LEN` states the `orders.name` column is `VARCHAR(64)` and will reject them at insert time. The intended limit is unenforced and the failure moves from a clean `ValidationError::Name` to a database error at write time."
+    }
+  ],
+  "notes": "A constant swap in a check the change was not meant to touch - the kind of edit that happens when a nearby block is copied to build the new `notes` check. The `notes` validation that the change is actually about is correct, and correctly uses `MAX_NAME_LEN`, which makes the wrong constant one line above easy to read past.\n\nAll four tests pass, including the three that predate the change. `rejects_an_empty_name` exercises the empty branch only, and no test supplies a name between 65 and 1000 characters, so the loosened bound is invisible to the suite.\n\nEverything needed is in the diff and the changed file: both constants are declared at the top with their meanings documented. No repository investigation is required.\n\nalso_accept covers Correctness."
+}

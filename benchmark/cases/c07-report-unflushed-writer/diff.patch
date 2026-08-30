@@ -1,0 +1,10 @@
+--- a/src/report.rs
++++ b/src/report.rs
+@@ -21,7 +21,6 @@
+         writeln!(out, "{},{},{}", row.id, row.label, row.count)?;
+     }
+ 
+-    out.flush()?;
+     Ok(())
+ }
+ 

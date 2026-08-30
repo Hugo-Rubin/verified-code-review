@@ -1,0 +1,6 @@
+{
+  "case_id": "c08-order-name-limit",
+  "title": "Add a notes field to orders and validate it",
+  "description": "Orders gain a free-text `notes` field. `validate` now checks the notes length alongside the existing name and quantity checks, and `ValidationError` gains a `Notes` variant.",
+  "category": "RealIssue"
+}

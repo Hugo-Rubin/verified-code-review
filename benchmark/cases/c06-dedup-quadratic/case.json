@@ -1,0 +1,6 @@
+{
+  "case_id": "c06-dedup-quadratic",
+  "title": "Drop the HashSet from unique_ids",
+  "description": "`unique_ids` kept a `HashSet` alongside the output vector purely to test membership. Since the output vector already holds exactly the ids seen so far, the set was redundant state, and the function now tests membership against the output directly. This removes an allocation and the only import in the module.",
+  "category": "RealIssue"
+}
