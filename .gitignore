@@ -44,3 +44,5 @@ tools/tts/*.bin
 tools/tts/audio/
 tools/tts/video/
 tools/tts/voice-samples/
+__pycache__/
+*.pyc
