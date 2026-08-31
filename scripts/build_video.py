@@ -497,15 +497,36 @@ def import_audio(path: pathlib.Path, paras: list[str]) -> list[float]:
     print("  longest slides. Export one clip per paragraph into a directory for")
     print("  exact timing.")
 
+    # Character proportion sets where a boundary should fall; the nearest real
+    # pause decides where it actually falls. Even a boundary that is a second
+    # out is unnoticeable if the slide changes during silence rather than
+    # mid-word, and that is what this buys.
+    pr = subprocess.run(
+        ["ffmpeg", "-i", str(path), "-af", "silencedetect=noise=-35dB:d=0.35",
+         "-f", "null", "-"], capture_output=True, text=True)
+    st = [float(l.rsplit("silence_start:", 1)[1].strip())
+          for l in pr.stderr.splitlines() if "silence_start:" in l]
+    en = [float(l.rsplit("silence_end:", 1)[1].split("|")[0].strip())
+          for l in pr.stderr.splitlines() if "silence_end:" in l]
+    pauses = [(a + b) / 2 for a, b in zip(st, en)]
+    print(f"  {len(pauses)} pauses available to snap to")
+
     weights = [len(p) for p in paras]
     tot = sum(weights)
-    bounds, prev, cum = [], 0.0, 0
+    bounds, prev, cum, snapped = [], 0.0, 0, 0
     for w in weights[:-1]:
         cum += w
-        cut = total * cum / tot
+        want = total * cum / tot
+        near = [q for q in pauses if abs(q - want) <= 2.5 and q > prev + 1.0]
+        if near:
+            cut = min(near, key=lambda q: abs(q - want))
+            snapped += 1
+        else:
+            cut = want
         bounds.append((prev, cut))
         prev = cut
     bounds.append((prev, total))
+    print(f"  {snapped} of {len(weights) - 1} boundaries landed on a real pause")
 
     durations = []
     for i, (a, b) in enumerate(bounds):
