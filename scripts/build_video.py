@@ -313,19 +313,25 @@ def render_slide(spec: dict, index: int, total: int) -> pathlib.Path:
     d.text((110, 92), spec["title"], font=title_f, fill=ACCENT)
     d.line([(110, 172), (W - 110, 172)], fill=RULE, width=3)
 
-    y = 232
-    for line in spec["body"].split("\n"):
+    # `+` and `-` are real diff markers and stay on screen; `//` reads as a
+    # Rust comment and stays too. `>>` is ours -- a highlight instruction --
+    # so it is stripped and expressed as colour alone.
+    lines = spec["body"].split("\n")
+    line_h = 52
+    y = max(232, 232 + ((H - 300 - 232) - len(lines) * line_h) // 2)
+
+    for line in lines:
         colour, text = FG, line
-        if line.startswith("+ ") or line.startswith("+"):
-            colour, text = GOOD, line
+        if line.startswith("+"):
+            colour = GOOD
         elif line.startswith("- "):
-            colour, text = BAD, line
+            colour = BAD
         elif line.startswith(">>"):
-            colour, text = ACCENT, line
+            colour, text = ACCENT, "  " + line[2:]
         elif line.startswith("//"):
-            colour, text = DIM, line
+            colour = DIM
         d.text((130, y), text, font=body_f, fill=colour)
-        y += 52
+        y += line_h
 
     d.text(
         (110, H - 78),

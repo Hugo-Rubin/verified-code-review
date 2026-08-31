@@ -1,14 +1,15 @@
 # The benchmarks, and what each one is for
 
-There are now five case sets. They are not interchangeable, and the differences
+There are now six case sets. They are not interchangeable, and the differences
 between them turned out to matter more than the totals.
 
 | Set | Cases | Author | Trials | What it is for |
 |---|---:|---|---:|---|
 | [`benchmark/cases`](../benchmark/cases/) | 12 | this project | 15 | The frozen benchmark. Every headline figure. |
 | [`benchmark/holdout`](../benchmark/holdout/) | 6 | agent, blocklisted | 6 | Author-bias check. See [`holdout.md`](holdout.md). |
-| [`benchmark/holdout2`](../benchmark/holdout2/) | 5 | agent, blocklisted, theme: concurrency | 1 | Second author-bias check |
-| [`benchmark/holdout3`](../benchmark/holdout3/) | 5 | agent, blocklisted, theme: error handling | 1 | Third author-bias check |
+| [`benchmark/holdout2`](../benchmark/holdout2/) | 5 | agent, blocklisted, theme: concurrency | 3 | Second author-bias check |
+| [`benchmark/holdout3`](../benchmark/holdout3/) | 5 | agent, blocklisted, theme: error handling | 3 | Third author-bias check |
+| [`benchmark/holdout4`](../benchmark/holdout4/) | 6 | agent, blocklisted, targeted at latent defects | 3 | Tests the claim's *condition* directly |
 | [`benchmark/pilot-python`](../benchmark/pilot-python/) | 6 | this project | 1 | Language transfer. See [`pilot-python.md`](pilot-python.md). |
 
 Every case in every set: the test suite **passes despite the defect**, ground
@@ -26,23 +27,22 @@ was given a theme and asked for the same mix as the frozen set, including one
 Challenging case whose deciding evidence lives in a file the diff does not
 touch.
 
-One run per arm:
+Three trials per arm:
 
 | | `holdout2` baseline | `holdout2` advanced | `holdout3` baseline | `holdout3` advanced |
 |---|---:|---:|---:|---:|
-| Precision | 1.000 | 1.000 | 1.000 | 0.800 |
-| Recall | 1.000 | 1.000 | 1.000 | 1.000 |
-| **F1** | **1.000** | **1.000** | **1.000** | **0.889** |
-| Cost/case | $0.0038 | $0.0115 | $0.0051 | $0.0162 |
+| Precision | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.000 ± 0.000 | 0.867 |
+| Recall | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.000 ± 0.000 |
+| **F1** | **1.000 ± 0.000** | **1.000 ± 0.000** | **1.000 ± 0.000** | **0.926 ± 0.064** |
 
-**The baseline scores a perfect 1.000 on both.** The advanced arm ties on one
-and **loses** on the other, where it was fooled by the `m04` trap into
-reporting that a query could exceed `MAX_PAIRS` — which execution disproves,
-since the densest legal query yields 43 pairs against a cap of 100.
+**The baseline scores a perfect 1.000 on both, in every trial.** The advanced
+arm ties on one and **loses** on the other, fooled by the `m04` trap in 2 of 3
+trials into reporting that a query could exceed `MAX_PAIRS` — which execution
+disproves: the densest legal query yields 64 pairs against a cap of 100.
 
 So on ten cases written specifically to be independent of us, the advanced
-pipeline bought **nothing**, cost three times as much, and introduced one false
-positive.
+pipeline bought **nothing**, cost three times as much, and introduced a false
+positive in two trials of three.
 
 ### Why, and why it is the most useful thing here
 
