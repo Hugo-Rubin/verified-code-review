@@ -610,6 +610,37 @@ What generalises: **the boundary of what an agent can verify is the boundary of
 what it should be allowed to treat as settled**, and that boundary has to be
 drawn deliberately, because the model will not draw it.
 
+### The tool budget is never the constraint, and we can prove it
+
+The obvious response to a missed lookup is "give it a bigger budget". We
+checked, across every candidate ever adjudicated on all three benchmarks:
+
+| | |
+|---|---|
+| Candidates adjudicated | **86** |
+| That used at least one tool | 86 |
+| That **exhausted** the 8-call budget | **0** |
+| Most tool calls any one candidate used | 6 |
+| That stopped after 1 or 2 calls | 57 (66%) |
+
+**Not one investigation in the entire project has ever hit its ceiling.** The
+budget is not binding and never has been; raising it would change nothing. What
+decides when an investigation stops is the model's own judgement that it has
+seen enough, and that judgement is the actual limiting component.
+
+The held-out `h04` false positive is the sharp version of this. The
+investigation ran `list_files`, was shown `src/graph.rs` — the file containing
+the constructor that makes its claim impossible — and stopped, having used four
+of eight calls. It did not run out of budget. It decided it was done.
+
+For honesty about how much that one case proves: "listed files and then opened
+none of them" happened **7 times in 86 investigations**, and on the frozen
+benchmark the other 6 all reached the *correct* answer (five rejections of trap
+candidates, one confirmed real defect). So the pattern is not on its own a
+predictor of failure, and we are not claiming it is. What the 86-sample count
+does establish is which knob is dead: more tool calls is not the fix, and any
+follow-up should work on the stopping decision instead.
+
 ## Hot take
 
 **Falsification filters for truth, not for significance — and most of what a

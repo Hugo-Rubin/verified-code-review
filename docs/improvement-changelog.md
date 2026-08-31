@@ -324,6 +324,25 @@ that measurably does not help, and one is genuinely inert.
 
 ---
 
+## Sprint 4e — checking which knob is dead
+
+Diagnosing the held-out `h04` false positive raised the obvious question: was
+the investigation cut short? Measured across every candidate adjudicated on all
+three benchmarks, from artifacts already recorded, with no model called.
+
+| Stage | What was tried and why | Evidence | Decision |
+|---|---|---|---|
+| **Does the tool budget bind?** | The reflexive fix for a missed lookup is a bigger budget. Before touching it, count how often the existing one is reached. | **86 candidates adjudicated, 86 used at least one tool, 0 exhausted the 8-call budget.** The most any candidate used is 6; 57 of 86 (66%) stop after one or two calls. | **Budget left alone.** It has never been the binding constraint on any benchmark. Raising it would change nothing, and doing so would have looked like a fix while altering no behaviour. |
+| **Is "listed files, opened none" a failure signal?** | The `h04` trajectory ran `list_files`, was shown the file holding the answer, and stopped. Tempting to treat that shape as a defect detector. | It occurs **7 times in 86 investigations**. On the frozen benchmark the other 6 all reached the correct answer — five trap candidates rejected, one real defect confirmed. | **Not claimed as a predictor.** One failing instance out of seven is a story, not a signal. Recorded with its denominator. |
+
+**What this changes about the diagnosis.** The limiting component is not the
+tool budget, the sandbox, or the search implementation — it is the model's own
+judgement that it has seen enough. That is a narrower and more useful target
+for a follow-up than "investigate harder", and it is the kind of claim that
+only exists because the number was checked before the knob was turned.
+
+---
+
 ## Every measured run
 
 | Directory | n | Configuration | Baseline F1 | Advanced F1 |
