@@ -53,6 +53,19 @@ this system finds fewer than half the defects. That qualification exists only
 because we had somebody else write the cases, and it is the most important
 sentence in this README. [`docs/benchmarks.md`](docs/benchmarks.md).
 
+**The counterweight, also measured.** Pooling every case of every trial across
+all four Rust sets — 264 case-trials, 34 cases, both arms scored by the same
+deterministic evaluator:
+
+| | Advanced found it, baseline missed it | Baseline found it, advanced missed it |
+|---|---:|---:|
+| Case-trials | **40** | **2** |
+
+Both of those two are the same case, `n02`, and it is written up as the
+sharpest failure in the project. The direction is not in question; what the
+held-out sets bound is *how much* is left on the table when the cases are not
+ours.
+
 ¹ Manual-triage proxy — findings a human must read and judge. **Not** a direct
 measurement of human review time. A blind stopwatch harness for the real
 measurement ships as `vcr triage`; see [Cost and human time](#cost-and-human-time).
