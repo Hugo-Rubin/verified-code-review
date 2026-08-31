@@ -776,6 +776,17 @@ the feedback that shaped the next step, retries, and the human checkpoint.
 Every trajectory records each role's full prompt text and its prompt version
 string, so any output can be traced to the exact instructions that produced it.
 
+**The two most useful ones are from the held-out benchmark**, because they are
+the same machinery succeeding and failing on cases nobody tuned it for:
+[`h06`](docs/trajectories/h06-digest-threshold-inline-advanced.md) asked what
+the unseen predicate it replaced was actually defined as, read that file, and
+found the off-by-one;
+[`h04`](docs/trajectories/h04-include-flatten-recursion-advanced.md) asked a
+question about the mechanism instead of the precondition, ran `list_files`, saw
+the file holding the answer, and stopped without opening it with half its tool
+budget unspent. Identical prompts, identical budgets — the question it chose
+decided the outcome.
+
 Every run in [`results/trajectories/`](results-final/t1/trajectories/) records the full
 prompts, every tool call and its verbatim response, the falsification question,
 the fresh-context verdict, the orchestrator's decision and reason, token usage,

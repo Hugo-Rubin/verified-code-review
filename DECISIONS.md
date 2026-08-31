@@ -1552,3 +1552,72 @@ Outstanding and unfixed, stated rather than resolved: the blind stopwatch
 session was not run, so human review time remains a labelled proxy; the `h04`
 trap failure is not patched; `p03` has been missed three times; within-case
 memory has 15/156 tool calls of measured headroom that was not built.
+
+---
+
+## 2026-08-31 02:45 UTC — Sprint 4d: making the checks reproducible
+
+### Context
+
+Three claims in the documentation rested on analysis I had done in an ad-hoc
+script that was not in the repository: the deduplication replay, the by-hand
+match audit, and the neutrality of the case descriptions. A claim a reader
+cannot re-derive is an assertion.
+
+### Decisions
+
+1. **`vcr audit-matches`** pairs every scored true positive with the ground
+   truth it was credited for and prints both. It computes **no verdict** — the
+   evaluator's location-plus-category match is a proxy for "found the defect",
+   no deterministic matcher can check the reason, and a model judge is
+   forbidden here. The command puts both texts in front of a person.
+
+2. **`vcr check` now flags case descriptions that reveal their category.** The
+   word list is narrow — verdict words only — and was calibrated against the 24
+   existing cases before being written down, which produced two findings that
+   are now encoded as tests: matching must be on whole words (a substring
+   version flagged "fix" inside "fixed protocol chunk size"), and "mistake" is
+   deliberately excluded because it appears in both a trap and a real-issue
+   description and therefore separates nothing. A further test runs the check
+   over all 24 shipped cases, so an edit that turns a description into a hint
+   fails the build.
+
+3. **Held-out benchmark extended to 3 trials, with alternating arm order.**
+   Baseline 0.750 +- 0.000, advanced 0.926 +- 0.064, recall 1.000 +- 0.000.
+   Alternating the arm order is a partial answer to "the arms were not run
+   interleaved".
+
+4. **The two held-out trajectories are rendered and discussed.** The `h04`
+   failure was previously prose; it is now inspectable next to the `h06`
+   success, which isolates the variable: same prompts, same budgets, and the
+   falsification question it chose decided the outcome.
+
+### A finding that needed two benchmarks
+
+Auditing the held-out matches showed `h06` hedging in exactly the way `c12`
+does — naming the divergence and the boundary but leaving the direction open.
+Those are the only two boundary/off-by-one defects in either benchmark and they
+were written by different authors. One hedge is a quirk of a case; two, on
+independently authored cases of the same defect class, is a property of the
+system. It will say where to look and that something is off by one, and it will
+not commit to which side.
+
+### Rejected alternatives
+
+- **Adding "mistake" and "fix" to the tell list because they sound like
+  tells.** Rejected on the data: both flagged existing neutral descriptions,
+  and "mistake" appears in both categories. A lint calibrated on intuition
+  rather than on the corpus would have forced three cases to be reworded for
+  no gain.
+- **Having `audit-matches` output a verdict.** Rejected. Deciding whether a
+  claim describes a defect is exactly the judgement this project refuses to
+  delegate to a model, and a hand-rolled heuristic would be the same mistake
+  wearing a deterministic hat.
+- **Re-rendering the five frozen-benchmark trajectories.** Not needed: all five
+  already trace to `results-final/t1`, verified by matching trajectory ids.
+
+### Consequence
+
+237 tests. Every documented analysis is now reproducible from a committed
+command or test: `vcr replay-dedup`, `vcr audit-matches`, `vcr check`, and
+`scripts/extract_narration.py --check`.
