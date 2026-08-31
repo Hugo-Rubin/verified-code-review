@@ -1,0 +1,45 @@
+A developer reviewing a Rust pull request in code they didn't write. The question isn't "what looks suspicious", it's "is this actually broken?"
+
+Here's a real case. A new endpoint, an explicit bounds check, a doc comment promising it returns None rather than panicking, three passing tests. It's broken.
+
+Nothing in that diff can tell you so. The guard compares against store.len(), and len returns capacity, not how many records are present, a fact that lives in a file the change never touches. The diff shows the suspicious line; the repository holds the verdict.
+
+The baseline is one direct review pass. Same model, same schema, same view of the diff and every changed file. Only repository tools are withheld.
+
+It reports nothing, not reasoning badly, but reasoning correctly from insufficient information.
+
+Across twelve cases it scores F one of zero point eight five seven with perfect precision, identical in all fifteen trials, missing both cases whose evidence sits outside the diff.
+
+Same case, the advanced reviewer. Four roles, each a separate stateless request.
+
+It proposes a candidate: fetch assumes every index below len is valid.
+
+Then, before gathering any evidence, it must write down what would prove it wrong: "Does the store guarantee every index below len is occupied?" A separate call on purpose, a question written after the verdict just rationalises it.
+
+It reads store.rs, the file the change never touched. Rust runs the tools and builds the evidence; the model can request a lookup, but cannot author an evidence item.
+
+Then the part that matters. Claim and evidence go to a fresh context, a stateless request that never sees the reviewer's reasoning, or that anything believed the claim. It answers from the text: len returns capacity, so an index below it can panic.
+
+And Rust assigns the final status, not the model. "Supports" with no repository evidence behind it becomes "uncertain", because "the model said so" is the standard this project exists to reject.
+
+Twelve frozen cases, fifteen trials per arm. F one goes from zero point eight five seven to zero point nine nine two; recall from zero point seven five to a flat one point zero, every real defect, every trial, at about one and a half cents per case.
+
+Now switch the stages off one at a time, and it gets uncomfortable. The advanced prompt alone scores zero point seven four two, worse than doing nothing clever. Add repository investigation: zero point eight two eight, still below the baseline. Only with falsification does it reach zero point nine nine two.
+
+Both halves are worse than the simple prompt you started with. Investigation buys recall; falsification makes that recall affordable. They're one mechanism, and if you can only ship half of it, ship neither.
+
+Every iteration is logged, including five that made things worse.
+
+Here's one we removed. The verifier had rejected a genuine panic because the function's own doc comment claimed callers check first, and that comment was false. So we told it comments aren't evidence. It then rejected two real defects, because the facts they rested on were also written in comments. F one dropped from zero point nine three three to zero point eight five seven, and we reverted it.
+
+And one we got wrong the other way. We'd reported three features as contributing nothing. Then we replayed one over every run this project has recorded: it fires seven times, and is wrong every time, merging two genuinely different defects because it borrowed a tolerance belonging to the scoring code. The test suite had been evidence for the bug, it asserted the bad merge was correct.
+
+One more result, because it's the most useful one we have.
+
+Three separate agents wrote sixteen more cases, with no access to our prompts, our pipeline, or any result. On the first set the advantage replicates. On the other two it vanishes, the baseline scores a perfect one point zero, and our system loses on one of them.
+
+Those cases are legible in the diff: the changed line is a recognisable smell, so a reviewer flags it on sight. A defect isn't hard because the evidence sits in another file. It's hard when the changed line looks correct. That's where this earns its cost, and nowhere else. We didn't rewrite those cases afterwards.
+
+And the hot take. Falsification filters for truth, not significance, and most of what a reviewer should suppress is true. Our worst false positive was "this function returns Option but never returns None". Accurate. Not a bug. The verifier confirmed it correctly, because we had asked "is this true?", almost never the question that matters.
+
+A verification step inherits whatever question you ask it. Ask the wrong one and it answers perfectly, and still hands a human noise.

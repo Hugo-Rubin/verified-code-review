@@ -451,6 +451,73 @@ def synth(paras: list[str], speed: float, voice: str) -> list[float]:
     return durations
 
 
+def import_audio(path: pathlib.Path, paras: list[str]) -> list[float]:
+    """Use narration rendered elsewhere (e.g. ElevenLabs) instead of Kokoro.
+
+    **A directory** of one clip per paragraph, named so they sort in order, is
+    exact: each slide is timed from its own clip, exactly as with Kokoro. This
+    is the option to use.
+
+    **A single file** of the whole narration can only be divided by estimate.
+    Splitting on detected pauses was tried and abandoned: measured against a
+    known-good 23-paragraph recording it was out by 7s on average and 37s at
+    worst, because a within-paragraph pause is often longer than a paragraph
+    break. Dividing by character count does better -- about 2s mean and 5s
+    worst on the same recording -- and that is what this does, with a warning,
+    because a 5s drift on a 12s slide is visible.
+    """
+    CLIPS.mkdir(parents=True, exist_ok=True)
+    n = len(paras)
+
+    if path.is_dir():
+        files = sorted(f for f in path.iterdir()
+                       if f.suffix.lower() in (".mp3", ".wav", ".m4a", ".flac"))
+        if len(files) != n:
+            print(f"{path} holds {len(files)} clips; the script has {n} paragraphs")
+            return []
+        durations = []
+        for i, f in enumerate(files):
+            dst = CLIPS / f"{i:02d}.wav"
+            subprocess.run(["ffmpeg", "-y", "-i", str(f), "-ar", "24000", "-ac", "1",
+                            str(dst)], check=True, capture_output=True)
+            d = float(subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=nw=1:nk=1", str(dst)],
+                capture_output=True, text=True).stdout.strip())
+            durations.append(d)
+            print(f"  clip {i:02d}  {d:5.1f}s  <- {f.name}")
+        return durations
+
+    total = float(subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=nw=1:nk=1", str(path)],
+        capture_output=True, text=True).stdout.strip())
+    print(f"  single file, {total:.1f}s — dividing by character count.")
+    print("  APPROXIMATE: expect a second or two of drift, and up to ~5s on the")
+    print("  longest slides. Export one clip per paragraph into a directory for")
+    print("  exact timing.")
+
+    weights = [len(p) for p in paras]
+    tot = sum(weights)
+    bounds, prev, cum = [], 0.0, 0
+    for w in weights[:-1]:
+        cum += w
+        cut = total * cum / tot
+        bounds.append((prev, cut))
+        prev = cut
+    bounds.append((prev, total))
+
+    durations = []
+    for i, (a, b) in enumerate(bounds):
+        dst = CLIPS / f"{i:02d}.wav"
+        subprocess.run(["ffmpeg", "-y", "-i", str(path), "-ss", f"{a:.3f}",
+                        "-to", f"{b:.3f}", "-ar", "24000", "-ac", "1", str(dst)],
+                       check=True, capture_output=True)
+        durations.append(b - a)
+        print(f"  clip {i:02d}  {b - a:5.1f}s")
+    return durations
+
+
 def build(durations: list[float]) -> None:
     """Write the concat list, giving each reveal step its share of its clip."""
     total_time = sum(durations)
@@ -509,6 +576,9 @@ def main() -> int:
     # measured from its own rendered clip, after synthesis.
     ap.add_argument("--speed", type=float, default=1.25)
     ap.add_argument("--voice", default=VOICE)
+    ap.add_argument("--audio", type=pathlib.Path,
+                    help="narration rendered elsewhere: a directory of one clip "
+                         "per paragraph, or a single file split on its pauses")
     args = ap.parse_args()
 
     paras = paragraphs()
@@ -534,8 +604,14 @@ def main() -> int:
         print("ffmpeg not found on PATH")
         return 1
 
-    print(f"synthesising narration ({args.voice}, speed {args.speed})...")
-    durations = synth(paras, args.speed, args.voice)
+    if args.audio:
+        print(f"importing narration from {args.audio}...")
+        durations = import_audio(args.audio, paras)
+        if not durations:
+            return 1
+    else:
+        print(f"synthesising narration ({args.voice}, speed {args.speed})...")
+        durations = synth(paras, args.speed, args.voice)
     total = sum(durations)
     print(f"\ntotal narration: {total:.1f}s")
     if total > 300:
