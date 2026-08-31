@@ -1,0 +1,96 @@
+{
+  "trajectory_id": "b5954306-a309-499a-a715-4707a5db1a99",
+  "case_id": "h03-cache-retain-polarity",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T02:17:45.843458300+00:00",
+  "finished_at": "2026-08-31T02:17:55.518454800+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\n`TtlCache::evict_expired` walked the entry vector with a manual index and called `Vec::remove` for each entry it dropped, which is quadratic and repeats the index bookkeeping already present in `put`. The author's stated intent was to express the same eviction in one `retain` call so that both mutating paths in the file use the same idiom.\n\n## Diff\n\n```diff\n--- a/src/cache.rs\n+++ b/src/cache.rs\n@@ -47,14 +47,7 @@\n \n     /// Drop every entry whose deadline has already passed at `now`.\n     pub fn evict_expired(&mut self, now: u64) {\n-        let mut i = 0;\n-        while i < self.entries.len() {\n-            if self.entries[i].expires_at <= now {\n-                self.entries.remove(i);\n-            } else {\n-                i += 1;\n-            }\n-        }\n+        self.entries.retain(|e| e.expires_at <= now);\n     }\n }\n \n\n```\n\n## Current contents of the changed files\n\n\n### src/cache.rs\n\n```rust\n    1 | //! Entry storage and eviction.\n    2 | \n    3 | /// One cached value together with the timestamp at which it stops being\n    4 | /// usable. Times are opaque monotonic ticks supplied by the caller.\n    5 | #[derive(Debug, Clone, PartialEq, Eq)]\n    6 | pub struct CacheEntry {\n    7 |     pub key: String,\n    8 |     pub value: String,\n    9 |     pub expires_at: u64,\n   10 | }\n   11 | \n   12 | #[derive(Debug, Default)]\n   13 | pub struct TtlCache {\n   14 |     entries: Vec<CacheEntry>,\n   15 | }\n   16 | \n   17 | impl TtlCache {\n   18 |     pub fn new() -> Self {\n   19 |         Self::default()\n   20 |     }\n   21 | \n   22 |     pub fn len(&self) -> usize {\n   23 |         self.entries.len()\n   24 |     }\n   25 | \n   26 |     pub fn is_empty(&self) -> bool {\n   27 |         self.entries.is_empty()\n   28 |     }\n   29 | \n   30 |     /// Store `value` under `key`, replacing any existing entry.\n   31 |     pub fn put(&mut self, key: &str, value: &str, expires_at: u64) {\n   32 |         self.entries.retain(|e| e.key != key);\n   33 |         self.entries.push(CacheEntry {\n   34 |             key: key.to_string(),\n   35 |             value: value.to_string(),\n   36 |             expires_at,\n   37 |         });\n   38 |     }\n   39 | \n   40 |     /// The value stored under `key`, if the cache still holds it.\n   41 |     pub fn get(&self, key: &str) -> Option<&str> {\n   42 |         self.entries\n   43 |             .iter()\n   44 |             .find(|e| e.key == key)\n   45 |             .map(|e| e.value.as_str())\n   46 |     }\n   47 | \n   48 |     /// Drop every entry whose deadline has already passed at `now`.\n   49 |     pub fn evict_expired(&mut self, now: u64) {\n   50 |         self.entries.retain(|e| e.expires_at <= now);\n   51 |     }\n   52 | }\n   53 | \n   54 | #[cfg(test)]\n   55 | mod tests {\n   56 |     use super::*;\n   57 | \n   58 |     #[test]\n   59 |     fn stores_and_reads_back() {\n   60 |         let mut c = TtlCache::new();\n   61 |         c.put(\"a\", \"one\", 100);\n   62 |         assert_eq!(c.get(\"a\"), Some(\"one\"));\n   63 |         assert_eq!(c.get(\"missing\"), None);\n   64 |     }\n   65 | \n   66 |     #[test]\n   67 |     fn putting_the_same_key_twice_keeps_one_entry() {\n   68 |         let mut c = TtlCache::new();\n   69 |         c.put(\"a\", \"one\", 100);\n   70 |         c.put(\"a\", \"two\", 100);\n   71 |         assert_eq!(c.len(), 1);\n   72 |         assert_eq!(c.get(\"a\"), Some(\"two\"));\n   73 |     }\n   74 | \n   75 |     #[test]\n   76 |     fn eviction_halves_a_two_entry_cache() {\n   77 |         let mut c = TtlCache::new();\n   78 |         c.put(\"a\", \"one\", 10);\n   79 |         c.put(\"b\", \"two\", 30);\n   80 |         c.evict_expired(20);\n   81 |         assert_eq!(c.len(), 1);\n   82 |     }\n   83 | \n   84 |     #[test]\n   85 |     fn eviction_on_an_empty_cache_is_a_no_op() {\n   86 |         let mut c = TtlCache::new();\n   87 |         c.evict_expired(1_000);\n   88 |         assert!(c.is_empty());\n   89 |     }\n   90 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Correctness\",\n      \"severity\": \"High\",\n      \"file\": \"src/cache.rs\",\n      \"start_line\": 49,\n      \"end_line\": 51,\n      \"claim\": \"`evict_expired` retains expired entries and discards valid ones because the predicate passed to `Vec::retain` is inverted.\",\n      \"reasoning\": \"`Vec::retain` keeps elements for which the predicate returns `true`, but `e.expires_at <= now` returns `true` for expired entries. To drop expired entries, the predicate must retain entries where `e.expires_at > now` instead.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 1774,
+        "output_tokens": 824,
+        "total_tokens": 2598
+      },
+      "latency_ms": 9665,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "h03-cache-retain-polarity-base-1",
+        "issue_type": "Correctness",
+        "severity": "High",
+        "location": {
+          "file": "src/cache.rs",
+          "start_line": 49,
+          "end_line": 51
+        },
+        "claim": "`evict_expired` retains expired entries and discards valid ones because the predicate passed to `Vec::retain` is inverted.",
+        "reasoning": "`Vec::retain` keeps elements for which the predicate returns `true`, but `e.expires_at <= now` returns `true` for expired entries. To drop expired entries, the predicate must retain entries where `e.expires_at > now` instead."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "h03-cache-retain-polarity-base-1",
+      "issue_type": "Correctness",
+      "severity": "High",
+      "location": {
+        "file": "src/cache.rs",
+        "start_line": 49,
+        "end_line": 51
+      },
+      "claim": "`evict_expired` retains expired entries and discards valid ones because the predicate passed to `Vec::retain` is inverted.",
+      "reasoning": "`Vec::retain` keeps elements for which the predicate returns `true`, but `e.expires_at <= now` returns `true` for expired entries. To drop expired entries, the predicate must retain entries where `e.expires_at > now` instead.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1774,
+    "output_tokens": 824,
+    "total_tokens": 2598
+  },
+  "cost_usd": 0.0044205,
+  "runtime_ms": 9674,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

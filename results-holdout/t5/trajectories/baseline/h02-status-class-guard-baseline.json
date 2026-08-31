@@ -1,0 +1,96 @@
+{
+  "trajectory_id": "5c8557f5-6432-45c9-b3a9-d186022b859e",
+  "case_id": "h02-status-class-guard",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T02:25:58.894176800+00:00",
+  "finished_at": "2026-08-31T02:26:02.972877900+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\nSeveral upstreams in front of us emit non-standard codes such as 600 and 999, which `classify` was reporting as `Unknown` and callers were treating as unclassifiable. The author's stated intent was to widen the client-error arm into a guard so that any code at or above 400 lands in a defined class, with a test covering the 600 case.\n\n## Diff\n\n```diff\n--- a/src/classify.rs\n+++ b/src/classify.rs\n@@ -25,7 +25,7 @@\n     match code {\n         200..=299 => Class::Success,\n         300..=399 => Class::Redirect,\n-        400..=499 => Class::ClientError,\n+        c if c >= 400 => Class::ClientError,\n         500..=599 => Class::ServerError,\n         _ => Class::Unknown,\n     }\n@@ -59,4 +59,9 @@\n         assert_eq!(classify(100), Class::Unknown);\n         assert_eq!(classify(0), Class::Unknown);\n     }\n+\n+    #[test]\n+    fn vendor_codes_past_the_standard_range_are_client_errors() {\n+        assert_eq!(classify(600), Class::ClientError);\n+    }\n }\n\n```\n\n## Current contents of the changed files\n\n\n### src/classify.rs\n\n```rust\n    1 | //! Outcome classification for upstream response codes.\n    2 | \n    3 | /// Coarse outcome class for a numeric response code.\n    4 | #[derive(Debug, Clone, Copy, PartialEq, Eq)]\n    5 | pub enum Class {\n    6 |     Success,\n    7 |     Redirect,\n    8 |     ClientError,\n    9 |     ServerError,\n   10 |     Unknown,\n   11 | }\n   12 | \n   13 | impl Class {\n   14 |     /// Whether a request that ended in this class should be retried.\n   15 |     ///\n   16 |     /// Only the upstream's own faults are worth retrying; a request we got\n   17 |     /// wrong will be rejected identically on every attempt.\n   18 |     pub fn retryable(&self) -> bool {\n   19 |         matches!(self, Class::ServerError)\n   20 |     }\n   21 | }\n   22 | \n   23 | /// Classify a numeric response code.\n   24 | pub fn classify(code: u16) -> Class {\n   25 |     match code {\n   26 |         200..=299 => Class::Success,\n   27 |         300..=399 => Class::Redirect,\n   28 |         c if c >= 400 => Class::ClientError,\n   29 |         500..=599 => Class::ServerError,\n   30 |         _ => Class::Unknown,\n   31 |     }\n   32 | }\n   33 | \n   34 | #[cfg(test)]\n   35 | mod tests {\n   36 |     use super::*;\n   37 | \n   38 |     #[test]\n   39 |     fn two_hundreds_are_successes() {\n   40 |         assert_eq!(classify(200), Class::Success);\n   41 |         assert_eq!(classify(204), Class::Success);\n   42 |         assert!(!classify(200).retryable());\n   43 |     }\n   44 | \n   45 |     #[test]\n   46 |     fn three_hundreds_are_redirects() {\n   47 |         assert_eq!(classify(301), Class::Redirect);\n   48 |         assert_eq!(classify(308), Class::Redirect);\n   49 |     }\n   50 | \n   51 |     #[test]\n   52 |     fn not_found_is_a_client_error_and_is_not_retried() {\n   53 |         assert_eq!(classify(404), Class::ClientError);\n   54 |         assert!(!classify(404).retryable());\n   55 |     }\n   56 | \n   57 |     #[test]\n   58 |     fn codes_below_two_hundred_are_unknown() {\n   59 |         assert_eq!(classify(100), Class::Unknown);\n   60 |         assert_eq!(classify(0), Class::Unknown);\n   61 |     }\n   62 | \n   63 |     #[test]\n   64 |     fn vendor_codes_past_the_standard_range_are_client_errors() {\n   65 |         assert_eq!(classify(600), Class::ClientError);\n   66 |     }\n   67 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Correctness\",\n      \"severity\": \"High\",\n      \"file\": \"src/classify.rs\",\n      \"start_line\": 28,\n      \"end_line\": 29,\n      \"claim\": \"The match arm for codes `>= 400` shadows the `500..=599` arm, causing all 5xx server errors to be incorrectly classified as client errors.\",\n      \"reasoning\": \"In Rust match expressions, arms are evaluated sequentially. Because `c if c >= 400` precedes `500..=599`, any code between 500 and 599 matches the client error branch first and will never reach `Class::ServerError`.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 1527,
+        "output_tokens": 443,
+        "total_tokens": 1970
+      },
+      "latency_ms": 4078,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "h02-status-class-guard-base-1",
+        "issue_type": "Correctness",
+        "severity": "High",
+        "location": {
+          "file": "src/classify.rs",
+          "start_line": 28,
+          "end_line": 29
+        },
+        "claim": "The match arm for codes `>= 400` shadows the `500..=599` arm, causing all 5xx server errors to be incorrectly classified as client errors.",
+        "reasoning": "In Rust match expressions, arms are evaluated sequentially. Because `c if c >= 400` precedes `500..=599`, any code between 500 and 599 matches the client error branch first and will never reach `Class::ServerError`."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "h02-status-class-guard-base-1",
+      "issue_type": "Correctness",
+      "severity": "High",
+      "location": {
+        "file": "src/classify.rs",
+        "start_line": 28,
+        "end_line": 29
+      },
+      "claim": "The match arm for codes `>= 400` shadows the `500..=599` arm, causing all 5xx server errors to be incorrectly classified as client errors.",
+      "reasoning": "In Rust match expressions, arms are evaluated sequentially. Because `c if c >= 400` precedes `500..=599`, any code between 500 and 599 matches the client error branch first and will never reach `Class::ServerError`.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1527,
+    "output_tokens": 443,
+    "total_tokens": 1970
+  },
+  "cost_usd": 0.0028065,
+  "runtime_ms": 4078,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

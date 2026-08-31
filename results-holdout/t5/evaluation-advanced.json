@@ -1,0 +1,267 @@
+{
+  "aggregate": {
+    "agent": "Advanced",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 6,
+    "counts": {
+      "true_positives": 4,
+      "false_positives": 1,
+      "false_negatives": 0
+    },
+    "precision": 0.8,
+    "recall": 1.0,
+    "f1": 0.888888888888889,
+    "false_positives_per_case": 0.16666666666666666,
+    "manual_triage_findings_per_case": 0.8333333333333334,
+    "withheld_findings_per_case": 0.16666666666666666,
+    "mean_cost_usd_per_case": 0.0165015,
+    "mean_runtime_ms_per_case": 42981.0,
+    "mean_llm_calls_per_case": 6.166666666666667,
+    "mean_tool_calls_per_case": 2.1666666666666665,
+    "total_input_tokens": 53397,
+    "total_output_tokens": 15723,
+    "ablation": "None",
+    "evidence_accuracy": 1.0,
+    "evidence_audit": {
+      "total": 28,
+      "checkable": 28,
+      "accurate": 28,
+      "mismatches": []
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "h01-registry-swap-remove",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "h01-registry-swap-remove-adv-1",
+          "expected_id": "h01-f1",
+          "location": "src/registry.rs:53-59",
+          "issue_type": "StateManagement"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "h02-status-class-guard",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "h02-status-class-guard-adv-1",
+          "expected_id": "h02-f1",
+          "location": "src/classify.rs:28-29",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "h03-cache-retain-polarity",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "h03-cache-retain-polarity-adv-1",
+          "expected_id": "h03-f1",
+          "location": "src/cache.rs:49-51",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "h04-include-flatten-recursion",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 1
+    },
+    {
+      "case_id": "h05-lease-early-return",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [
+        {
+          "prediction_id": "h05-lease-early-return-adv-1",
+          "location": "src/job.rs:32-34",
+          "issue_type": "ResourceManagement",
+          "claim": "Worker::run acquires a lease from self.pool before validating whether input is non-empty, unnecessarily consuming pool capacity for empty inputs."
+        }
+      ],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "h06-digest-threshold-inline",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "h06-digest-threshold-inline-adv-1",
+          "expected_id": "h06-f1",
+          "location": "src/digest.rs:20",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "h01-registry-swap-remove",
+      "trajectory_id": "5a64bba5-c781-4be7-ae12-428aa2a2d108",
+      "runtime_ms": 38418,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 1,
+      "input_tokens": 6991,
+      "output_tokens": 2493,
+      "cost_usd": 0.014591999999999999,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h02-status-class-guard",
+      "trajectory_id": "35a7ab6a-4cfc-4e6b-8f79-f22cc27eca52",
+      "runtime_ms": 25146,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 7093,
+      "output_tokens": 2131,
+      "cost_usd": 0.013311,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h03-cache-retain-polarity",
+      "trajectory_id": "b5adefd0-be1e-4ec2-badd-be99ebd7394c",
+      "runtime_ms": 22035,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 6152,
+      "output_tokens": 1866,
+      "cost_usd": 0.0116115,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h04-include-flatten-recursion",
+      "trajectory_id": "89fd694f-0956-46f1-9b5e-70e9b14cb7f5",
+      "runtime_ms": 94173,
+      "llm_calls": 8,
+      "tool_calls": 4,
+      "retries": 4,
+      "input_tokens": 15568,
+      "output_tokens": 2551,
+      "cost_usd": 0.02124225,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "h05-lease-early-return",
+      "trajectory_id": "2cd10916-4f00-491c-a0e5-47a8aeaeda61",
+      "runtime_ms": 56342,
+      "llm_calls": 8,
+      "tool_calls": 4,
+      "retries": 0,
+      "input_tokens": 9884,
+      "output_tokens": 4885,
+      "cost_usd": 0.025731749999999998,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h06-digest-threshold-inline",
+      "trajectory_id": "8fcfd7d1-356a-4c15-bf76-7d51e6362011",
+      "runtime_ms": 21772,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 0,
+      "input_tokens": 7709,
+      "output_tokens": 1797,
+      "cost_usd": 0.0125205,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ],
+  "by_category": [
+    {
+      "category": "RealIssue",
+      "case_count": 3,
+      "counts": {
+        "true_positives": 3,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "category": "Trap",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
+  ],
+  "line_tolerance": 3
+}
