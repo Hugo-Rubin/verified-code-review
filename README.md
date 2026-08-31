@@ -182,9 +182,9 @@ own versioned prompt, orchestrated by Rust:
 
 | Role | Prompt | Sees | Job |
 |---|---|---|---|
-| **Reviewer** | `advanced-review/v5` | diff + changed files | Propose candidates, erring toward proposing |
+| **Reviewer** | `advanced-review/v6` | diff + changed files | Propose candidates, erring toward proposing |
 | **Falsifier** | `advanced-falsify/v2` | the claim | Write the one question whose answer would show the claim is **wrong** |
-| **Investigator** | `advanced-investigate/v1` | claim, question, results so far | Choose the next `search` / `read` / `list_files` call, or stop |
+| **Investigator** | `advanced-investigate/v2` | claim, question, results so far | Choose the next `search` / `read` / `list_files` call, or stop |
 | **Fresh verifier** | `fresh-verify/v5` | claim + evidence, **nothing else** | Decide whether the evidence establishes a real defect |
 
 The split is not decoration. Each boundary exists because merging it back
@@ -205,6 +205,10 @@ evidence, and assigns the final status. No role can promote its own finding.
 
 The baseline is a fifth, separate system — one role, one call — and it is what
 the advanced arm is measured against.
+
+A sixth prompt, `advanced-second-look/v1`, exists and **ships disabled**. It is
+the one path that feeds falsification output back into generation, and it was
+measured as not helping; see the anti-take below.
 
 ### Three properties are load-bearing
 

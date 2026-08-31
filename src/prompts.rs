@@ -705,4 +705,62 @@ result is a correct answer"
         let unique: std::collections::HashSet<_> = vs.iter().collect();
         assert_eq!(unique.len(), vs.len());
     }
+
+    /// Documentation that names a prompt version must name the current one.
+    ///
+    /// This exists because it happened. The README and the architecture doc
+    /// both advertised `advanced-review/v5` and `advanced-investigate/v1`
+    /// long after those prompts had moved to v6 and v2 — a reader tracing a
+    /// result back to "the exact instructions that produced it", which is a
+    /// promise this project makes in writing, would have been sent to the
+    /// wrong version.
+    ///
+    /// Scope is the three documents that describe the *current* system. The
+    /// changelog, DECISIONS.md and reproduction.md are deliberately excluded:
+    /// they discuss superseded configurations by name, and that is the point
+    /// of them.
+    #[test]
+    fn docs_describing_the_current_system_name_current_prompt_versions() {
+        let current = [
+            BASELINE_REVIEW_V,
+            ADVANCED_REVIEW_V,
+            INVESTIGATE_V,
+            FALSIFY_V,
+            VERIFY_V,
+            SECOND_LOOK_V,
+        ];
+        // The family name of each, so a stale version of a known prompt is
+        // distinguishable from a string that merely looks like one.
+        let families: Vec<&str> = current
+            .iter()
+            .map(|v| v.split('/').next().unwrap())
+            .collect();
+
+        for doc in ["README.md", "docs/architecture.md", "docs/trajectories.md"] {
+            let Ok(text) = std::fs::read_to_string(doc) else {
+                // Tests may run from a packaged crate without the docs.
+                continue;
+            };
+            for (i, family) in families.iter().enumerate() {
+                let needle = format!("{family}/v");
+                let mut from = 0;
+                while let Some(at) = text[from..].find(&needle) {
+                    let start = from + at;
+                    let rest = &text[start..];
+                    let end = rest
+                        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '/' || c == '-'))
+                        .unwrap_or(rest.len());
+                    let mentioned = &rest[..end];
+                    assert_eq!(
+                        mentioned, current[i],
+                        "{doc} names {mentioned}, but the shipped prompt is {}. \
+                         Update the doc, or move the mention into the changelog \
+                         if it is describing a superseded configuration.",
+                        current[i]
+                    );
+                    from = start + needle.len();
+                }
+            }
+        }
+    }
 }
