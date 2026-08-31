@@ -2,6 +2,11 @@
 
 Target: **5:00 maximum**. The plan below runs to 4:55, leaving margin.
 
+Narration is synthesised locally — see [`../tools/tts/README.md`](../tools/tts/README.md).
+The spoken text is extracted to `tools/tts/narration.txt`; render it with
+`python tools/tts/narrate.py --script tools/tts/narration.txt` and check the
+total it prints against the 300-second limit before cutting.
+
 Everything on screen exists in the repository. No slides are needed beyond the
 two tables, both of which the CLI prints.
 
@@ -18,10 +23,14 @@ Confirms config and that all 12 cases load. Then have these open in tabs:
    `benchmark/cases/c12-slot-guard-capacity/repository/src/store.rs`.
 3. `docs/trajectories/c12-slot-guard-capacity-advanced.md`.
 4. `docs/trajectories/c11-asset-path-check-trap-advanced.md`.
-5. `docs/improvement-changelog.md`.
+5. `docs/improvement-changelog.md` (ablation table).
+6. `docs/holdout.md` (results table).
+7. `README.md` at the anti-take section.
 
 Because a live advanced run takes ~40 s per case, **run the sweep beforehand**
-and show `results/` during the walkthrough, or run a single case live and cut.
+and show `results-final/` during the walkthrough, or run a single case live and
+cut. `vcr replay-dedup --root .` runs instantly and calls no model, so it can
+be shown live in the closing section.
 
 ---
 
@@ -149,112 +158,112 @@ Read the verdict:
 
 ---
 
-## 3:00 – 3:45 · The measured comparison
+## 3:00 – 3:40 · The measured comparison
 
 **Show:** live terminal.
 
 ```bash
-cargo run --quiet --bin vcr -- report --out results
+cargo run --quiet --bin vcr -- report --out results-final
 ```
 
 > Twelve frozen cases: six real defects, four traps designed to produce
 > plausible false positives, two where the evidence lives outside the diff.
 > Same model, same temperature, same cases for both arms.
 >
-> Three trials of each arm, because one run is a sample, not a measurement.
+> Five trials of each arm, because one run is a sample, not a measurement.
 >
-> F1: 0.857 to 0.917 on average. Recall 0.75 to 0.917. The advanced arm won
-> every single trial — its worst run still beats the baseline's best.
+> F1: 0.857 to 0.988. Recall 0.75 to a flat 1.000 — the advanced arm found
+> every real defect in every trial. One false positive in the entire five-trial
+> run.
 >
-> And the baseline was perfectly stable: identical on all twelve cases in all
-> three runs. The advanced arm varies on exactly one case. We name it rather
-> than hiding behind a standard deviation.
+> The baseline was perfectly stable: identical on all twelve cases in all five
+> runs, standard deviation zero on every metric. So the gap is not noise.
 >
-> Cost: a third of a cent per file, to one and a half cents. About four and a
-> half times more. That's the honest trade.
+> Cost: a third of a cent per file, to one and a half cents. Just under five
+> times more. That is the honest trade.
 
 **Show:** the by-category table.
 
-> All of the gain is on the challenging cases. Both arms are perfect on defects
-> visible in the diff and clean on all four traps.
+> All of the gain is on the challenging cases — the ones whose deciding
+> evidence sits in a file the diff never touched.
 >
-> Scoring is fully deterministic — no LLM judges anything. Ground truth for
+> Scoring is fully deterministic. No LLM judges anything. Ground truth for
 > every case was verified by *executing* it. And every citation the system
-> produces is checked against the repository: 1.000 evidence accuracy, sixty
-> cited excerpts, zero mismatches.
+> produces is checked against the repository: two hundred and eighty-five cited
+> excerpts across five trials, all of them correct.
 
 ---
 
-## 3:45 – 4:20 · The ablation, and the claim it overturned
+## 3:40 – 4:05 · The ablation, and the claim it overturned
 
-**Show:** the ablation table in the changelog.
+**Show:** the ablation table.
 
 > We thought we knew which change mattered most. We wrote it down. We were
 > wrong, and the ablation is what caught us.
 >
-> Our story was that broadening candidate generation was the win — early on the
-> reviewer proposed *zero* candidates on two of three cases, because it had
-> inherited an instruction saying "an empty result is a correct answer." Right
-> for a reviewer. Fatal for a stage feeding an investigator.
+> Switch falsification off, and leave everything else in place. F1 drops to
+> 0.828 — **below the plain baseline of 0.857.** Take investigation away too,
+> and it drops to 0.742. Worse again.
 >
-> So we switched falsification off and left that broadening in place. F1 drops
-> to 0.725 — **below the plain baseline.** All four traps become false
-> positives, in every trial.
->
-> Broadening on its own makes the system worse. The two changes aren't two
-> improvements to be ranked; they're one mechanism. Telling an agent to propose
-> freely is only safe if something can kill what it proposes.
-
-**Show:** the n=12 rows.
-
-> Also worth saying plainly: on its first full twelve-case run, the advanced
-> system **lost** — F1 0.667 against the baseline's 0.857. The three-case
-> result that looked like a clean win didn't generalise. That run is in the
-> repository.
+> Both intermediate versions of this system are worse than doing nothing
+> clever. Investigation buys the recall; falsification is what makes that
+> recall affordable. They are not two improvements to be ranked. They are one
+> mechanism, and if you can only ship half of it, ship neither.
 
 ---
 
-## 4:20 – 4:42 · One experiment removed, one that did nothing
+## 4:05 – 4:30 · The held-out benchmark
 
-**Show:** the `fresh-verify/v4` row.
+**Show:** `docs/holdout.md`, results table.
 
-> One we took out. The verifier had rejected a genuine panic because the
-> function's own doc comment claimed callers check first — the comment was
-> false. So we told it comments aren't evidence.
+> Here is the problem with everything I have just shown you: I wrote the
+> reviewer and I wrote the benchmark.
 >
-> It recovered both challenging cases and then rejected two real defects,
-> because the facts they rested on — a VARCHAR(64) column, production batch
-> sizes — were also written in comments. F1 dropped from 0.933 to 0.857.
+> So we had a separate agent write six more cases, with no access to the
+> prompts, the pipeline, the documentation, or any result. It could not see
+> what the system finds easy.
 >
-> The fix was narrower: a comment about something the repository can check is a
-> claim, go read the call sites. A comment about the outside world is the best
-> evidence you have.
+> The direction replicates. Baseline 0.750, advanced 0.889, separating on
+> exactly the case whose evidence lives outside the diff.
 >
-> And one that did nothing at all. We added a feedback loop: when the verifier
-> says the evidence is insufficient, send the investigation back for another
-> targeted look. Good idea, correctly built. It fired **zero times** — across
-> thirty-six verifications the verifier never once said "insufficient." We're
-> reporting it as inert rather than as a feature, because the difference
-> between those two words is whether anyone counted.
+> And it broke something we were claiming. On the frozen benchmark we report
+> zero false positives on four traps across five trials. On the first trap this
+> system had never seen, **both arms produced a false positive** — and the
+> trajectory shows our own documented failure mode: the investigation listed
+> the file holding the answer, saw it, and stopped without opening it, with
+> half its tool budget unspent.
+>
+> We are not fixing that. Patching a prompt against a case we just watched fail
+> is exactly the overfitting the ablations exist to catch, and it would destroy
+> the only thing that makes a held-out set worth having.
 
 ---
 
-## 4:42 – 4:55 · Hot take and limitation
+## 4:30 – 4:55 · The anti-take, and limitations
 
-> Our hot take: **falsification filters for truth, not for significance — and
-> most of what a code reviewer should suppress is true.**
+**Show:** the anti-take table in the README.
+
+> We built three features on good reasoning and measured all three as
+> worthless. Then we checked properly, and "worthless" turned out to be the
+> charitable reading.
 >
-> Our two worst false positives were "this struct doesn't derive Clone" and
-> "this function returns Option but never returns None." Both accurate. Neither
-> a bug. The verifier confirmed them correctly, because we'd asked "is this
-> true?" — and that is almost never the question that matters. We changed it to
-> "does this establish a real defect", and both disappeared.
+> Deduplication had fired zero times, so we called it inert. But zero firings
+> measures the *trigger*, not the feature. We replayed it over every run this
+> project has ever recorded: it fires six times, and **every single firing is
+> wrong** — merging two genuinely different defects, on two different fields,
+> because it had borrowed the evaluator's three-line matching tolerance.
 >
-> Limitations: twelve cases, three trials, one model. Search is
+> It survived for two reasons. An unrelated prompt change had quietened the
+> trigger. And the unit test written to prove it worked used that exact
+> geometry and asserted the merge was correct. The test encoded the bug.
+>
+> The lesson we would carry: an unused branch is not neutral, it is unmeasured
+> — and its next firing is the one nobody is watching.
+>
+> Limitations: twelve cases, five trials, one model. Search is
 > literal-substring, so trait objects and macro-generated call paths are blind
-> spots. Human review time in the table is still a labelled proxy — the blind
-> stopwatch harness is built and documented, not yet run. Treat the direction
-> as the result, not the third decimal place.
+> spots. Human review time is still a labelled proxy. Treat the direction as
+> the result, not the third decimal place.
 
 ---
 
