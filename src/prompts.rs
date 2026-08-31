@@ -26,6 +26,7 @@ pub const ADVANCED_REVIEW_V: &str = "advanced-review/v6";
 pub const INVESTIGATE_V: &str = "advanced-investigate/v2";
 pub const FALSIFY_V: &str = "advanced-falsify/v2";
 pub const VERIFY_V: &str = "fresh-verify/v5";
+pub const SECOND_LOOK_V: &str = "advanced-second-look/v1";
 
 /// The controlled taxonomy, rendered for a prompt.
 pub fn issue_type_list() -> String {
@@ -183,6 +184,71 @@ pub fn review_user(description: &str, diff: &str, file_context: &str) -> String 
 ## Current contents of the changed files
 
 {file_context}"#
+    )
+}
+
+/// Second look at a case that finished with nothing to report.
+///
+/// Every candidate was investigated and none survived adjudication. Two very
+/// different situations produce that state: the change really is fine, or the
+/// reviewer looked in the wrong place. The system cannot tell them apart from
+/// the outside, and the second is the expensive one, so it looks once more.
+///
+/// What makes this different from simply proposing again is the input. The
+/// reviewer is shown each rejected claim **together with the repository facts
+/// that rejected it**, and told those questions are closed. That is the one
+/// place in the pipeline where falsification output is fed back into
+/// generation rather than only used to filter it.
+///
+/// Everything proposed here re-enters the full pipeline — falsification
+/// question, investigation, fresh-context verification, evidence gate. Nothing
+/// reaches a report because a second look suggested it.
+pub fn second_look_user(
+    description: &str,
+    diff: &str,
+    file_context: &str,
+    settled: &str,
+) -> String {
+    format!(
+        r#"## Change under review
+
+{description}
+
+## Diff
+
+```diff
+{diff}
+```
+
+## Current contents of the changed files
+
+{file_context}
+
+## Questions already settled on repository evidence
+
+Each claim below was investigated against this repository and ruled out. The
+reasons are findings from the code itself, not opinions, and they are not open
+for re-argument.
+
+{settled}
+
+## Your task
+
+Look again, **somewhere else**.
+
+Do not restate any claim above, and do not attack the reasoning that closed it.
+Read the change once more and ask what a reviewer who was focused on those
+questions would have walked past. In particular:
+
+- behaviour of the change that no claim above addresses at all
+- what the change assumes about code it does not contain
+- what a caller or a data shape not present in the tests would do here
+- the possibility that the change is simply correct
+
+If you cannot name a specific consequence for a specific line, return an empty
+list. An empty result here is a real answer: the questions that were closed
+were closed on evidence, and inventing a weaker claim to fill the space would
+waste a human's attention. Do not lower your standard to produce output."#
     )
 }
 
@@ -541,7 +607,14 @@ result is a correct answer"
             "heartbeat",
             "pool",
         ];
-        for prompt in [baseline_system("Rust"), advanced_system("Rust")] {
+        // The second-look prompt is a review prompt too, and it is the one
+        // most tempting to write against a case we watched the system miss.
+        let second_look = second_look_user("d", "diff", "ctx", "settled");
+        for prompt in [
+            baseline_system("Rust"),
+            advanced_system("Rust"),
+            second_look,
+        ] {
             let lower = prompt.to_lowercase();
             for tell in tells {
                 assert!(

@@ -50,6 +50,8 @@ enum AblationArg {
     NoFollowup,
     /// Report candidates as produced, with no investigation or verification.
     CandidatesOnly,
+    /// Never look again at a case that finished with nothing to report.
+    NoSecondLook,
 }
 
 impl From<AblationArg> for Ablation {
@@ -59,6 +61,7 @@ impl From<AblationArg> for Ablation {
             AblationArg::NoFalsification => Ablation::NoFalsification,
             AblationArg::NoFollowup => Ablation::NoFollowup,
             AblationArg::CandidatesOnly => Ablation::CandidatesOnly,
+            AblationArg::NoSecondLook => Ablation::NoSecondLook,
         }
     }
 }

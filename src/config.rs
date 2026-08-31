@@ -98,6 +98,10 @@ pub enum Ablation {
     /// produced, which makes the advanced arm a second baseline with a
     /// different prompt. Isolates the prompt from the machinery.
     CandidatesOnly,
+    /// Keep everything, but never take a second look at a case that finished
+    /// with nothing to report. Isolates the one feedback path that sends
+    /// falsification output back into candidate generation.
+    NoSecondLook,
 }
 
 impl Ablation {
@@ -107,6 +111,7 @@ impl Ablation {
             Ablation::NoFalsification => "no-falsification",
             Ablation::NoFollowup => "no-followup",
             Ablation::CandidatesOnly => "candidates-only",
+            Ablation::NoSecondLook => "no-second-look",
         }
     }
 
@@ -143,6 +148,14 @@ pub struct RunConfig {
     pub max_read_lines: u32,
     /// Upper bound on matches returned by a single search.
     pub max_search_results: u32,
+    /// How many times a case that reported nothing may be looked at again.
+    ///
+    /// Defaulted for the same reason as `max_followup_investigations`: a
+    /// trajectory recorded before this setting existed has no such field and
+    /// must still load. A recorded run is evidence, and a new knob must never
+    /// make old evidence unreadable.
+    #[serde(default = "default_second_looks")]
+    pub max_second_looks: u32,
     /// Which stage, if any, is switched off for this run.
     #[serde(default = "ablation_none")]
     pub ablation: Ablation,
@@ -153,6 +166,10 @@ fn ablation_none() -> Ablation {
 }
 
 fn default_followups() -> u32 {
+    1
+}
+
+fn default_second_looks() -> u32 {
     1
 }
 
@@ -243,6 +260,7 @@ impl RunConfig {
             match_line_tolerance: env_or("VCR_MATCH_LINE_TOLERANCE", 3_u32)?,
             max_tool_calls_per_finding: env_or("VCR_MAX_TOOL_CALLS_PER_FINDING", 8_u32)?,
             max_followup_investigations: env_or("VCR_MAX_FOLLOWUP_INVESTIGATIONS", 1_u32)?,
+            max_second_looks: env_or("VCR_MAX_SECOND_LOOKS", 1_u32)?,
             max_read_lines: env_or("VCR_MAX_READ_LINES", 200_u32)?,
             max_search_results: env_or("VCR_MAX_SEARCH_RESULTS", 40_u32)?,
             ablation: Ablation::None,
@@ -268,6 +286,7 @@ impl RunConfig {
             match_line_tolerance: 3,
             max_tool_calls_per_finding: 8,
             max_followup_investigations: 1,
+            max_second_looks: 1,
             max_read_lines: 200,
             max_search_results: 40,
             ablation: Ablation::None,
