@@ -19,12 +19,14 @@ half that can be tested, and 202 tests do test it.
 | `repo.rs` | Sandboxed filesystem access | The single boundary between an agent and the disk |
 | `tools.rs` | `search`, `read`, `list_files` | The only source of `Evidence` in the system |
 | `llm/` | Vertex client, retries, JSON extraction, offline stub | Isolates every provider quirk |
-| `prompts.rs` | All five roles' instructions, versioned independently | A result can always be traced to the exact instructions that produced it |
+| `prompts.rs` | Every role's instructions, versioned independently | A result can always be traced to the exact instructions that produced it |
 | `agent/baseline.rs` | The baseline's single reviewer role | The fair comparison point |
 | `agent/advanced.rs` | Orchestration of four roles, and the decision gate | The system under test |
 | `eval.rs` | Deterministic matching and metrics | No model anywhere near scoring |
 | `trajectory.rs` | Full execution record | Auditability |
 | `runner.rs` | Orchestration and aggregation | Keeps `main.rs` thin |
+| `triage.rs` | Blind stopwatch session over pooled findings | Measurement, kept out of the pipeline it measures |
+| `replay.rs` | Re-runs rules over recorded artifacts, calling no model | "Fired 0 times" is a claim about a run; this is how it gets checked against every run |
 
 ---
 
@@ -35,7 +37,7 @@ half that can be tested, and 202 tests do test it.
                      │
                      ▼
   ┌──────────────────────────────────┐
-  │ 1. propose_candidates            │  advanced-review/v5
+  │ 1. propose_candidates            │  advanced-review/v6
   │    "err toward proposing"        │  a wrong candidate is cheap here;
   └──────────────┬───────────────────┘  a missed one is never checked
                  │  CandidateFinding { issue_type, severity, location,
@@ -47,7 +49,7 @@ half that can be tested, and 202 tests do test it.
   └──────────────┬───────────────────┘  on the record BEFORE any evidence
                  ▼
   ┌──────────────────────────────────┐
-  │ 3. investigate (loop, bounded)   │  advanced-investigate/v1
+  │ 3. investigate (loop, bounded)   │  advanced-investigate/v2
   │                                  │
   │    model picks a tool ──────────►│  search / read / list_files
   │    Rust executes it    ◄─────────│  RepoRoot sandbox
@@ -71,9 +73,25 @@ half that can be tested, and 202 tests do test it.
                  ▼
      Verified │ Rejected │ Uncertain
                  │
+                 │  if NOTHING was reported for this case:
+                 ▼
+  ┌──────────────────────────────────┐
+  │ 6. propose_again  (OFF by        │  advanced-second-look/v1
+  │    default; --ablation           │  shown each rejected claim WITH the
+  │    no-second-look, or            │  repository facts that closed it, and
+  │    VCR_MAX_SECOND_LOOKS)         │  asked to look somewhere else.
+  └──────────────┬───────────────────┘  Anything proposed re-enters at step 2.
                  ▼
         human reviewer decides
 ```
+
+Step 6 is the only path where falsification output feeds *back into*
+generation rather than only filtering it. It ships disabled: it fires on
+exactly the cases that report nothing — which on both benchmarks means the
+traps — and across six firings it correctly declined five times and invented a
+finding once, gaining no recall anywhere for ~14% more cost. The code, its
+tests and its ablation flag are kept so the measurement can be reproduced; see
+the changelog.
 
 ### Why four roles rather than one
 
@@ -277,6 +295,31 @@ the existing tool interface, leaving the pipeline untouched. That is a design
 observation, not a demonstrated capability: nothing here has been run against a
 non-Rust codebase, and doing so would need a prompt variant and a benchmark
 with execution-verified ground truth before any claim could be made.
+
+---
+
+## Checks that read artifacts and call no model
+
+Two commands exist because a claim in the README needed to be *checkable* by a
+reader rather than believed, and neither may use a model to do it.
+
+**`vcr replay-dedup`** re-runs the candidate-deduplication rule over every
+recorded trajectory in the repository, separating merges that rest on genuinely
+overlapping line ranges from those that rest only on the evaluator's ±3
+matching tolerance. It exists because "fired 0 times in 3 trials" is a
+statement about *those three runs*, not about the rule — and replaying it over
+all 19 recorded runs showed the rule fires 6 times and is wrong every time.
+
+**`vcr audit-matches`** pairs every scored true positive with the ground truth
+it was credited for and prints both. The evaluator matches on location and
+category, which is a proxy for "found the defect": a claim landing on the right
+lines under an accepted category scores a true positive whether or not it
+describes the real bug. No deterministic matcher can tell the difference, and
+asking a model to judge would reintroduce precisely the standard this project
+rejects — so the command computes **no verdict**. It puts both texts in front
+of a person.
+
+Both are in `replay.rs`, both finish instantly, and both are free.
 
 ---
 

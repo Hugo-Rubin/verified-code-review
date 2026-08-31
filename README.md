@@ -6,7 +6,9 @@ reasoning context before deciding whether a human should ever see them.
 
 On a frozen 12-case benchmark it recovers the defects a direct reviewer misses
 — the ones whose deciding evidence lives in files the change does not touch —
-while staying clean on all four false-positive traps.
+while staying clean on all four false-positive traps in every trial. On a
+held-out benchmark it had never seen, it recovers the same class of defect and
+is **not** clean on the traps; both numbers are below.
 
 Mean of **5 trials per arm**, same model (`gemini-3.7-flash`), temperature 0.
 
