@@ -1,0 +1,15 @@
+{
+  "case_id": "h06-digest-threshold-inline",
+  "expected_findings": [
+    {
+      "id": "h06-f1",
+      "issue_type": "Correctness",
+      "also_accept": ["Validation", "ApiContract"],
+      "file": "src/digest.rs",
+      "start_line": 18,
+      "end_line": 22,
+      "description": "The inlined predicate `alert.severity > 7` is not the predicate it replaced. `is_page_worthy` in src/model.rs is `alert.severity >= PAGE_THRESHOLD` with `PAGE_THRESHOLD = 7`, so the change raises the effective paging bar by one and silently drops every alert whose severity is exactly 7 — the severity the model documents as the point at which somebody gets paged. Alerts at the threshold no longer appear in `Digest::paging`."
+    }
+  ],
+  "notes": "Nothing in the diff is wrong on its face: `severity > 7` is a plausible-looking threshold and the change is self-consistent. The defect only exists relative to the definition it claims to be inlining, and that definition is in src/model.rs, which the diff does not touch. Deciding this case requires reading `is_page_worthy` and `PAGE_THRESHOLD` in that file and noticing that the boundary is inclusive there and exclusive here.\n\nThe test suite passes because no test anywhere in the crate feeds severity 7 to `build`. The three tests in src/digest.rs use severities 10, 2, 1 (`a_site_down_alert_pages`), 3 and 5 (`a_quiet_batch_pages_nobody`), and 9, 2, 1 (`every_alert_is_counted_and_sources_are_deduplicated`) — every one of them is either comfortably above or comfortably below the disputed boundary, so both predicates agree on all of them. The three tests in src/model.rs do exercise the boundary (`the_threshold_itself_pages` asserts `is_page_worthy` is true at severity 7) but they test `is_page_worthy` directly and never call `build`, so the disagreement between the two is never observed by the suite.\n\nVerified by execution: an integration test built a batch of severities 9, 7 and 6 and printed both the model's verdict and the digest's. Literal output:\n\n    PAGE_THRESHOLD = 7\n      alert 1 severity 9 -> is_page_worthy = true\n      alert 2 severity 7 -> is_page_worthy = true\n      alert 3 severity 6 -> is_page_worthy = false\n    digest.paging = [1]   [expected [1, 2] from is_page_worthy]\n\nAlert 2 is page-worthy by the model's own rule and is absent from the digest. The probe was deleted afterwards.\n\nalso_accept covers Validation (a boundary condition applied wrongly) and ApiContract (the digest no longer honours the contract `is_page_worthy` defines), both defensible readings of the same defect at the same location."
+}

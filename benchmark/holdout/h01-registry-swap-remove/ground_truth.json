@@ -1,0 +1,15 @@
+{
+  "case_id": "h01-registry-swap-remove",
+  "expected_findings": [
+    {
+      "id": "h01-f1",
+      "issue_type": "StateManagement",
+      "also_accept": ["Correctness"],
+      "file": "src/registry.rs",
+      "start_line": 54,
+      "end_line": 58,
+      "description": "`swap_remove(pos)` moves the vector's last entry into slot `pos`, but nothing updates `index` for that moved entry. Its name still maps to the old final position, which is now out of range, so `addr_of` for it returns `None` even though `names()` still lists it. Once a later `insert` reuses that position the stale mapping resolves to a different service's address, and a later `remove` of the moved name deletes whichever entry now sits at the stale index. The `Vec::remove` version the change replaced kept the map consistent by renumbering every position above `pos`; the new version drops that pass without providing a replacement."
+    }
+  ],
+  "notes": "The defect is a broken invariant between two fields of the same struct: `entries` and `index` must agree on every name's position, and `swap_remove` breaks that agreement for exactly one entry — the one that was last.\n\nThe four unit tests in src/registry.rs survive the change because none of them removes an entry from the middle of a registry that still has entries after it. `deregistering_the_last_entry_shrinks_the_registry` removes \"billing\", which is the final element, and for the final element `swap_remove` and `remove` are identical operations; `deregistering_an_unknown_name_reports_false` never reaches the removal at all, and the other two tests never remove anything. A reviewer cannot rely on `cargo test` here: the suite passes and reports nothing.\n\nVerified by execution: an integration test built the registry auth=10.0.0.1, billing=10.0.0.2, cache=10.0.0.3 and then removed \"auth\". Literal output:\n\n    after remove(\"auth\"): names = [\"cache\", \"billing\"]\n      addr_of(\"cache\") = None   [expected Some(\"10.0.0.3\")]\n    after insert(\"dns\"): names = [\"cache\", \"billing\", \"dns\"]\n      addr_of(\"cache\") = Some(\"10.0.0.4\")   [expected Some(\"10.0.0.3\")]\n    remove(\"cache\") returned true\n      names = [\"billing\", \"dns\"] -> actual [\"cache\", \"billing\"]\n\n(the last line is the probe printing `names = [\"cache\", \"billing\"]` against an expectation of `[\"billing\", \"dns\"]`: removing \"cache\" deleted \"dns\" instead and left \"cache\" in place.) The probe was deleted afterwards, so the shipped crate contains only the four original tests.\n\nalso_accept covers Correctness, which is a defensible reading of the same defect at the same location."
+}

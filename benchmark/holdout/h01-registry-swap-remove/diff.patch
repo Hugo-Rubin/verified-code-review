@@ -1,0 +1,16 @@
+--- a/src/registry.rs
++++ b/src/registry.rs
+@@ -54,12 +54,7 @@
+         let Some(pos) = self.index.remove(name) else {
+             return false;
+         };
+-        self.entries.remove(pos);
+-        for slot in self.index.values_mut() {
+-            if *slot > pos {
+-                *slot -= 1;
+-            }
+-        }
++        self.entries.swap_remove(pos);
+         true
+     }
+ 

@@ -1,0 +1,18 @@
+--- a/src/cache.rs
++++ b/src/cache.rs
+@@ -47,14 +47,7 @@
+ 
+     /// Drop every entry whose deadline has already passed at `now`.
+     pub fn evict_expired(&mut self, now: u64) {
+-        let mut i = 0;
+-        while i < self.entries.len() {
+-            if self.entries[i].expires_at <= now {
+-                self.entries.remove(i);
+-            } else {
+-                i += 1;
+-            }
+-        }
++        self.entries.retain(|e| e.expires_at <= now);
+     }
+ }
+ 

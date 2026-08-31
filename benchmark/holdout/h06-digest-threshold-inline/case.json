@@ -1,0 +1,6 @@
+{
+  "case_id": "h06-digest-threshold-inline",
+  "title": "Inline the paging predicate in digest::build",
+  "description": "`digest::build` reached across into the model module for a one-line predicate, which is the only reason `digest` depended on it. The author's stated intent was to write the severity comparison directly in the filter and drop the import, so the rule the digest applies is visible at the point of use.",
+  "category": "Challenging"
+}

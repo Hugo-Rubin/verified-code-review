@@ -1,0 +1,15 @@
+{
+  "case_id": "h02-status-class-guard",
+  "expected_findings": [
+    {
+      "id": "h02-f1",
+      "issue_type": "Correctness",
+      "also_accept": ["ErrorHandling"],
+      "file": "src/classify.rs",
+      "start_line": 28,
+      "end_line": 29,
+      "description": "The guarded arm `c if c >= 400` is tested before `500..=599`, so every 5xx code matches the client-error arm and the server-error arm can never be reached. `Class::retryable` returns true only for `ServerError`, so `plan_retry` now declines to retry 500, 502, 503 and 504 — exactly the upstream faults retrying exists for. Because the arm carries a guard, rustc's reachability analysis does not report the dead `500..=599` arm, so nothing warns at compile time."
+    }
+  ],
+  "notes": "The change widens a range arm into a guard and, in doing so, silently swallows the arm below it. This is specifically a Rust-shaped trap: an unguarded `400..=599` written above `500..=599` would have produced an `unreachable pattern` warning, but a guarded arm is treated as covering nothing, so the later arm is still considered reachable and the build is clean. Confirmed: `cargo test` on the post-change crate compiles with no warnings.\n\nThe test suite misses it because no test in either src/classify.rs or src/retry.rs ever passes a 5xx code. The classify tests cover 200, 204, 301, 308, 404, 100, 0 and 600; the retry tests use 200 (not retryable by class) and 404 (stopped by the attempt cap, so the class is never consulted). The one test the change adds, `vendor_codes_past_the_standard_range_are_client_errors`, exercises 600, which is the case the author intended to fix and passes. Nothing in the suite crosses the 500..=599 boundary.\n\nVerified by execution: an integration test called `classify` and `plan_retry` on the 5xx range. Literal output:\n\n    classify(500) = ClientError   retryable = false   [expected ServerError / true]\n    classify(502) = ClientError   retryable = false   [expected ServerError / true]\n    classify(503) = ClientError   retryable = false   [expected ServerError / true]\n    classify(504) = ClientError   retryable = false   [expected ServerError / true]\n    plan_retry(503, attempt 0, max 5) = None   [expected Some(100)]\n    sanity: classify(404) = ClientError, classify(204) = Success\n\nThe probe was deleted afterwards.\n\nalso_accept covers ErrorHandling, since the visible consequence is that genuine upstream failures are no longer retried."
+}

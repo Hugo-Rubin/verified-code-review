@@ -1,0 +1,34 @@
+--- a/src/resolve.rs
++++ b/src/resolve.rs
+@@ -1,23 +1,19 @@
+ //! Flattening an include graph into a load order.
+ 
+ use crate::graph::IncludeGraph;
+-use std::collections::BTreeSet;
+ 
+ /// Every unit reachable from `root`, `root` first, in depth-first order.
+ pub fn flatten(graph: &IncludeGraph, root: &str) -> Vec<String> {
+     let mut out = Vec::new();
+-    let mut seen = BTreeSet::new();
+-    let mut stack = vec![root.to_string()];
+-    while let Some(name) = stack.pop() {
+-        if !seen.insert(name.clone()) {
+-            continue;
+-        }
+-        for child in graph.includes_of(&name).iter().rev() {
+-            stack.push(child.clone());
+-        }
+-        out.push(name);
++    visit(graph, root, &mut out);
++    out
++}
++
++fn visit(graph: &IncludeGraph, name: &str, out: &mut Vec<String>) {
++    out.push(name.to_string());
++    for child in graph.includes_of(name) {
++        visit(graph, child, out);
+     }
+-    out
+ }
+ 
+ #[cfg(test)]

@@ -1,0 +1,15 @@
+{
+  "case_id": "h03-cache-retain-polarity",
+  "expected_findings": [
+    {
+      "id": "h03-f1",
+      "issue_type": "Correctness",
+      "also_accept": ["StateManagement", "ResourceManagement"],
+      "file": "src/cache.rs",
+      "start_line": 49,
+      "end_line": 51,
+      "description": "`Vec::retain` keeps the elements its predicate accepts, but the predicate carried over from the old loop (`e.expires_at <= now`) was the condition for *removing* an entry. `evict_expired` therefore does the exact opposite of what it says: it discards every entry that is still live and keeps every entry whose deadline has already passed. Callers are left serving stale values indefinitely while fresh ones disappear on the first eviction sweep."
+    }
+  ],
+  "notes": "The polarity flip is invisible to a reader who checks only that the condition was copied faithfully; the condition is correct, it is the operator that changed meaning. The same file contains a correct `retain` in `put` (`|e| e.key != key`, keeping everything that is not the replaced key), which makes the idiom look established rather than new.\n\nThe four unit tests in src/cache.rs all pass. `eviction_halves_a_two_entry_cache` is the only one that evicts a non-empty cache, and it asserts nothing but `len() == 1` — with one expired and one live entry, exactly one entry survives either way, so the count is identical whichever entry it is. `eviction_on_an_empty_cache_is_a_no_op` evicts from an empty vector, where both behaviours are no-ops. The remaining two tests never call `evict_expired`. No test checks *which* key survives, so the suite cannot distinguish the two behaviours.\n\nVerified by execution: an integration test stored `expired` (deadline 10) and `fresh` (deadline 30) and evicted at now = 20. Literal output:\n\n    before evict_expired(20): len = 2\n    after  evict_expired(20): len = 1\n      get(\"expired\") = Some(\"stale\")   [expected None, its deadline 10 has passed]\n      get(\"fresh\")   = None   [expected Some(\"live\"), its deadline is 30]\n\nThe probe was deleted afterwards.\n\nalso_accept covers StateManagement (the cache is left holding the wrong set of entries) and ResourceManagement (expired entries are never reclaimed), both defensible readings of the same defect at the same location."
+}

@@ -1,0 +1,6 @@
+{
+  "case_id": "h05-lease-early-return",
+  "title": "Use ? for the failure paths in Worker::run",
+  "description": "`Worker::run` spelled out each failure path as a `match` with its own bail-out block, which buried the two lines that do the actual work under branching. The author's stated intent was to propagate both failures with `?` so that the body of `run` reads top to bottom, matching how the rest of the crate reports errors.",
+  "category": "Trap"
+}

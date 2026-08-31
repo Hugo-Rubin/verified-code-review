@@ -1,0 +1,6 @@
+{
+  "case_id": "h04-include-flatten-recursion",
+  "title": "Express flatten as a direct depth-first walk",
+  "description": "`flatten` maintained an explicit work stack and pushed each unit's includes in reverse so that the pop order came out depth-first, which made the traversal hard to follow. The author's stated intent was to replace it with a small recursive helper that walks the includes in their natural order, so the reading order of the code matches the order of the result.",
+  "category": "Trap"
+}

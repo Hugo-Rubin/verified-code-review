@@ -1,0 +1,19 @@
+--- a/src/digest.rs
++++ b/src/digest.rs
+@@ -1,6 +1,6 @@
+ //! Building the on-call digest.
+ 
+-use crate::model::{is_page_worthy, Alert};
++use crate::model::Alert;
+ 
+ /// What the on-call engineer is shown for one batch of alerts.
+ #[derive(Debug, PartialEq, Eq)]
+@@ -17,7 +17,7 @@
+ pub fn build(alerts: &[Alert]) -> Digest {
+     let paging: Vec<u32> = alerts
+         .iter()
+-        .filter(|alert| is_page_worthy(alert))
++        .filter(|alert| alert.severity > 7)
+         .map(|alert| alert.id)
+         .collect();
+ 

@@ -1,0 +1,28 @@
+--- a/src/job.rs
++++ b/src/job.rs
+@@ -31,23 +31,10 @@
+     pub fn run(&self, input: &str) -> Result<i64, JobError> {
+         let lease = self.pool.lease();
+ 
+-        let body = match non_empty(input) {
+-            Ok(body) => body,
+-            Err(e) => {
+-                drop(lease);
+-                return Err(e);
+-            }
+-        };
+-
++        let body = non_empty(input)?;
+         let mut total = 0i64;
+         for field in body.split(',') {
+-            match parse_field(field) {
+-                Ok(value) => total += value,
+-                Err(e) => {
+-                    drop(lease);
+-                    return Err(e);
+-                }
+-            }
++            total += parse_field(field)?;
+         }
+ 
+         self.pool.record_completion(lease, total);
