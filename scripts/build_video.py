@@ -300,7 +300,37 @@ def font(size: int, mono: bool = True):
     return ImageFont.load_default()
 
 
-def render_slide(spec: dict, index: int, total: int) -> pathlib.Path:
+def reveal_steps(body: str) -> list[int]:
+    """How many body lines are visible at each step of a slide's build-up.
+
+    A slide that appears all at once is a slideshow; a slide that fills in as
+    the sentence is spoken reads like someone working. Blank lines are treated
+    as group separators, so text arrives in paragraphs rather than one line at
+    a time, which would be twitchy.
+    """
+    lines = body.split("\n")
+    steps: list[int] = []
+    for i, line in enumerate(lines, start=1):
+        if line.strip() == "":
+            continue
+        # A group ends where the next line is blank, or at the end.
+        if i == len(lines) or lines[i].strip() == "":
+            steps.append(i)
+    if not steps:
+        steps = [len(lines)]
+    if steps[-1] != len(lines):
+        steps.append(len(lines))
+    return steps
+
+
+def render_slide(
+    spec: dict,
+    index: int,
+    total: int,
+    visible: int | None = None,
+    progress: float = 0.0,
+    step: int = 0,
+) -> pathlib.Path:
     from PIL import Image, ImageDraw
 
     img = Image.new("RGB", (W, H), BG)
@@ -318,9 +348,11 @@ def render_slide(spec: dict, index: int, total: int) -> pathlib.Path:
     # so it is stripped and expressed as colour alone.
     lines = spec["body"].split("\n")
     line_h = 52
+    # Positioned for the *finished* slide so nothing shifts as lines arrive.
     y = max(232, 232 + ((H - 300 - 232) - len(lines) * line_h) // 2)
 
-    for line in lines:
+    shown = len(lines) if visible is None else visible
+    for line in lines[:shown]:
         colour, text = FG, line
         if line.startswith("+"):
             colour = GOOD
@@ -346,8 +378,15 @@ def render_slide(spec: dict, index: int, total: int) -> pathlib.Path:
         fill=DIM,
     )
 
+    # A thin progress bar: cheap, and it tells a viewer how much is left.
+    bar_y = H - 26
+    d.line([(0, bar_y), (W, bar_y)], fill=RULE, width=6)
+    if progress > 0:
+        d.line([(0, bar_y), (int(W * min(progress, 1.0)), bar_y)],
+               fill=ACCENT, width=6)
+
     SLIDES.mkdir(parents=True, exist_ok=True)
-    path = SLIDES / f"{index:02d}.png"
+    path = SLIDES / f"{index:02d}_{step:02d}.png"
     img.save(path)
     return path
 
@@ -376,14 +415,40 @@ def synth(paras: list[str], speed: float, voice: str) -> list[float]:
 
 
 def build(paras: list[str], durations: list[float]) -> None:
+    """Write the concat list, giving each reveal step its share of the clip.
+
+    The first step of a slide gets the title and opening lines; the completed
+    slide holds for the remainder, which is where a viewer actually reads it.
+    """
+    total_time = sum(durations)
     concat = BUILD / "concat.txt"
-    lines = []
+    lines: list[str] = []
+    elapsed = 0.0
+    last_png = None
+
     for i, dur in enumerate(durations):
-        png = (SLIDES / f"{i:02d}.png").as_posix()
-        lines.append(f"file '{png}'")
-        lines.append(f"duration {dur:.3f}")
+        steps = reveal_steps(SLIDES_SPEC[i]["body"])
+        n = len(steps)
+        # Reveal over the first ~55% of the clip, then hold the full slide.
+        reveal_share = dur * 0.55
+        hold = dur - reveal_share
+        per_step = reveal_share / max(n - 1, 1) if n > 1 else 0.0
+
+        for k, visible in enumerate(steps):
+            png = render_slide(
+                SLIDES_SPEC[i], i, len(SLIDES_SPEC),
+                visible=visible,
+                progress=(elapsed / total_time) if total_time else 0.0,
+                step=k,
+            )
+            seg = (per_step if k < n - 1 else hold) if n > 1 else dur
+            elapsed += seg
+            lines.append(f"file '{png.as_posix()}'")
+            lines.append(f"duration {seg:.3f}")
+            last_png = png
+
     # ffmpeg's concat demuxer needs the last image repeated.
-    lines.append(f"file '{(SLIDES / f'{len(durations) - 1:02d}.png').as_posix()}'")
+    lines.append(f"file '{last_png.as_posix()}'")
     concat.write_text("\n".join(lines), encoding="utf-8")
 
     audio_list = BUILD / "audio.txt"
@@ -447,10 +512,6 @@ def main() -> int:
         print("ffmpeg not found on PATH")
         return 1
 
-    print("\nrendering slides...")
-    for i, spec in enumerate(SLIDES_SPEC):
-        render_slide(spec, i, len(SLIDES_SPEC))
-
     print(f"synthesising narration ({args.voice}, speed {args.speed})...")
     durations = synth(paras, args.speed, args.voice)
     total = sum(durations)
@@ -459,7 +520,7 @@ def main() -> int:
         print(f"OVER THE 300s LIMIT by {total - 300:.1f}s -- cut the script and rerun")
         return 1
 
-    print("muxing...")
+    print("rendering slides and muxing...")
     build(paras, durations)
     print(f"\nwrote {OUT}  ({total:.1f}s, {len(paras)} slides)")
     print(f"headroom against the 5:00 limit: {300 - total:.0f}s")
