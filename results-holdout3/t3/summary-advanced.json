@@ -1,0 +1,101 @@
+{
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "provider": "Vertex",
+  "started_at": "2026-08-31T10:24:01.194770400+00:00",
+  "finished_at": "2026-08-31T10:26:47.332147400+00:00",
+  "benchmark_dir": "benchmark/holdout3",
+  "case_count": 5,
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "memory_carries_content": false,
+    "ablation": "None"
+  },
+  "stats": [
+    {
+      "case_id": "m01-retry-error-mapping",
+      "trajectory_id": "e7edf939-86e1-495f-a6f8-b37c4d8d5999",
+      "runtime_ms": 35223,
+      "llm_calls": 7,
+      "tool_calls": 3,
+      "retries": 0,
+      "input_tokens": 13303,
+      "output_tokens": 2614,
+      "cost_usd": 0.01977975,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m02-frame-size-bound",
+      "trajectory_id": "2283f828-29f0-454d-b246-ccb4ee74a19d",
+      "runtime_ms": 26311,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 7487,
+      "output_tokens": 2474,
+      "cost_usd": 0.01489275,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m03-tag-equality-hash",
+      "trajectory_id": "f911d5f9-e235-49e9-a03e-e2d536424414",
+      "runtime_ms": 27714,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 7056,
+      "output_tokens": 1941,
+      "cost_usd": 0.01257075,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m04-query-pair-cap",
+      "trajectory_id": "6d6360ae-c853-45ab-8236-9b330bf11e3f",
+      "runtime_ms": 42901,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 7720,
+      "output_tokens": 2527,
+      "cost_usd": 0.01526625,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m05-burst-fallback",
+      "trajectory_id": "115653e9-06f3-4de4-ab3b-483402eb2765",
+      "runtime_ms": 33976,
+      "llm_calls": 8,
+      "tool_calls": 4,
+      "retries": 0,
+      "input_tokens": 12810,
+      "output_tokens": 2669,
+      "cost_usd": 0.019616250000000002,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ]
+}

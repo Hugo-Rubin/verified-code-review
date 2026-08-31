@@ -1,0 +1,248 @@
+{
+  "aggregate": {
+    "agent": "Advanced",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 6,
+    "counts": {
+      "true_positives": 1,
+      "false_positives": 0,
+      "false_negatives": 3
+    },
+    "precision": 1.0,
+    "recall": 0.25,
+    "f1": 0.4,
+    "false_positives_per_case": 0.0,
+    "manual_triage_findings_per_case": 0.16666666666666666,
+    "withheld_findings_per_case": 0.6666666666666666,
+    "mean_cost_usd_per_case": 0.016202625000000002,
+    "mean_runtime_ms_per_case": 40119.0,
+    "mean_llm_calls_per_case": 6.0,
+    "mean_tool_calls_per_case": 2.5,
+    "total_input_tokens": 61476,
+    "total_output_tokens": 13629,
+    "ablation": "None",
+    "evidence_accuracy": 1.0,
+    "evidence_audit": {
+      "total": 49,
+      "checkable": 49,
+      "accurate": 49,
+      "mismatches": []
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "n01-log-capacity-guard",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [
+        {
+          "expected_id": "n01-f1",
+          "location": "src/logger.rs:32-35",
+          "issue_type": "Correctness",
+          "description": "The guard now compares the number of buffered entries against `config.max_entries`, but the ring does not hold `max_entries` entries. `RingBuffer::with_capacity` clamps its request to `HARD_CAP` (64), so for any configuration above 64 the ring fills at 64 and `len()` can never reach `max_entries`. The guard therefore never fires: `append` keeps returning `Ok`, `RingBuffer::push` silently overwrites the oldest entry, and the documented contract that the logger reports `LogError::Full` rather than discarding anything is broken. `rejected()` also stays at zero, so the loss is invisible to operators. The replaced `buffer.is_full()` asked the ring about its own real capacity and was correct at any configured value."
+        }
+      ],
+      "withheld": 0
+    },
+    {
+      "case_id": "n02-batch-summary-counters",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [
+        {
+          "expected_id": "n02-f1",
+          "location": "src/pipeline.rs:56",
+          "issue_type": "Correctness",
+          "description": "`Counters::accepted()` is a destructive read: it swaps the tally back to zero as it returns it. Filling the summary from it makes `finish_batch` a second consumer of a counter that is documented to have exactly one legitimate reader, so every accepted record consumed here is deducted from the next metrics scrape. `telemetry::sample` then reports `accepted: 0` for records that were really accepted, while `rejected` -- which `finish_batch` does not read -- still reports correctly, so the metrics endpoint silently under-counts accepted throughput by exactly the number of records each batch summary claimed."
+        }
+      ],
+      "withheld": 1
+    },
+    {
+      "case_id": "n03-editor-dirty-check",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [
+        {
+          "expected_id": "n03-f1",
+          "location": "src/editor.rs:35-39",
+          "issue_type": "Correctness",
+          "description": "`before` is not a snapshot of the document. `Doc` is a handle whose lines live behind an `Rc<RefCell<Vec<String>>>` and whose `Clone` is derived, so `self.doc.clone()` yields a second handle onto the same buffer. `self.doc.apply(&op)` mutates the buffer both handles share, and the two checksums are therefore equal after every operation, including operations that changed the text. `dirty` is now never set, `save_if_needed` always returns false, and edits are silently never written out -- the opposite of the intended narrowing, which was meant to skip only the no-op operations."
+        }
+      ],
+      "withheld": 1
+    },
+    {
+      "case_id": "n04-limiter-snapshot-limit",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "n04-limiter-snapshot-limit-adv-1",
+          "expected_id": "n04-f1",
+          "location": "src/limiter.rs:15-20",
+          "issue_type": "StateManagement"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "n05-frame-header-slice",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 1
+    },
+    {
+      "case_id": "n06-catalog-binary-search",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 1
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "n01-log-capacity-guard",
+      "trajectory_id": "348667b0-d918-441d-81ee-a6ea63e6c7e3",
+      "runtime_ms": 14373,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 2234,
+      "output_tokens": 1330,
+      "cost_usd": 0.006663,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n02-batch-summary-counters",
+      "trajectory_id": "cc2c94d5-7280-48d0-9848-9c1eb152346e",
+      "runtime_ms": 55024,
+      "llm_calls": 7,
+      "tool_calls": 3,
+      "retries": 0,
+      "input_tokens": 13430,
+      "output_tokens": 3008,
+      "cost_usd": 0.0213525,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "n03-editor-dirty-check",
+      "trajectory_id": "0cab7c37-cdd4-4213-9705-d926d6de9bee",
+      "runtime_ms": 32982,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 0,
+      "input_tokens": 8245,
+      "output_tokens": 2319,
+      "cost_usd": 0.014879999999999999,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "n04-limiter-snapshot-limit",
+      "trajectory_id": "2e0c6ea1-0ae5-46b7-8a51-1b6f7c5d1309",
+      "runtime_ms": 50964,
+      "llm_calls": 7,
+      "tool_calls": 3,
+      "retries": 3,
+      "input_tokens": 11776,
+      "output_tokens": 2146,
+      "cost_usd": 0.0168795,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n05-frame-header-slice",
+      "trajectory_id": "211a0b2e-7062-4dce-98da-400988dbedbc",
+      "runtime_ms": 45817,
+      "llm_calls": 8,
+      "tool_calls": 4,
+      "retries": 1,
+      "input_tokens": 15503,
+      "output_tokens": 2089,
+      "cost_usd": 0.019461,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "n06-catalog-binary-search",
+      "trajectory_id": "7e52e319-0560-4862-8ec4-ee6808232cae",
+      "runtime_ms": 41554,
+      "llm_calls": 7,
+      "tool_calls": 3,
+      "retries": 1,
+      "input_tokens": 10288,
+      "output_tokens": 2737,
+      "cost_usd": 0.01797975,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    }
+  ],
+  "by_category": [
+    {
+      "category": "Trap",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 4,
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 3
+      },
+      "precision": 1.0,
+      "recall": 0.25,
+      "f1": 0.4
+    }
+  ],
+  "line_tolerance": 3
+}

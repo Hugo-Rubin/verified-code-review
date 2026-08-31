@@ -358,6 +358,28 @@ answers, none of them the one we started with.
 
 ---
 
+## Sprint 4i — asking the question properly, and getting a harder answer
+
+`holdout2` and `holdout3` failed to test the mechanism because their defects
+were diff-legible. A fourth agent was commissioned against a spec that names no
+reviewer, only a property of the code: *the changed hunk, read alone, must be
+consistent with correct behaviour.*
+
+| Stage | What was tried and why | Evidence | Decision |
+|---|---|---|---|
+| **`holdout4`: six cases of the hard shape** | 4 Challenging + 2 Trap, each required to state "If `<unseen thing>` were `<alternative>`, this change would be correct. It is not, because `<actual>` at `<file:line>`." Verified by execution here, not from the agent's report. | 3 trials. **Baseline F1 0.400 ± 0.000** (recall 0.250) — against 1.000 on `holdout2`/`holdout3`, so the spec produced genuinely hard cases. **Advanced F1 0.517 ± 0.202** (recall 0.417). Both traps clean in both arms, all trials. | Kept. The advantage returns, confirming the condition is what governs whether this system helps. |
+| **The headline recall does not generalise** ❌❌ | The frozen benchmark reports recall 1.000 ± 0.000 across 15 trials. | On independently authored cases of the *same difficulty class*, advanced recall is **0.417**. | **Reported as the most important qualification in the project.** Perfect recall is a property of those twelve cases, not of the method. This only became visible because someone else wrote the cases. |
+| **`n02`: falsification cost us a finding the baseline kept** ❌ | The advanced arm found `n02` in 1 trial of 3; the baseline found it in all 3. | It proposed the real defect **backwards** — "reads cumulative counts without resetting" — investigated, and the verifier refuted it correctly: *"`Counters::accepted()` performs an atomic swap to zero ... resetting the counter destructive upon read."* It names the destructive read, in its own words, and uses it to **reject**. The one fact that proves the defect is the fact that refutes the claim as posed. | Not patched. Recorded as the sharpest failure mode found: a refutation-shaped pipeline is not looking for the defect hiding inside its own counter-evidence. |
+
+**This is where the hot take gets its final form.** It was: *falsification
+filters for truth, not significance.* It is now also: **falsification refutes
+the claim you gave it — and if that claim points the wrong way, the evidence
+that kills it can be the evidence that proves a real defect.** A verification
+stage can cost you a finding a direct pass would have kept, measured at one case
+in four.
+
+---
+
 ## Every measured run
 
 | Directory | n | Configuration | Baseline F1 | Advanced F1 |

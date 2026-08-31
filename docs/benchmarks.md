@@ -114,6 +114,115 @@ about when to reach for this system.
 
 ---
 
+## `holdout4`: the same question asked properly, and a harder answer
+
+`holdout2` and `holdout3` failed to test the mechanism because their defects
+were legible in the diff. So a fourth agent was commissioned with a spec that
+never mentions this reviewer — only a property of the code:
+
+> The changed hunk, read entirely on its own, must be consistent with **correct
+> behaviour**, because some plausible implementation of the referenced-but-unseen
+> code would make it fine.
+
+Each case has to state that explicitly: *"If `<unseen thing>` were
+`<alternative>`, this change would be correct. It is not, because `<actual>` at
+`<file:line>`, which the diff does not touch."* Four Challenging cases, two
+Traps.
+
+**Selecting for this shape measures whether the claim is true, not how often
+the condition arises.** `holdout2`/`holdout3` measure the complement. The three
+sets are only honest read together.
+
+### Result — 3 trials per arm
+
+| | Baseline | Advanced |
+|---|---:|---:|
+| Precision | 1.000 ± 0.000 | 0.917 ± 0.144 |
+| Recall | **0.250 ± 0.000** | **0.417 ± 0.289** |
+| **F1** | **0.400 ± 0.000** | **0.517 ± 0.202** |
+
+Three things follow, and the second is the one that matters most.
+
+**1. The shape is genuinely hard, and the spec worked.** The baseline scored
+1.000 on `holdout2` and `holdout3`. Here it scores **0.400**, finding one real
+defect in four. Whatever else is true, these cases are not solvable by reading
+the diff.
+
+**2. The advantage returns — and the headline recall does not.** Advanced beats
+baseline by +0.117 F1 and +0.167 recall, so the condition really is what
+governs whether this system helps. But its recall here is **0.417**, against
+**1.000 ± 0.000** on the frozen benchmark. On hard cases this project's author
+did not write, the system finds fewer than half the defects.
+
+> The frozen benchmark's perfect recall is a property of *those twelve cases*,
+> not of the method. This is the single most important qualification in the
+> repository, and it exists only because someone else wrote the cases.
+
+**3. Both traps stayed clean**, in both arms, in all three trials — unlike
+`holdout`, where two traps produced false positives.
+
+### Per case
+
+| Case | Baseline | Advanced |
+|---|---|---|
+| `n01-log-capacity-guard` | missed ×3 | **missed ×3** |
+| `n02-batch-summary-counters` | **found ×3** | found ×1 — *regression* |
+| `n03-editor-dirty-check` | missed ×3 | found ×1 (+1 FP) |
+| `n04-limiter-snapshot-limit` | missed ×3 | **found ×3** |
+| `n05-frame-header-slice` (trap) | clean ×3 | clean ×3 |
+| `n06-catalog-binary-search` (trap) | clean ×3 | clean ×3 |
+
+`n04` is the clean win the design predicts: a limit snapshotted at construction
+from a `Settings` that has interior mutability and an untouched caller that
+changes it. The baseline never got it; the advanced arm got it every time.
+
+### The most instructive failure in this project
+
+`n02` is a **regression**: the baseline found it in all three trials, the
+advanced arm in one. The defect is that `Summary` reads
+`counters.accepted()`, which is a destructive `swap(0)` — so the summary is
+right and the metrics scrape that follows sees zero.
+
+Here is what the advanced arm actually did. It proposed:
+
+> *"`finish_batch` reads cumulative accepted counts from counters without
+> resetting or tracking a per-batch baseline, causing subsequent batch
+> summaries to report counts accumulated across prior batches."*
+
+That is the real defect **stated backwards**. It then investigated — reading
+`counters.rs` and even `telemetry.rs`, where the consequence lands — and the
+verifier correctly refuted it:
+
+> *"`Counters::accepted()` performs an atomic swap to zero
+> (`self.accepted.swap(0, Ordering::SeqCst)`), resetting the counter
+> destructive upon read and returning only the count since the previous read."*
+
+**The verifier names the destructive read, in its own words, and uses it to
+reject the finding.** The one fact that proves the defect is the same fact that
+refutes the claim as posed, and the pipeline discards it and moves on.
+
+That sharpens the hot take considerably:
+
+> Falsification refutes the claim you gave it. If the claim points the wrong
+> way, the evidence that kills it may be the very evidence that proves a real
+> defect — and nothing in a refutation-shaped pipeline is looking for that.
+
+The baseline has no falsification step to talk itself out of it, so it simply
+reported what it saw. **A verification stage can cost you a finding a direct
+pass would have kept**, and that is not a hypothetical: it is one case in four,
+measured, on cases we did not write.
+
+### What we did not do
+
+We did not rewrite `n01` or `n02`, and we did not tune anything against them.
+The set was authored independently, verified by execution here, run once at
+three trials, and reported. Its author flagged `n04` as the weakest on the
+"opaque from the diff" axis before any of it was run; that judgement is
+recorded in the case notes and turned out to be the case the system handled
+best.
+
+---
+
 ## Reproducing any of them
 
 ```bash

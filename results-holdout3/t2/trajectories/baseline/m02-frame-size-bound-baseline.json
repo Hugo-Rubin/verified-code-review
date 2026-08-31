@@ -1,0 +1,97 @@
+{
+  "trajectory_id": "5fa93b65-4c97-4274-a6a5-986e1e2e244f",
+  "case_id": "m02-frame-size-bound",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T10:22:38.537390300+00:00",
+  "finished_at": "2026-08-31T10:22:46.253195200+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "memory_carries_content": false,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\n`encode` now compares the payload length against `MAX_FRAME_BYTES`, the same constant `decode` enforces, so both directions of the protocol are written against one number. The `PayloadTooLarge` error it returns reports that constant as the limit it applied.\n\n## Diff\n\n```diff\n--- a/src/frame.rs\n+++ b/src/frame.rs\n@@ -26,10 +26,10 @@\n \n /// Encode `payload` into a single frame.\n pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n-    if payload.len() > MAX_PAYLOAD_BYTES {\n+    if payload.len() > MAX_FRAME_BYTES {\n         return Err(FrameError::PayloadTooLarge {\n             len: payload.len(),\n-            limit: MAX_PAYLOAD_BYTES,\n+            limit: MAX_FRAME_BYTES,\n         });\n     }\n \n\n```\n\n## Current contents of the changed files\n\n\n### src/frame.rs\n\n```rust\n    1 | //! Encoding and decoding of one frame.\n    2 | //!\n    3 | //! A frame is `HEADER_BYTES` of header followed by the payload. The header\n    4 | //! carries the payload length as a big-endian `u32`, then four reserved bytes.\n    5 | \n    6 | /// Size of the fixed header that precedes every payload.\n    7 | pub const HEADER_BYTES: usize = 8;\n    8 | \n    9 | /// The transport refuses to carry a frame larger than this, in either\n   10 | /// direction.\n   11 | pub const MAX_FRAME_BYTES: usize = 4096;\n   12 | \n   13 | /// The largest payload that still fits inside `MAX_FRAME_BYTES` once the\n   14 | /// header is accounted for.\n   15 | pub const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;\n   16 | \n   17 | #[derive(Debug, PartialEq, Eq)]\n   18 | pub enum FrameError {\n   19 |     /// The caller offered more payload than a frame can carry.\n   20 |     PayloadTooLarge { len: usize, limit: usize },\n   21 |     /// The peer sent a frame the transport will not carry.\n   22 |     FrameTooLarge { len: usize },\n   23 |     /// The frame ended before the header or the declared payload did.\n   24 |     Truncated,\n   25 | }\n   26 | \n   27 | /// Encode `payload` into a single frame.\n   28 | pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n   29 |     if payload.len() > MAX_FRAME_BYTES {\n   30 |         return Err(FrameError::PayloadTooLarge {\n   31 |             len: payload.len(),\n   32 |             limit: MAX_FRAME_BYTES,\n   33 |         });\n   34 |     }\n   35 | \n   36 |     let mut out = Vec::with_capacity(HEADER_BYTES + payload.len());\n   37 |     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());\n   38 |     out.extend_from_slice(&[0u8; 4]);\n   39 |     out.extend_from_slice(payload);\n   40 |     Ok(out)\n   41 | }\n   42 | \n   43 | /// Decode a frame back into its payload.\n   44 | pub fn decode(frame: &[u8]) -> Result<Vec<u8>, FrameError> {\n   45 |     if frame.len() > MAX_FRAME_BYTES {\n   46 |         return Err(FrameError::FrameTooLarge { len: frame.len() });\n   47 |     }\n   48 |     if frame.len() < HEADER_BYTES {\n   49 |         return Err(FrameError::Truncated);\n   50 |     }\n   51 | \n   52 |     let len = u32::from_be_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;\n   53 |     let body = frame\n   54 |         .get(HEADER_BYTES..HEADER_BYTES + len)\n   55 |         .ok_or(FrameError::Truncated)?;\n   56 |     Ok(body.to_vec())\n   57 | }\n   58 | \n   59 | #[cfg(test)]\n   60 | mod tests {\n   61 |     use super::*;\n   62 | \n   63 |     #[test]\n   64 |     fn round_trips_a_small_payload() {\n   65 |         let frame = encode(b\"hello\").unwrap();\n   66 |         assert_eq!(frame.len(), HEADER_BYTES + 5);\n   67 |         assert_eq!(decode(&frame), Ok(b\"hello\".to_vec()));\n   68 |     }\n   69 | \n   70 |     #[test]\n   71 |     fn round_trips_an_empty_payload() {\n   72 |         let frame = encode(b\"\").unwrap();\n   73 |         assert_eq!(decode(&frame), Ok(Vec::new()));\n   74 |     }\n   75 | \n   76 |     #[test]\n   77 |     fn refuses_an_oversized_payload() {\n   78 |         let huge = vec![0u8; 10_000];\n   79 |         assert!(matches!(\n   80 |             encode(&huge),\n   81 |             Err(FrameError::PayloadTooLarge { .. })\n   82 |         ));\n   83 |     }\n   84 | \n   85 |     #[test]\n   86 |     fn decode_refuses_an_oversized_frame() {\n   87 |         let huge = vec![0u8; 5_000];\n   88 |         assert!(matches!(\n   89 |             decode(&huge),\n   90 |             Err(FrameError::FrameTooLarge { .. })\n   91 |         ));\n   92 |     }\n   93 | \n   94 |     #[test]\n   95 |     fn decode_refuses_a_truncated_frame() {\n   96 |         assert_eq!(decode(&[0, 0, 0]), Err(FrameError::Truncated));\n   97 |         let mut frame = encode(b\"hello\").unwrap();\n   98 |         frame.truncate(HEADER_BYTES + 2);\n   99 |         assert_eq!(decode(&frame), Err(FrameError::Truncated));\n  100 |     }\n  101 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Validation\",\n      \"severity\": \"High\",\n      \"file\": \"src/frame.rs\",\n      \"start_line\": 29,\n      \"end_line\": 34,\n      \"claim\": \"Payload validation compares against `MAX_FRAME_BYTES` instead of `MAX_PAYLOAD_BYTES`, allowing payloads that produce frames exceeding the maximum allowable frame size.\",\n      \"reasoning\": \"Because `HEADER_BYTES` are added to the payload during encoding, any payload with length between `MAX_PAYLOAD_BYTES + 1` and `MAX_FRAME_BYTES` will successfully encode into a frame larger than `MAX_FRAME_BYTES`, which `decode` will reject as `FrameTooLarge`.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 1977,
+        "output_tokens": 815,
+        "total_tokens": 2792
+      },
+      "latency_ms": 7715,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "m02-frame-size-bound-base-1",
+        "issue_type": "Validation",
+        "severity": "High",
+        "location": {
+          "file": "src/frame.rs",
+          "start_line": 29,
+          "end_line": 34
+        },
+        "claim": "Payload validation compares against `MAX_FRAME_BYTES` instead of `MAX_PAYLOAD_BYTES`, allowing payloads that produce frames exceeding the maximum allowable frame size.",
+        "reasoning": "Because `HEADER_BYTES` are added to the payload during encoding, any payload with length between `MAX_PAYLOAD_BYTES + 1` and `MAX_FRAME_BYTES` will successfully encode into a frame larger than `MAX_FRAME_BYTES`, which `decode` will reject as `FrameTooLarge`."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "m02-frame-size-bound-base-1",
+      "issue_type": "Validation",
+      "severity": "High",
+      "location": {
+        "file": "src/frame.rs",
+        "start_line": 29,
+        "end_line": 34
+      },
+      "claim": "Payload validation compares against `MAX_FRAME_BYTES` instead of `MAX_PAYLOAD_BYTES`, allowing payloads that produce frames exceeding the maximum allowable frame size.",
+      "reasoning": "Because `HEADER_BYTES` are added to the payload during encoding, any payload with length between `MAX_PAYLOAD_BYTES + 1` and `MAX_FRAME_BYTES` will successfully encode into a frame larger than `MAX_FRAME_BYTES`, which `decode` will reject as `FrameTooLarge`.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1977,
+    "output_tokens": 815,
+    "total_tokens": 2792
+  },
+  "cost_usd": 0.004539,
+  "runtime_ms": 7715,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

@@ -1,0 +1,65 @@
+{
+  "trajectory_id": "7818ce44-48f1-4994-ac61-807d46709deb",
+  "case_id": "n01-log-capacity-guard",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T11:02:53.816692100+00:00",
+  "finished_at": "2026-08-31T11:02:57.781810100+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "memory_carries_content": false,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\n`Logger::append` now compares the number of buffered entries against `config.max_entries` directly instead of asking the ring whether it is full. The two express the same limit, and the explicit comparison keeps the operator-facing number visible at the point where the limit is enforced.\n\n## Diff\n\n```diff\n--- a/src/logger.rs\n+++ b/src/logger.rs\n@@ -29,7 +29,7 @@\n     /// The log reports [`LogError::Full`] to the caller rather than discarding\n     /// anything once it is holding its full complement of entries.\n     pub fn append(&mut self, level: u8, message: &str) -> Result<(), LogError> {\n-        if self.buffer.is_full() {\n+        if self.buffer.len() >= self.config.max_entries {\n             self.rejected += 1;\n             return Err(LogError::Full);\n         }\n\n```\n\n## Current contents of the changed files\n\n\n### src/logger.rs\n\n```rust\n    1 | //! The logger front end: applies the retention limit, then stores the entry.\n    2 | \n    3 | use crate::buffer::{Entry, RingBuffer};\n    4 | use crate::Config;\n    5 | \n    6 | #[derive(Debug, PartialEq, Eq)]\n    7 | pub enum LogError {\n    8 |     /// The log is already holding every entry it is allowed to hold.\n    9 |     Full,\n   10 | }\n   11 | \n   12 | pub struct Logger {\n   13 |     buffer: RingBuffer,\n   14 |     config: Config,\n   15 |     rejected: usize,\n   16 | }\n   17 | \n   18 | impl Logger {\n   19 |     pub fn new(config: Config) -> Self {\n   20 |         Self {\n   21 |             buffer: RingBuffer::with_capacity(config.max_entries),\n   22 |             config,\n   23 |             rejected: 0,\n   24 |         }\n   25 |     }\n   26 | \n   27 |     /// Record one entry.\n   28 |     ///\n   29 |     /// The log reports [`LogError::Full`] to the caller rather than discarding\n   30 |     /// anything once it is holding its full complement of entries.\n   31 |     pub fn append(&mut self, level: u8, message: &str) -> Result<(), LogError> {\n   32 |         if self.buffer.len() >= self.config.max_entries {\n   33 |             self.rejected += 1;\n   34 |             return Err(LogError::Full);\n   35 |         }\n   36 |         self.buffer.push(Entry {\n   37 |             level,\n   38 |             message: message.to_string(),\n   39 |         });\n   40 |         Ok(())\n   41 |     }\n   42 | \n   43 |     /// How many appends were refused because the log was full.\n   44 |     pub fn rejected(&self) -> usize {\n   45 |         self.rejected\n   46 |     }\n   47 | \n   48 |     /// How many entries are currently held.\n   49 |     pub fn stored(&self) -> usize {\n   50 |         self.buffer.len()\n   51 |     }\n   52 | \n   53 |     pub fn messages(&self) -> Vec<String> {\n   54 |         self.buffer.iter().map(|e| e.message.clone()).collect()\n   55 |     }\n   56 | }\n   57 | \n   58 | #[cfg(test)]\n   59 | mod tests {\n   60 |     use super::*;\n   61 | \n   62 |     fn logger(max: usize) -> Logger {\n   63 |         Logger::new(Config::new(max))\n   64 |     }\n   65 | \n   66 |     #[test]\n   67 |     fn stores_appended_entries() {\n   68 |         let mut l = logger(4);\n   69 |         assert!(l.append(1, \"a\").is_ok());\n   70 |         assert!(l.append(1, \"b\").is_ok());\n   71 |         assert_eq!(l.stored(), 2);\n   72 |         assert_eq!(l.messages(), vec![\"a\".to_string(), \"b\".to_string()]);\n   73 |     }\n   74 | \n   75 |     #[test]\n   76 |     fn reports_full_at_the_configured_limit() {\n   77 |         let mut l = logger(2);\n   78 |         assert!(l.append(1, \"a\").is_ok());\n   79 |         assert!(l.append(1, \"b\").is_ok());\n   80 |         assert_eq!(l.append(1, \"c\"), Err(LogError::Full));\n   81 |         assert_eq!(l.rejected(), 1);\n   82 |         assert_eq!(l.stored(), 2);\n   83 |     }\n   84 | \n   85 |     #[test]\n   86 |     fn a_refused_append_stores_nothing() {\n   87 |         let mut l = logger(1);\n   88 |         assert!(l.append(1, \"a\").is_ok());\n   89 |         let _ = l.append(1, \"b\");\n   90 |         assert_eq!(l.messages(), vec![\"a\".to_string()]);\n   91 |     }\n   92 | }\n```\n",
+      "response_text": "{\n  \"findings\": []\n}",
+      "usage": {
+        "input_tokens": 1713,
+        "output_tokens": 276,
+        "total_tokens": 1989
+      },
+      "latency_ms": 3964,
+      "attempts": 1
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "0 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [],
+  "usage": {
+    "input_tokens": 1713,
+    "output_tokens": 276,
+    "total_tokens": 1989
+  },
+  "cost_usd": 0.0023197499999999998,
+  "runtime_ms": 3965,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

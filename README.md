@@ -38,13 +38,20 @@ benchmark's traps never do — so trap performance on *unseen* traps is weaker
 and less stable than the headline suggests. See
 [`docs/holdout.md`](docs/holdout.md).
 
-**And a negative result that bounds the claim.** Two *further* agent-authored
-sets (10 more cases, same blocklist) produced defects that are legible in the
-diff itself — and there the **baseline scores a perfect 1.000**, while the
-advanced arm ties on one set and loses on the other. The advantage is not
-general: it exists on defects whose changed line reads as *correct*, and
-nowhere else. [`docs/benchmarks.md`](docs/benchmarks.md) has the numbers and
-why it happened.
+**And two negative results that bound the claim.** Two *further* agent-authored
+sets (10 cases, same blocklist) produced defects legible in the diff itself, and
+there the **baseline scores a perfect 1.000** while the advanced arm ties on one
+and loses on the other. So a fourth set was commissioned, specified to contain
+only defects whose changed line reads as *correct*. On it the baseline collapses
+to **0.400** — the shape really is what makes a case hard — and the advantage
+returns, **0.517 vs 0.400**.
+
+But look at that number. Recall there is **0.417**, against **1.000 ± 0.000** on
+the frozen benchmark. **The perfect recall in the table above is a property of
+those twelve cases, not of the method.** On hard cases written by someone else,
+this system finds fewer than half the defects. That qualification exists only
+because we had somebody else write the cases, and it is the most important
+sentence in this README. [`docs/benchmarks.md`](docs/benchmarks.md).
 
 ¹ Manual-triage proxy — findings a human must read and judge. **Not** a direct
 measurement of human review time. A blind stopwatch harness for the real
@@ -675,10 +682,14 @@ commands, required configuration, expected output, runtime, and cost.
   which the frozen benchmark's four traps never do.
   On `holdout2` and `holdout3` it **does not replicate at all**: the baseline
   scores 1.000 on both and the advanced arm loses on one. Those ten cases turn
-  out to be diff-legible, so they never exercise the mechanism. That is a real
-  bound on the claim rather than a flaw in the cases, and it is reported as
-  found. The authoring agents are still LLMs, so this reduces author bias
-  rather than removing it; harvested pull requests would be the real fix.
+  out to be diff-legible, so they never exercise the mechanism.
+  On `holdout4`, built specifically so the changed line reads as correct, the
+  baseline collapses to 0.400 and the advantage returns (0.517) — but the
+  advanced arm's recall is **0.417 there against 1.000 on the frozen
+  benchmark**. **Headline recall does not generalise to hard cases we did not
+  write.** All of this is reported as found; nothing was rewritten or dropped.
+  The authoring agents are still LLMs, so this reduces author bias rather than
+  removing it; harvested pull requests would be the real fix.
 - **Human review time is still a proxy in the headline table.** A blind
   stopwatch harness (`vcr triage`) is implemented and documented, but the
   reported figure remains findings-to-triage per case until a session is run.

@@ -1,0 +1,100 @@
+{
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "provider": "Vertex",
+  "started_at": "2026-08-31T10:11:58.008615500+00:00",
+  "finished_at": "2026-08-31T10:13:15.880330400+00:00",
+  "benchmark_dir": "benchmark/holdout2",
+  "case_count": 5,
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "ablation": "None"
+  },
+  "stats": [
+    {
+      "case_id": "k01-counter-update-window",
+      "trajectory_id": "d3fca7bc-37e9-47e1-878b-533d84b594d9",
+      "runtime_ms": 7518,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1677,
+      "output_tokens": 654,
+      "cost_usd": 0.00371025,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "k02-queue-wake-check",
+      "trajectory_id": "ea669257-d32d-4d83-9ed0-8dd14c365d22",
+      "runtime_ms": 5620,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 2118,
+      "output_tokens": 537,
+      "cost_usd": 0.0036022500000000004,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "k03-bus-subscriber-handles",
+      "trajectory_id": "ef78a5ce-dc69-47c2-b61b-9dccab9fd0f9",
+      "runtime_ms": 33201,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1989,
+      "output_tokens": 841,
+      "cost_usd": 0.0046455,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "k04-metrics-relaxed-counters",
+      "trajectory_id": "4fa8bdce-01c4-4fb7-a04a-bc334bc1d37b",
+      "runtime_ms": 3580,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1509,
+      "output_tokens": 231,
+      "cost_usd": 0.0019979999999999998,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "k05-walk-borrow-scope",
+      "trajectory_id": "c3ec48d1-317f-4c3d-b713-963a8a34b576",
+      "runtime_ms": 27943,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1219,
+      "output_tokens": 2157,
+      "cost_usd": 0.009003,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ]
+}

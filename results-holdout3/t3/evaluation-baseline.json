@@ -1,0 +1,234 @@
+{
+  "aggregate": {
+    "agent": "Baseline",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 5,
+    "counts": {
+      "true_positives": 4,
+      "false_positives": 0,
+      "false_negatives": 0
+    },
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "false_positives_per_case": 0.0,
+    "manual_triage_findings_per_case": 0.8,
+    "withheld_findings_per_case": 0.0,
+    "mean_cost_usd_per_case": 0.005078999999999999,
+    "mean_runtime_ms_per_case": 9953.4,
+    "mean_llm_calls_per_case": 1.0,
+    "mean_tool_calls_per_case": 0.0,
+    "total_input_tokens": 10380,
+    "total_output_tokens": 4696,
+    "ablation": "None",
+    "evidence_accuracy": 1.0,
+    "evidence_audit": {
+      "total": 0,
+      "checkable": 0,
+      "accurate": 0,
+      "mismatches": []
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "m01-retry-error-mapping",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "m01-retry-error-mapping-base-1",
+          "expected_id": "m01-f1",
+          "location": "src/client.rs:31-35",
+          "issue_type": "ErrorHandling"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "m02-frame-size-bound",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "m02-frame-size-bound-base-1",
+          "expected_id": "m02-f1",
+          "location": "src/frame.rs:29-34",
+          "issue_type": "Validation"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "m03-tag-equality-hash",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "m03-tag-equality-hash-base-1",
+          "expected_id": "m03-f1",
+          "location": "src/tag.rs:9-16",
+          "issue_type": "ApiContract"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "m04-query-pair-cap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "m05-burst-fallback",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "m05-burst-fallback-base-1",
+          "expected_id": "m05-f1",
+          "location": "src/config.rs:49",
+          "issue_type": "ErrorHandling"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "m01-retry-error-mapping",
+      "trajectory_id": "47a576dc-4070-4c36-8817-6485e5df7b0f",
+      "runtime_ms": 15128,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 2294,
+      "output_tokens": 1718,
+      "cost_usd": 0.008163,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m02-frame-size-bound",
+      "trajectory_id": "a987d3eb-f270-4881-8926-445aadc2e185",
+      "runtime_ms": 6128,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1977,
+      "output_tokens": 760,
+      "cost_usd": 0.00433275,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m03-tag-equality-hash",
+      "trajectory_id": "29c94256-8c96-4b2a-8aff-620d130e957a",
+      "runtime_ms": 17371,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 2069,
+      "output_tokens": 1042,
+      "cost_usd": 0.00545925,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m04-query-pair-cap",
+      "trajectory_id": "67def558-6ac1-446e-a671-db7023f79f3b",
+      "runtime_ms": 5161,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 2233,
+      "output_tokens": 441,
+      "cost_usd": 0.0033285,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m05-burst-fallback",
+      "trajectory_id": "d44afbdd-a34b-4687-98ff-564e1ca821c5",
+      "runtime_ms": 5979,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1807,
+      "output_tokens": 735,
+      "cost_usd": 0.004111500000000001,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ],
+  "by_category": [
+    {
+      "category": "RealIssue",
+      "case_count": 3,
+      "counts": {
+        "true_positives": 3,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "category": "Trap",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
+  ],
+  "line_tolerance": 3
+}

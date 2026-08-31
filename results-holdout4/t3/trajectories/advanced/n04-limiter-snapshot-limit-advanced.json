@@ -1,0 +1,623 @@
+{
+  "trajectory_id": "2e0c6ea1-0ae5-46b7-8a51-1b6f7c5d1309",
+  "case_id": "n04-limiter-snapshot-limit",
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T11:06:38.468772800+00:00",
+  "finished_at": "2026-08-31T11:07:29.434544100+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "memory_carries_content": false,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "advanced-review/v6",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nYou are producing CANDIDATE findings, not final ones. Nothing you write here\nreaches a human directly. Each candidate is investigated against the actual\nrepository and then independently adjudicated, and only what survives is\nreported. A candidate that turns out to be wrong costs almost nothing. A real\ndefect you never raised is never checked at all.\n\nSo err toward proposing. Raise anything a careful reviewer would want confirmed\nbefore approving this change, including things you expect will turn out to be\nfine.\n\n- Anchor each candidate to a specific file and line range.\n- State each claim as something that can actually happen, not as a\n  conditional. Write \"callers can reach this with an empty list, and it will\n  panic\", not \"this will panic if the list is empty\" — the second is true of\n  the code whether or not the situation ever arises, so it cannot be\n  disproved and is not a finding.\n- State each claim as a single falsifiable sentence — something repository\n  evidence could confirm or refute.\n- Every candidate must name a consequence: what goes wrong, and for whom.\n  Incorrect output, a panic, data loss, a violated contract, a security\n  consequence, or a real cost at the scale this code runs at. If you cannot\n  finish the sentence \"and so the user gets...\", it is not a candidate.\n  Missing trait derives, a signature that is more fallible than it needs to\n  be, and unused declarations are observations about the code, not defects —\n  leave them out. The investigation stage can settle whether a claim is true;\n  it cannot make a true triviality worth a reviewer's time.\n- Pay particular attention to anything whose correctness depends on facts that\n  are not visible in the changed files. If the code is only correct given some\n  assumption about the rest of the repository, that assumption is a candidate.\n- Apply that concretely. Where this change calls something whose definition you\n  cannot see here, ask what it must return or do for this code to be right, and\n  raise that as a candidate stating the assumption. A guard is only as good as\n  the thing it calls; a name suggests what a function does but does not\n  establish it. This is the single most common way a change that looks correct\n  in isolation turns out not to be, and it is precisely what the investigation\n  stage can settle in one lookup.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Avoid vague concerns such as \"this looks fragile\"; say what would go wrong.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nReturn {\"findings\": []} only if there is genuinely nothing worth checking.\n\nUnder-proposing is the expensive mistake at this stage. Include a candidate\neven when you suspect it is fine, and in particular whenever the code's\ncorrectness depends on something you cannot see in the changed files — a\ncaller, a constructor, an invariant asserted in a comment, a value's origin.\nThose are the candidates the investigation stage exists to settle, and it can\nonly settle the ones you raise.",
+      "user": "## Change under review\n\n`Limiter` no longer carries a reference to `Settings`. It reads the concurrency number in the constructor and keeps it in a `u32` field, which removes the lifetime parameter from the type so a limiter can be stored and moved like any other value, and leaves the admission decision as a comparison between two integers the limiter already owns.\n\n## Diff\n\n```diff\n--- a/src/limiter.rs\n+++ b/src/limiter.rs\n@@ -6,22 +6,22 @@\n ///\n /// One limiter is built when the runner starts and lives for as long as the\n /// process does; `try_start` runs on every job start.\n-pub struct Limiter<'a> {\n-    settings: &'a Settings,\n+pub struct Limiter {\n+    concurrent_jobs: u32,\n     running: u32,\n }\n \n-impl<'a> Limiter<'a> {\n-    pub fn new(settings: &'a Settings) -> Self {\n+impl Limiter {\n+    pub fn new(settings: &Settings) -> Self {\n         Self {\n-            settings,\n+            concurrent_jobs: settings.concurrent_jobs(),\n             running: 0,\n         }\n     }\n \n     /// Admit one job if there is room for it.\n     pub fn try_start(&mut self) -> bool {\n-        if self.running >= self.settings.concurrent_jobs() {\n+        if self.running >= self.concurrent_jobs {\n             return false;\n         }\n         self.running += 1;\n\n```\n\n## Current contents of the changed files\n\n\n### src/limiter.rs\n\n```rust\n    1 | //! Admission control: decides whether one more job may start.\n    2 | \n    3 | use crate::settings::Settings;\n    4 | \n    5 | /// Gate in front of the job runner.\n    6 | ///\n    7 | /// One limiter is built when the runner starts and lives for as long as the\n    8 | /// process does; `try_start` runs on every job start.\n    9 | pub struct Limiter {\n   10 |     concurrent_jobs: u32,\n   11 |     running: u32,\n   12 | }\n   13 | \n   14 | impl Limiter {\n   15 |     pub fn new(settings: &Settings) -> Self {\n   16 |         Self {\n   17 |             concurrent_jobs: settings.concurrent_jobs(),\n   18 |             running: 0,\n   19 |         }\n   20 |     }\n   21 | \n   22 |     /// Admit one job if there is room for it.\n   23 |     pub fn try_start(&mut self) -> bool {\n   24 |         if self.running >= self.concurrent_jobs {\n   25 |             return false;\n   26 |         }\n   27 |         self.running += 1;\n   28 |         true\n   29 |     }\n   30 | \n   31 |     /// Report that a job finished and gave its slot back.\n   32 |     pub fn finish(&mut self) {\n   33 |         self.running = self.running.saturating_sub(1);\n   34 |     }\n   35 | \n   36 |     /// Jobs currently in flight.\n   37 |     pub fn running(&self) -> u32 {\n   38 |         self.running\n   39 |     }\n   40 | }\n   41 | \n   42 | #[cfg(test)]\n   43 | mod tests {\n   44 |     use super::*;\n   45 | \n   46 |     #[test]\n   47 |     fn admits_up_to_the_limit_and_no_further() {\n   48 |         let s = Settings::new(2);\n   49 |         let mut l = Limiter::new(&s);\n   50 |         assert!(l.try_start());\n   51 |         assert!(l.try_start());\n   52 |         assert!(!l.try_start());\n   53 |         assert_eq!(l.running(), 2);\n   54 |     }\n   55 | \n   56 |     #[test]\n   57 |     fn a_finished_job_makes_room_for_another() {\n   58 |         let s = Settings::new(1);\n   59 |         let mut l = Limiter::new(&s);\n   60 |         assert!(l.try_start());\n   61 |         assert!(!l.try_start());\n   62 |         l.finish();\n   63 |         assert!(l.try_start());\n   64 |         assert_eq!(l.running(), 1);\n   65 |     }\n   66 | \n   67 |     #[test]\n   68 |     fn finishing_with_nothing_in_flight_stays_at_zero() {\n   69 |         let s = Settings::new(4);\n   70 |         let mut l = Limiter::new(&s);\n   71 |         l.finish();\n   72 |         assert_eq!(l.running(), 0);\n   73 |     }\n   74 | \n   75 |     #[test]\n   76 |     fn a_limit_of_zero_admits_nothing() {\n   77 |         let s = Settings::new(0);\n   78 |         let mut l = Limiter::new(&s);\n   79 |         assert!(!l.try_start());\n   80 |     }\n   81 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"StateManagement\",\n      \"severity\": \"Medium\",\n      \"file\": \"src/limiter.rs\",\n      \"start_line\": 15,\n      \"end_line\": 20,\n      \"claim\": \"Snapshotting concurrent_jobs in Limiter::new prevents Limiter from observing dynamic updates to Settings during process execution.\",\n      \"reasoning\": \"Previously, Limiter held a reference to Settings and queried settings.concurrent_jobs() on every try_start() call. If the runner or configuration system updates Settings at runtime (for example on configuration reload or SIGHUP), Limiter will continue enforcing the initial concurrency limit for the remainder of the process lifetime.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 2215,
+        "output_tokens": 537,
+        "total_tokens": 2752
+      },
+      "latency_ms": 12358,
+      "attempts": 2
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "n04-limiter-snapshot-limit-adv-1",
+        "issue_type": "StateManagement",
+        "severity": "Medium",
+        "location": {
+          "file": "src/limiter.rs",
+          "start_line": 15,
+          "end_line": 20
+        },
+        "claim": "Snapshotting concurrent_jobs in Limiter::new prevents Limiter from observing dynamic updates to Settings during process execution.",
+        "reasoning": "Previously, Limiter held a reference to Settings and queried settings.concurrent_jobs() on every try_start() call. If the runner or configuration system updates Settings at runtime (for example on configuration reload or SIGHUP), Limiter will continue enforcing the initial concurrency limit for the remainder of the process lifetime."
+      }
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Falsify",
+      "prompt_version": "advanced-falsify/v2",
+      "system": "You are helping test a code-review finding.\n\nGiven a claim about a defect, write the single most decisive question whose\nanswer would show the claim is WRONG. The question must be answerable by\ninspecting the repository: callers, implementations, tests, configuration, or\ntype definitions.\n\nAsk about the thing the claim actually depends on, not about the mechanism.\nWhether a function panics on a bad input is usually not in doubt and can be\nread off the body; whether anything ever hands it a bad input is the question.\nSo when a claim rests on how the code is used, ask about the call sites by\nname.\n\nGood: \"Does every caller of parse_row check is_empty() before indexing?\"\nBad:  \"Does parse_row panic when the row is empty?\"  (asks the mechanism)\nBad:  \"Is this code correct?\"                        (unanswerable)\n\nNever make a comment the answer. If a doc comment already asserts the\nprecondition, the question is whether the callers honour it.\n\nReturn JSON of exactly this shape:\n\n{\"falsification_question\": \"<one question>\"}",
+      "user": "Claim: Snapshotting concurrent_jobs in Limiter::new prevents Limiter from observing dynamic updates to Settings during process execution.\nLocation: src/limiter.rs:15-20\nReviewer's reasoning: Previously, Limiter held a reference to Settings and queried settings.concurrent_jobs() on every try_start() call. If the runner or configuration system updates Settings at runtime (for example on configuration reload or SIGHUP), Limiter will continue enforcing the initial concurrency limit for the remainder of the process lifetime.\n\nWhat evidence would prove this claim wrong?",
+      "response_text": "{\"falsification_question\": \"Does the codebase support or implement any dynamic reloading or mutation of `Settings` during process execution?\"}",
+      "usage": {
+        "input_tokens": 360,
+        "output_tokens": 197,
+        "total_tokens": 557
+      },
+      "latency_ms": 11904,
+      "attempts": 2
+    },
+    {
+      "event": "FalsificationQuestion",
+      "candidate_id": "n04-limiter-snapshot-limit-adv-1",
+      "question": "Does the codebase support or implement any dynamic reloading or mutation of `Settings` during process execution?"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nSnapshotting concurrent_jobs in Limiter::new prevents Limiter from observing dynamic updates to Settings during process execution.\n\nLocation: src/limiter.rs:15-20\n\n## Falsification question\n\nDoes the codebase support or implement any dynamic reloading or mutation of `Settings` during process execution?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/limiter.rs\n+++ b/src/limiter.rs\n@@ -6,22 +6,22 @@\n ///\n /// One limiter is built when the runner starts and lives for as long as the\n /// process does; `try_start` runs on every job start.\n-pub struct Limiter<'a> {\n-    settings: &'a Settings,\n+pub struct Limiter {\n+    concurrent_jobs: u32,\n     running: u32,\n }\n \n-impl<'a> Limiter<'a> {\n-    pub fn new(settings: &'a Settings) -> Self {\n+impl Limiter {\n+    pub fn new(settings: &Settings) -> Self {\n         Self {\n-            settings,\n+            concurrent_jobs: settings.concurrent_jobs(),\n             running: 0,\n         }\n     }\n \n     /// Admit one job if there is room for it.\n     pub fn try_start(&mut self) -> bool {\n-        if self.running >= self.settings.concurrent_jobs() {\n+        if self.running >= self.concurrent_jobs {\n             return false;\n         }\n         self.running += 1;\n\n```\n\n## Investigation so far\n\n(nothing yet)\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": false,\n  \"tool\": \"search\",\n  \"arguments\": {\n    \"pattern\": \"Settings\"\n  },\n  \"rationale\": \"Find all definitions, usages, and methods on Settings to see if Settings supports dynamic reloading or mutation.\"\n}",
+      "usage": {
+        "input_tokens": 702,
+        "output_tokens": 127,
+        "total_tokens": 829
+      },
+      "latency_ms": 2133,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1",
+      "candidate_id": "n04-limiter-snapshot-limit-adv-1",
+      "tool": "search",
+      "arguments": {
+        "pattern": "Settings"
+      },
+      "response": "17 match(es) for \"Settings\":\nsrc/limiter.rs:3: use crate::settings::Settings;\nsrc/limiter.rs:15:     pub fn new(settings: &Settings) -> Self {\nsrc/limiter.rs:48:         let s = Settings::new(2);\nsrc/limiter.rs:58:         let s = Settings::new(1);\nsrc/limiter.rs:69:         let s = Settings::new(4);\nsrc/limiter.rs:77:         let s = Settings::new(0);\nsrc/reload.rs:3: use crate::settings::Settings;\nsrc/reload.rs:18: pub fn apply(settings: &Settings, update: Update) {\nsrc/reload.rs:30:         let s = Settings::new(2);\nsrc/reload.rs:37:         let s = Settings::new(8);\nsrc/settings.rs:7: /// A `Settings` value is a live view rather than a snapshot: the control\nsrc/settings.rs:14: pub struct Settings {\nsrc/settings.rs:18: impl Settings {\nsrc/settings.rs:30:     /// Install a new value. Every holder of a `&Settings` sees it from here on.\nsrc/settings.rs:42:         let s = Settings::new(2);\nsrc/settings.rs:43:         let view: &Settings = &s;\nsrc/settings.rs:50:         assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n",
+      "ok": true,
+      "duration_ms": 1
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nSnapshotting concurrent_jobs in Limiter::new prevents Limiter from observing dynamic updates to Settings during process execution.\n\nLocation: src/limiter.rs:15-20\n\n## Falsification question\n\nDoes the codebase support or implement any dynamic reloading or mutation of `Settings` during process execution?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/limiter.rs\n+++ b/src/limiter.rs\n@@ -6,22 +6,22 @@\n ///\n /// One limiter is built when the runner starts and lives for as long as the\n /// process does; `try_start` runs on every job start.\n-pub struct Limiter<'a> {\n-    settings: &'a Settings,\n+pub struct Limiter {\n+    concurrent_jobs: u32,\n     running: u32,\n }\n \n-impl<'a> Limiter<'a> {\n-    pub fn new(settings: &'a Settings) -> Self {\n+impl Limiter {\n+    pub fn new(settings: &Settings) -> Self {\n         Self {\n-            settings,\n+            concurrent_jobs: settings.concurrent_jobs(),\n             running: 0,\n         }\n     }\n \n     /// Admit one job if there is room for it.\n     pub fn try_start(&mut self) -> bool {\n-        if self.running >= self.settings.concurrent_jobs() {\n+        if self.running >= self.concurrent_jobs {\n             return false;\n         }\n         self.running += 1;\n\n```\n\n## Already looked up during this review\n\nThese are results of earlier tool calls on this repository, recorded so you do\nnot have to repeat them. They are lookups, not conclusions.\n\nsearch {\"pattern\":\"Settings\"} -> 17 match(es) for \"Settings\":\n\n## Investigation so far\n\n\n--- step 1 : search {\"pattern\":\"Settings\"} ---\n17 match(es) for \"Settings\":\nsrc/limiter.rs:3: use crate::settings::Settings;\nsrc/limiter.rs:15:     pub fn new(settings: &Settings) -> Self {\nsrc/limiter.rs:48:         let s = Settings::new(2);\nsrc/limiter.rs:58:         let s = Settings::new(1);\nsrc/limiter.rs:69:         let s = Settings::new(4);\nsrc/limiter.rs:77:         let s = Settings::new(0);\nsrc/reload.rs:3: use crate::settings::Settings;\nsrc/reload.rs:18: pub fn apply(settings: &Settings, update: Update) {\nsrc/reload.rs:30:         let s = Settings::new(2);\nsrc/reload.rs:37:         let s = Settings::new(8);\nsrc/settings.rs:7: /// A `Settings` value is a live view rather than a snapshot: the control\nsrc/settings.rs:14: pub struct Settings {\nsrc/settings.rs:18: impl Settings {\nsrc/settings.rs:30:     /// Install a new value. Every holder of a `&Settings` sees it from here on.\nsrc/settings.rs:42:         let s = Settings::new(2);\nsrc/settings.rs:43:         let view: &Settings = &s;\nsrc/settings.rs:50:         assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"arguments\": {\n    \"file\": \"src/settings.rs\",\n    \"start_line\": 1,\n    \"end_line\": 52\n  },\n  \"done\": false,\n  \"rationale\": \"Read src/settings.rs to check if Settings is designed to be mutated dynamically during process execution.\",\n  \"tool\": \"read\"\n}",
+      "usage": {
+        "input_tokens": 1136,
+        "output_tokens": 222,
+        "total_tokens": 1358
+      },
+      "latency_ms": 2844,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t2",
+      "candidate_id": "n04-limiter-snapshot-limit-adv-1",
+      "tool": "read",
+      "arguments": {
+        "end_line": 52,
+        "file": "src/settings.rs",
+        "start_line": 1
+      },
+      "response": "src/settings.rs lines 1-52 of 52:\n    1 | //! The settings every component in the process shares.\n    2 | \n    3 | use std::cell::Cell;\n    4 | \n    5 | /// Operator settings.\n    6 | ///\n    7 | /// A `Settings` value is a live view rather than a snapshot: the control\n    8 | /// channel installs new values into it while the process is running (see\n    9 | /// [`crate::reload`]), and every component holding a reference is expected to\n   10 | /// observe the new value on its next read. The interior mutability is what\n   11 | /// makes that possible without unique access to something the whole process\n   12 | /// borrows.\n   13 | #[derive(Debug)]\n   14 | pub struct Settings {\n   15 |     concurrent_jobs: Cell<u32>,\n   16 | }\n   17 | \n   18 | impl Settings {\n   19 |     pub fn new(concurrent_jobs: u32) -> Self {\n   20 |         Self {\n   21 |             concurrent_jobs: Cell::new(concurrent_jobs),\n   22 |         }\n   23 |     }\n   24 | \n   25 |     /// How many jobs may be in flight at once, as of right now.\n   26 |     pub fn concurrent_jobs(&self) -> u32 {\n   27 |         self.concurrent_jobs.get()\n   28 |     }\n   29 | \n   30 |     /// Install a new value. Every holder of a `&Settings` sees it from here on.\n   31 |     pub fn set_concurrent_jobs(&self, jobs: u32) {\n   32 |         self.concurrent_jobs.set(jobs);\n   33 |     }\n   34 | }\n   35 | \n   36 | #[cfg(test)]\n   37 | mod tests {\n   38 |     use super::*;\n   39 | \n   40 |     #[test]\n   41 |     fn a_reference_taken_earlier_sees_the_new_value() {\n   42 |         let s = Settings::new(2);\n   43 |         let view: &Settings = &s;\n   44 |         s.set_concurrent_jobs(9);\n   45 |         assert_eq!(view.concurrent_jobs(), 9);\n   46 |     }\n   47 | \n   48 |     #[test]\n   49 |     fn the_initial_value_is_what_was_configured() {\n   50 |         assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n   51 |     }\n   52 | }\n",
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nSnapshotting concurrent_jobs in Limiter::new prevents Limiter from observing dynamic updates to Settings during process execution.\n\nLocation: src/limiter.rs:15-20\n\n## Falsification question\n\nDoes the codebase support or implement any dynamic reloading or mutation of `Settings` during process execution?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/limiter.rs\n+++ b/src/limiter.rs\n@@ -6,22 +6,22 @@\n ///\n /// One limiter is built when the runner starts and lives for as long as the\n /// process does; `try_start` runs on every job start.\n-pub struct Limiter<'a> {\n-    settings: &'a Settings,\n+pub struct Limiter {\n+    concurrent_jobs: u32,\n     running: u32,\n }\n \n-impl<'a> Limiter<'a> {\n-    pub fn new(settings: &'a Settings) -> Self {\n+impl Limiter {\n+    pub fn new(settings: &Settings) -> Self {\n         Self {\n-            settings,\n+            concurrent_jobs: settings.concurrent_jobs(),\n             running: 0,\n         }\n     }\n \n     /// Admit one job if there is room for it.\n     pub fn try_start(&mut self) -> bool {\n-        if self.running >= self.settings.concurrent_jobs() {\n+        if self.running >= self.concurrent_jobs {\n             return false;\n         }\n         self.running += 1;\n\n```\n\n## Already looked up during this review\n\nThese are results of earlier tool calls on this repository, recorded so you do\nnot have to repeat them. They are lookups, not conclusions.\n\nsearch {\"pattern\":\"Settings\"} -> 17 match(es) for \"Settings\":\nread {\"end_line\":52,\"file\":\"src/settings.rs\",\"start_line\":1} -> src/settings.rs lines 1-52 of 52:\n\n## Investigation so far\n\n\n--- step 1 : search {\"pattern\":\"Settings\"} ---\n17 match(es) for \"Settings\":\nsrc/limiter.rs:3: use crate::settings::Settings;\nsrc/limiter.rs:15:     pub fn new(settings: &Settings) -> Self {\nsrc/limiter.rs:48:         let s = Settings::new(2);\nsrc/limiter.rs:58:         let s = Settings::new(1);\nsrc/limiter.rs:69:         let s = Settings::new(4);\nsrc/limiter.rs:77:         let s = Settings::new(0);\nsrc/reload.rs:3: use crate::settings::Settings;\nsrc/reload.rs:18: pub fn apply(settings: &Settings, update: Update) {\nsrc/reload.rs:30:         let s = Settings::new(2);\nsrc/reload.rs:37:         let s = Settings::new(8);\nsrc/settings.rs:7: /// A `Settings` value is a live view rather than a snapshot: the control\nsrc/settings.rs:14: pub struct Settings {\nsrc/settings.rs:18: impl Settings {\nsrc/settings.rs:30:     /// Install a new value. Every holder of a `&Settings` sees it from here on.\nsrc/settings.rs:42:         let s = Settings::new(2);\nsrc/settings.rs:43:         let view: &Settings = &s;\nsrc/settings.rs:50:         assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n\n\n--- step 2 : read {\"end_line\":52,\"file\":\"src/settings.rs\",\"start_line\":1} ---\nsrc/settings.rs lines 1-52 of 52:\n    1 | //! The settings every component in the process shares.\n    2 | \n    3 | use std::cell::Cell;\n    4 | \n    5 | /// Operator settings.\n    6 | ///\n    7 | /// A `Settings` value is a live view rather than a snapshot: the control\n    8 | /// channel installs new values into it while the process is running (see\n    9 | /// [`crate::reload`]), and every component holding a reference is expected to\n   10 | /// observe the new value on its next read. The interior mutability is what\n   11 | /// makes that possible without unique access to something the whole process\n   12 | /// borrows.\n   13 | #[derive(Debug)]\n   14 | pub struct Settings {\n   15 |     concurrent_jobs: Cell<u32>,\n   16 | }\n   17 | \n   18 | impl Settings {\n   19 |     pub fn new(concurrent_jobs: u32) -> Self {\n   20 |         Self {\n   21 |             concurrent_jobs: Cell::new(concurrent_jobs),\n   22 |         }\n   23 |     }\n   24 | \n   25 |     /// How many jobs may be in flight at once, as of right now.\n   26 |     pub fn concurrent_jobs(&self) -> u32 {\n   27 |         self.concurrent_jobs.get()\n   28 |     }\n   29 | \n   30 |     /// Install a new value. Every holder of a `&Settings` sees it from here on.\n   31 |     pub fn set_concurrent_jobs(&self, jobs: u32) {\n   32 |         self.concurrent_jobs.set(jobs);\n   33 |     }\n   34 | }\n   35 | \n   36 | #[cfg(test)]\n   37 | mod tests {\n   38 |     use super::*;\n   39 | \n   40 |     #[test]\n   41 |     fn a_reference_taken_earlier_sees_the_new_value() {\n   42 |         let s = Settings::new(2);\n   43 |         let view: &Settings = &s;\n   44 |         s.set_concurrent_jobs(9);\n   45 |         assert_eq!(view.concurrent_jobs(), 9);\n   46 |     }\n   47 | \n   48 |     #[test]\n   49 |     fn the_initial_value_is_what_was_configured() {\n   50 |         assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n   51 |     }\n   52 | }\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"arguments\": {\n    \"file\": \"src/reload.rs\",\n    \"start_line\": 1,\n    \"end_line\": 40\n  },\n  \"done\": false,\n  \"rationale\": \"Check src/reload.rs to confirm how dynamic reloading / mutation of Settings is implemented in the codebase.\",\n  \"tool\": \"read\"\n}",
+      "usage": {
+        "input_tokens": 1863,
+        "output_tokens": 159,
+        "total_tokens": 2022
+      },
+      "latency_ms": 6910,
+      "attempts": 2
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t3",
+      "candidate_id": "n04-limiter-snapshot-limit-adv-1",
+      "tool": "read",
+      "arguments": {
+        "end_line": 40,
+        "file": "src/reload.rs",
+        "start_line": 1
+      },
+      "response": "src/reload.rs lines 1-40 of 41:\n    1 | //! The control channel: applies operator updates to the live settings.\n    2 | \n    3 | use crate::settings::Settings;\n    4 | \n    5 | /// One instruction from the operator.\n    6 | #[derive(Debug, Clone, Copy, PartialEq, Eq)]\n    7 | pub enum Update {\n    8 |     ConcurrentJobs(u32),\n    9 | }\n   10 | \n   11 | /// Apply an update to the process settings.\n   12 | ///\n   13 | /// This runs mid-flight, from the same loop that starts jobs: the runner polls\n   14 | /// the control channel between job starts, so admission control is already\n   15 | /// built and running when an update arrives. Raising the value is how an\n   16 | /// operator opens the throttle; lowering it is how they shed load without a\n   17 | /// restart.\n   18 | pub fn apply(settings: &Settings, update: Update) {\n   19 |     match update {\n   20 |         Update::ConcurrentJobs(n) => settings.set_concurrent_jobs(n),\n   21 |     }\n   22 | }\n   23 | \n   24 | #[cfg(test)]\n   25 | mod tests {\n   26 |     use super::*;\n   27 | \n   28 |     #[test]\n   29 |     fn an_update_raises_the_limit() {\n   30 |         let s = Settings::new(2);\n   31 |         apply(&s, Update::ConcurrentJobs(8));\n   32 |         assert_eq!(s.concurrent_jobs(), 8);\n   33 |     }\n   34 | \n   35 |     #[test]\n   36 |     fn an_update_lowers_the_limit() {\n   37 |         let s = Settings::new(8);\n   38 |         apply(&s, Update::ConcurrentJobs(1));\n   39 |         assert_eq!(s.concurrent_jobs(), 1);\n   40 |     }\n",
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nSnapshotting concurrent_jobs in Limiter::new prevents Limiter from observing dynamic updates to Settings during process execution.\n\nLocation: src/limiter.rs:15-20\n\n## Falsification question\n\nDoes the codebase support or implement any dynamic reloading or mutation of `Settings` during process execution?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/limiter.rs\n+++ b/src/limiter.rs\n@@ -6,22 +6,22 @@\n ///\n /// One limiter is built when the runner starts and lives for as long as the\n /// process does; `try_start` runs on every job start.\n-pub struct Limiter<'a> {\n-    settings: &'a Settings,\n+pub struct Limiter {\n+    concurrent_jobs: u32,\n     running: u32,\n }\n \n-impl<'a> Limiter<'a> {\n-    pub fn new(settings: &'a Settings) -> Self {\n+impl Limiter {\n+    pub fn new(settings: &Settings) -> Self {\n         Self {\n-            settings,\n+            concurrent_jobs: settings.concurrent_jobs(),\n             running: 0,\n         }\n     }\n \n     /// Admit one job if there is room for it.\n     pub fn try_start(&mut self) -> bool {\n-        if self.running >= self.settings.concurrent_jobs() {\n+        if self.running >= self.concurrent_jobs {\n             return false;\n         }\n         self.running += 1;\n\n```\n\n## Already looked up during this review\n\nThese are results of earlier tool calls on this repository, recorded so you do\nnot have to repeat them. They are lookups, not conclusions.\n\nsearch {\"pattern\":\"Settings\"} -> 17 match(es) for \"Settings\":\nread {\"end_line\":52,\"file\":\"src/settings.rs\",\"start_line\":1} -> src/settings.rs lines 1-52 of 52:\nread {\"end_line\":40,\"file\":\"src/reload.rs\",\"start_line\":1} -> src/reload.rs lines 1-40 of 41:\n\n## Investigation so far\n\n\n--- step 1 : search {\"pattern\":\"Settings\"} ---\n17 match(es) for \"Settings\":\nsrc/limiter.rs:3: use crate::settings::Settings;\nsrc/limiter.rs:15:     pub fn new(settings: &Settings) -> Self {\nsrc/limiter.rs:48:         let s = Settings::new(2);\nsrc/limiter.rs:58:         let s = Settings::new(1);\nsrc/limiter.rs:69:         let s = Settings::new(4);\nsrc/limiter.rs:77:         let s = Settings::new(0);\nsrc/reload.rs:3: use crate::settings::Settings;\nsrc/reload.rs:18: pub fn apply(settings: &Settings, update: Update) {\nsrc/reload.rs:30:         let s = Settings::new(2);\nsrc/reload.rs:37:         let s = Settings::new(8);\nsrc/settings.rs:7: /// A `Settings` value is a live view rather than a snapshot: the control\nsrc/settings.rs:14: pub struct Settings {\nsrc/settings.rs:18: impl Settings {\nsrc/settings.rs:30:     /// Install a new value. Every holder of a `&Settings` sees it from here on.\nsrc/settings.rs:42:         let s = Settings::new(2);\nsrc/settings.rs:43:         let view: &Settings = &s;\nsrc/settings.rs:50:         assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n\n\n--- step 2 : read {\"end_line\":52,\"file\":\"src/settings.rs\",\"start_line\":1} ---\nsrc/settings.rs lines 1-52 of 52:\n    1 | //! The settings every component in the process shares.\n    2 | \n    3 | use std::cell::Cell;\n    4 | \n    5 | /// Operator settings.\n    6 | ///\n    7 | /// A `Settings` value is a live view rather than a snapshot: the control\n    8 | /// channel installs new values into it while the process is running (see\n    9 | /// [`crate::reload`]), and every component holding a reference is expected to\n   10 | /// observe the new value on its next read. The interior mutability is what\n   11 | /// makes that possible without unique access to something the whole process\n   12 | /// borrows.\n   13 | #[derive(Debug)]\n   14 | pub struct Settings {\n   15 |     concurrent_jobs: Cell<u32>,\n   16 | }\n   17 | \n   18 | impl Settings {\n   19 |     pub fn new(concurrent_jobs: u32) -> Self {\n   20 |         Self {\n   21 |             concurrent_jobs: Cell::new(concurrent_jobs),\n   22 |         }\n   23 |     }\n   24 | \n   25 |     /// How many jobs may be in flight at once, as of right now.\n   26 |     pub fn concurrent_jobs(&self) -> u32 {\n   27 |         self.concurrent_jobs.get()\n   28 |     }\n   29 | \n   30 |     /// Install a new value. Every holder of a `&Settings` sees it from here on.\n   31 |     pub fn set_concurrent_jobs(&self, jobs: u32) {\n   32 |         self.concurrent_jobs.set(jobs);\n   33 |     }\n   34 | }\n   35 | \n   36 | #[cfg(test)]\n   37 | mod tests {\n   38 |     use super::*;\n   39 | \n   40 |     #[test]\n   41 |     fn a_reference_taken_earlier_sees_the_new_value() {\n   42 |         let s = Settings::new(2);\n   43 |         let view: &Settings = &s;\n   44 |         s.set_concurrent_jobs(9);\n   45 |         assert_eq!(view.concurrent_jobs(), 9);\n   46 |     }\n   47 | \n   48 |     #[test]\n   49 |     fn the_initial_value_is_what_was_configured() {\n   50 |         assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n   51 |     }\n   52 | }\n\n\n--- step 3 : read {\"end_line\":40,\"file\":\"src/reload.rs\",\"start_line\":1} ---\nsrc/reload.rs lines 1-40 of 41:\n    1 | //! The control channel: applies operator updates to the live settings.\n    2 | \n    3 | use crate::settings::Settings;\n    4 | \n    5 | /// One instruction from the operator.\n    6 | #[derive(Debug, Clone, Copy, PartialEq, Eq)]\n    7 | pub enum Update {\n    8 |     ConcurrentJobs(u32),\n    9 | }\n   10 | \n   11 | /// Apply an update to the process settings.\n   12 | ///\n   13 | /// This runs mid-flight, from the same loop that starts jobs: the runner polls\n   14 | /// the control channel between job starts, so admission control is already\n   15 | /// built and running when an update arrives. Raising the value is how an\n   16 | /// operator opens the throttle; lowering it is how they shed load without a\n   17 | /// restart.\n   18 | pub fn apply(settings: &Settings, update: Update) {\n   19 |     match update {\n   20 |         Update::ConcurrentJobs(n) => settings.set_concurrent_jobs(n),\n   21 |     }\n   22 | }\n   23 | \n   24 | #[cfg(test)]\n   25 | mod tests {\n   26 |     use super::*;\n   27 | \n   28 |     #[test]\n   29 |     fn an_update_raises_the_limit() {\n   30 |         let s = Settings::new(2);\n   31 |         apply(&s, Update::ConcurrentJobs(8));\n   32 |         assert_eq!(s.concurrent_jobs(), 8);\n   33 |     }\n   34 | \n   35 |     #[test]\n   36 |     fn an_update_lowers_the_limit() {\n   37 |         let s = Settings::new(8);\n   38 |         apply(&s, Update::ConcurrentJobs(1));\n   39 |         assert_eq!(s.concurrent_jobs(), 1);\n   40 |     }\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": true,\n  \"tool\": null,\n  \"arguments\": null,\n  \"rationale\": \"The codebase explicitly supports and implements dynamic mutation/reloading of `Settings` during process execution. `Settings` uses `Cell<u32>` for interior mutability with `Settings::set_concurrent_jobs`, and `reload::apply` provides the mechanism to apply `Update::ConcurrentJobs` dynamically to live `Settings` mid-flight.\"\n}",
+      "usage": {
+        "input_tokens": 2438,
+        "output_tokens": 405,
+        "total_tokens": 2843
+      },
+      "latency_ms": 6236,
+      "attempts": 1
+    },
+    {
+      "event": "EvidenceAssembled",
+      "candidate_id": "n04-limiter-snapshot-limit-adv-1",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/limiter.rs",
+          "start_line": 1,
+          "end_line": 35,
+          "excerpt": "    1 | //! Admission control: decides whether one more job may start.\n    2 | \n    3 | use crate::settings::Settings;\n    4 | \n    5 | /// Gate in front of the job runner.\n    6 | ///\n    7 | /// One limiter is built when the runner starts and lives for as long as the\n    8 | /// process does; `try_start` runs on every job start.\n    9 | pub struct Limiter {\n   10 |     concurrent_jobs: u32,\n   11 |     running: u32,\n   12 | }\n   13 | \n   14 | impl Limiter {\n   15 |     pub fn new(settings: &Settings) -> Self {\n   16 |         Self {\n   17 |             concurrent_jobs: settings.concurrent_jobs(),\n   18 |             running: 0,\n   19 |         }\n   20 |     }\n   21 | \n   22 |     /// Admit one job if there is room for it.\n   23 |     pub fn try_start(&mut self) -> bool {\n   24 |         if self.running >= self.concurrent_jobs {\n   25 |             return false;\n   26 |         }\n   27 |         self.running += 1;\n   28 |         true\n   29 |     }\n   30 | \n   31 |     /// Report that a job finished and gave its slot back.\n   32 |     pub fn finish(&mut self) {\n   33 |         self.running = self.running.saturating_sub(1);\n   34 |     }\n   35 | ",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-claimed-region"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 3,
+          "end_line": 3,
+          "symbol": "Settings",
+          "excerpt": "use crate::settings::Settings;",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 15,
+          "end_line": 15,
+          "symbol": "Settings",
+          "excerpt": "    pub fn new(settings: &Settings) -> Self {",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 48,
+          "end_line": 48,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(2);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 58,
+          "end_line": 58,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(1);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 69,
+          "end_line": 69,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(4);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 77,
+          "end_line": 77,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(0);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/reload.rs",
+          "start_line": 3,
+          "end_line": 3,
+          "symbol": "Settings",
+          "excerpt": "use crate::settings::Settings;",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/reload.rs",
+          "start_line": 18,
+          "end_line": 18,
+          "symbol": "Settings",
+          "excerpt": "pub fn apply(settings: &Settings, update: Update) {",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/reload.rs",
+          "start_line": 30,
+          "end_line": 30,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(2);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/reload.rs",
+          "start_line": 37,
+          "end_line": 37,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(8);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "Settings",
+          "excerpt": "/// A `Settings` value is a live view rather than a snapshot: the control",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 14,
+          "end_line": 14,
+          "symbol": "Settings",
+          "excerpt": "pub struct Settings {",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 18,
+          "end_line": 18,
+          "symbol": "Settings",
+          "excerpt": "impl Settings {",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 30,
+          "end_line": 30,
+          "symbol": "Settings",
+          "excerpt": "    /// Install a new value. Every holder of a `&Settings` sees it from here on.",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 42,
+          "end_line": 42,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(2);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 43,
+          "end_line": 43,
+          "symbol": "Settings",
+          "excerpt": "        let view: &Settings = &s;",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 50,
+          "end_line": 50,
+          "symbol": "Settings",
+          "excerpt": "        assert_eq!(Settings::new(3).concurrent_jobs(), 3);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/settings.rs",
+          "start_line": 1,
+          "end_line": 52,
+          "excerpt": "    1 | //! The settings every component in the process shares.\n    2 | \n    3 | use std::cell::Cell;\n    4 | \n    5 | /// Operator settings.\n    6 | ///\n    7 | /// A `Settings` value is a live view rather than a snapshot: the control\n    8 | /// channel installs new values into it while the process is running (see\n    9 | /// [`crate::reload`]), and every component holding a reference is expected to\n   10 | /// observe the new value on its next read. The interior mutability is what\n   11 | /// makes that possible without unique access to something the whole process\n   12 | /// borrows.\n   13 | #[derive(Debug)]\n   14 | pub struct Settings {\n   15 |     concurrent_jobs: Cell<u32>,\n   16 | }\n   17 | \n   18 | impl Settings {\n   19 |     pub fn new(concurrent_jobs: u32) -> Self {\n   20 |         Self {\n   21 |             concurrent_jobs: Cell::new(concurrent_jobs),\n   22 |         }\n   23 |     }\n   24 | \n   25 |     /// How many jobs may be in flight at once, as of right now.\n   26 |     pub fn concurrent_jobs(&self) -> u32 {\n   27 |         self.concurrent_jobs.get()\n   28 |     }\n   29 | \n   30 |     /// Install a new value. Every holder of a `&Settings` sees it from here on.\n   31 |     pub fn set_concurrent_jobs(&self, jobs: u32) {\n   32 |         self.concurrent_jobs.set(jobs);\n   33 |     }\n   34 | }\n   35 | \n   36 | #[cfg(test)]\n   37 | mod tests {\n   38 |     use super::*;\n   39 | \n   40 |     #[test]\n   41 |     fn a_reference_taken_earlier_sees_the_new_value() {\n   42 |         let s = Settings::new(2);\n   43 |         let view: &Settings = &s;\n   44 |         s.set_concurrent_jobs(9);\n   45 |         assert_eq!(view.concurrent_jobs(), 9);\n   46 |     }\n   47 | \n   48 |     #[test]\n   49 |     fn the_initial_value_is_what_was_configured() {\n   50 |         assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n   51 |     }\n   52 | }",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t2"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/reload.rs",
+          "start_line": 1,
+          "end_line": 40,
+          "excerpt": "    1 | //! The control channel: applies operator updates to the live settings.\n    2 | \n    3 | use crate::settings::Settings;\n    4 | \n    5 | /// One instruction from the operator.\n    6 | #[derive(Debug, Clone, Copy, PartialEq, Eq)]\n    7 | pub enum Update {\n    8 |     ConcurrentJobs(u32),\n    9 | }\n   10 | \n   11 | /// Apply an update to the process settings.\n   12 | ///\n   13 | /// This runs mid-flight, from the same loop that starts jobs: the runner polls\n   14 | /// the control channel between job starts, so admission control is already\n   15 | /// built and running when an update arrives. Raising the value is how an\n   16 | /// operator opens the throttle; lowering it is how they shed load without a\n   17 | /// restart.\n   18 | pub fn apply(settings: &Settings, update: Update) {\n   19 |     match update {\n   20 |         Update::ConcurrentJobs(n) => settings.set_concurrent_jobs(n),\n   21 |     }\n   22 | }\n   23 | \n   24 | #[cfg(test)]\n   25 | mod tests {\n   26 |     use super::*;\n   27 | \n   28 |     #[test]\n   29 |     fn an_update_raises_the_limit() {\n   30 |         let s = Settings::new(2);\n   31 |         apply(&s, Update::ConcurrentJobs(8));\n   32 |         assert_eq!(s.concurrent_jobs(), 8);\n   33 |     }\n   34 | \n   35 |     #[test]\n   36 |     fn an_update_lowers_the_limit() {\n   37 |         let s = Settings::new(8);\n   38 |         apply(&s, Update::ConcurrentJobs(1));\n   39 |         assert_eq!(s.concurrent_jobs(), 1);\n   40 |     }",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t3"
+        }
+      ]
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Verify",
+      "prompt_version": "fresh-verify/v5",
+      "system": "You are deciding whether a body of evidence establishes that a codebase has a real defect.\n\nYou did not write the claim and have no stake in it. Someone asserted it; your\ntask is to weigh the evidence.\n\nDecide one of:\n\n  \"Supports\"      - the evidence establishes a real defect, as claimed.\n  \"Contradicts\"   - the evidence establishes that this is not a defect.\n  \"Insufficient\"  - the evidence does not settle it either way.\n\nRules:\n- Judge only from the evidence provided. Do not assume facts about code you\n  were not shown.\n- Absence of evidence is not evidence. If the excerpts do not cover what the\n  claim depends on, the answer is \"Insufficient\", not \"Supports\".\n- \"Insufficient\" is a perfectly good answer and is expected to be common.\n- Quote the specific excerpts that decided it.\n\nWeigh comments by whether the repository could check them:\n\n- A comment asserting something the repository itself can settle — which\n  callers exist, what they pass, whether a guard runs first, whether a\n  constructor rejects a value — is a CLAIM, not evidence. It is exactly the\n  kind of thing that is wrong when the code is wrong. \"Callers check first\"\n  written above a function tells you what the author believed, not what the\n  callers do. Go and look at the call sites; if the evidence asserts something\n  about callers but contains no callers, that is \"Insufficient\", never\n  \"Contradicts\". A documented precondition does not make violating it\n  acceptable — the question is whether anything violates it.\n\n- A comment stating a fact from outside the repository — a database column\n  type, a wire-protocol constant, the size of production inputs, what a\n  downstream consumer requires — is different. Nothing in the repository can\n  confirm or refute it, and the people who wrote it knew things you do not.\n  Treat it as the best available evidence and reason from it. Do not dismiss a\n  finding merely because such a fact came from a comment rather than from\n  code; that standard would make every claim about the real world\n  unverifiable.\n\nA true statement is not automatically a defect:\n\n- You are judging the finding, not the sentence. Many claims are accurate\n  descriptions of the code that identify nothing wrong with it: a type that\n  does not derive a trait nobody needs, a function returning `Option` that\n  never returns `None`, a name someone dislikes. Confirming the description is\n  accurate does not make any of these a defect.\n- Ask what goes wrong, and for whom. If the evidence does not show incorrect\n  behaviour, a crash, data loss, a violated contract, a security consequence,\n  or a real cost at the scale the code actually runs at, then this is not a\n  defect and the answer is \"Contradicts\" — however accurate the claim is.\n- Reporting a true triviality wastes human attention just as surely as\n  reporting something false, so hold both to the same bar.\n\nReachability is part of the claim, not a separate question:\n\n- Most claims depend on the code reaching some state — a collection being\n  empty, a key being absent, a number being out of range, a caller passing a\n  particular value. Confirming that the code WOULD misbehave in that state\n  settles only half of it.\n- Code that would misbehave in a state it can never actually be in is not a\n  defect. If the evidence shows the state is prevented — by a constructor, a\n  guard, a type, or an invariant every mutation preserves — then the evidence\n  CONTRADICTS the claim, however faithfully the mechanism was described.\n- So do not answer \"Supports\" merely because the described mechanism is real.\n  Answer \"Supports\" only when the evidence also shows the triggering state is\n  reachable. If the evidence settles the mechanism but leaves reachability\n  open, that is \"Insufficient\".\n\nReturn JSON of exactly this shape:\n\n{\n  \"outcome\": \"Supports\" | \"Contradicts\" | \"Insufficient\",\n  \"rationale\": \"<2-4 sentences explaining what the evidence shows>\",\n  \"decisive_evidence\": [\"<short quote or file:line reference>\", ...]\n}",
+      "user": "## Claim\n\nSnapshotting concurrent_jobs in Limiter::new prevents Limiter from observing dynamic updates to Settings during process execution.\n\nStated location: src/limiter.rs:15-20\n\n## Question the evidence was gathered to answer\n\nDoes the codebase support or implement any dynamic reloading or mutation of `Settings` during process execution?\n\n## Evidence gathered from the repository\n\n[E1] DiffHunk from src/limiter.rs:1-35\n    1 | //! Admission control: decides whether one more job may start.\n    2 | \n    3 | use crate::settings::Settings;\n    4 | \n    5 | /// Gate in front of the job runner.\n    6 | ///\n    7 | /// One limiter is built when the runner starts and lives for as long as the\n    8 | /// process does; `try_start` runs on every job start.\n    9 | pub struct Limiter {\n   10 |     concurrent_jobs: u32,\n   11 |     running: u32,\n   12 | }\n   13 | \n   14 | impl Limiter {\n   15 |     pub fn new(settings: &Settings) -> Self {\n   16 |         Self {\n   17 |             concurrent_jobs: settings.concurrent_jobs(),\n   18 |             running: 0,\n   19 |         }\n   20 |     }\n   21 | \n   22 |     /// Admit one job if there is room for it.\n   23 |     pub fn try_start(&mut self) -> bool {\n   24 |         if self.running >= self.concurrent_jobs {\n   25 |             return false;\n   26 |         }\n   27 |         self.running += 1;\n   28 |         true\n   29 |     }\n   30 | \n   31 |     /// Report that a job finished and gave its slot back.\n   32 |     pub fn finish(&mut self) {\n   33 |         self.running = self.running.saturating_sub(1);\n   34 |     }\n   35 | \n\n[E2] Search from src/limiter.rs:3\nuse crate::settings::Settings;\n\n[E3] Search from src/limiter.rs:15\n    pub fn new(settings: &Settings) -> Self {\n\n[E4] Search from src/limiter.rs:48\n        let s = Settings::new(2);\n\n[E5] Search from src/limiter.rs:58\n        let s = Settings::new(1);\n\n[E6] Search from src/limiter.rs:69\n        let s = Settings::new(4);\n\n[E7] Search from src/limiter.rs:77\n        let s = Settings::new(0);\n\n[E8] Search from src/reload.rs:3\nuse crate::settings::Settings;\n\n[E9] Search from src/reload.rs:18\npub fn apply(settings: &Settings, update: Update) {\n\n[E10] Search from src/reload.rs:30\n        let s = Settings::new(2);\n\n[E11] Search from src/reload.rs:37\n        let s = Settings::new(8);\n\n[E12] Search from src/settings.rs:7\n/// A `Settings` value is a live view rather than a snapshot: the control\n\n[E13] Search from src/settings.rs:14\npub struct Settings {\n\n[E14] Search from src/settings.rs:18\nimpl Settings {\n\n[E15] Search from src/settings.rs:30\n    /// Install a new value. Every holder of a `&Settings` sees it from here on.\n\n[E16] Search from src/settings.rs:42\n        let s = Settings::new(2);\n\n[E17] Search from src/settings.rs:43\n        let view: &Settings = &s;\n\n[E18] Search from src/settings.rs:50\n        assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n\n[E19] FileRegion from src/settings.rs:1-52\n    1 | //! The settings every component in the process shares.\n    2 | \n    3 | use std::cell::Cell;\n    4 | \n    5 | /// Operator settings.\n    6 | ///\n    7 | /// A `Settings` value is a live view rather than a snapshot: the control\n    8 | /// channel installs new values into it while the process is running (see\n    9 | /// [`crate::reload`]), and every component holding a reference is expected to\n   10 | /// observe the new value on its next read. The interior mutability is what\n   11 | /// makes that possible without unique access to something the whole process\n   12 | /// borrows.\n   13 | #[derive(Debug)]\n   14 | pub struct Settings {\n   15 |     concurrent_jobs: Cell<u32>,\n   16 | }\n   17 | \n   18 | impl Settings {\n   19 |     pub fn new(concurrent_jobs: u32) -> Self {\n   20 |         Self {\n   21 |             concurrent_jobs: Cell::new(concurrent_jobs),\n   22 |         }\n   23 |     }\n   24 | \n   25 |     /// How many jobs may be in flight at once, as of right now.\n   26 |     pub fn concurrent_jobs(&self) -> u32 {\n   27 |         self.concurrent_jobs.get()\n   28 |     }\n   29 | \n   30 |     /// Install a new value. Every holder of a `&Settings` sees it from here on.\n   31 |     pub fn set_concurrent_jobs(&self, jobs: u32) {\n   32 |         self.concurrent_jobs.set(jobs);\n   33 |     }\n   34 | }\n   35 | \n   36 | #[cfg(test)]\n   37 | mod tests {\n   38 |     use super::*;\n   39 | \n   40 |     #[test]\n   41 |     fn a_reference_taken_earlier_sees_the_new_value() {\n   42 |         let s = Settings::new(2);\n   43 |         let view: &Settings = &s;\n   44 |         s.set_concurrent_jobs(9);\n   45 |         assert_eq!(view.concurrent_jobs(), 9);\n   46 |     }\n   47 | \n   48 |     #[test]\n   49 |     fn the_initial_value_is_what_was_configured() {\n   50 |         assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n   51 |     }\n   52 | }\n\n[E20] FileRegion from src/reload.rs:1-40\n    1 | //! The control channel: applies operator updates to the live settings.\n    2 | \n    3 | use crate::settings::Settings;\n    4 | \n    5 | /// One instruction from the operator.\n    6 | #[derive(Debug, Clone, Copy, PartialEq, Eq)]\n    7 | pub enum Update {\n    8 |     ConcurrentJobs(u32),\n    9 | }\n   10 | \n   11 | /// Apply an update to the process settings.\n   12 | ///\n   13 | /// This runs mid-flight, from the same loop that starts jobs: the runner polls\n   14 | /// the control channel between job starts, so admission control is already\n   15 | /// built and running when an update arrives. Raising the value is how an\n   16 | /// operator opens the throttle; lowering it is how they shed load without a\n   17 | /// restart.\n   18 | pub fn apply(settings: &Settings, update: Update) {\n   19 |     match update {\n   20 |         Update::ConcurrentJobs(n) => settings.set_concurrent_jobs(n),\n   21 |     }\n   22 | }\n   23 | \n   24 | #[cfg(test)]\n   25 | mod tests {\n   26 |     use super::*;\n   27 | \n   28 |     #[test]\n   29 |     fn an_update_raises_the_limit() {\n   30 |         let s = Settings::new(2);\n   31 |         apply(&s, Update::ConcurrentJobs(8));\n   32 |         assert_eq!(s.concurrent_jobs(), 8);\n   33 |     }\n   34 | \n   35 |     #[test]\n   36 |     fn an_update_lowers_the_limit() {\n   37 |         let s = Settings::new(8);\n   38 |         apply(&s, Update::ConcurrentJobs(1));\n   39 |         assert_eq!(s.concurrent_jobs(), 1);\n   40 |     }\n\n\n\nDoes the evidence support the claim, contradict it, or leave it unsettled?",
+      "response_text": "{\n  \"outcome\": \"Supports\",\n  \"rationale\": \"The codebase implements dynamic updates to `Settings` via `reload::apply` using interior mutability (`Cell<u32>`), designed to allow updates during process execution. However, `Limiter::new` copies `concurrent_jobs` into an owned `u32` field on initialization, and `Limiter::try_start` checks only this stored value rather than reading from `Settings`, preventing `Limiter` from observing any runtime updates.\",\n  \"decisive_evidence\": [\n    \"src/limiter.rs:15-20\",\n    \"src/limiter.rs:24\",\n    \"src/settings.rs:7-12\",\n    \"src/reload.rs:18-22\"\n  ]\n}",
+      "usage": {
+        "input_tokens": 3062,
+        "output_tokens": 499,
+        "total_tokens": 3561
+      },
+      "latency_ms": 8571,
+      "attempts": 1
+    },
+    {
+      "event": "Verification",
+      "candidate_id": "n04-limiter-snapshot-limit-adv-1",
+      "result": {
+        "outcome": "Supports",
+        "rationale": "The codebase implements dynamic updates to `Settings` via `reload::apply` using interior mutability (`Cell<u32>`), designed to allow updates during process execution. However, `Limiter::new` copies `concurrent_jobs` into an owned `u32` field on initialization, and `Limiter::try_start` checks only this stored value rather than reading from `Settings`, preventing `Limiter` from observing any runtime updates.",
+        "decisive_evidence": [
+          "src/limiter.rs:15-20",
+          "src/limiter.rs:24",
+          "src/settings.rs:7-12",
+          "src/reload.rs:18-22"
+        ]
+      }
+    },
+    {
+      "event": "Decision",
+      "candidate_id": "n04-limiter-snapshot-limit-adv-1",
+      "status": "Verified",
+      "reason": "fresh-context verification found the evidence supports the claim, backed by 19 repository evidence item(s)"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "n04-limiter-snapshot-limit-adv-1",
+      "issue_type": "StateManagement",
+      "severity": "Medium",
+      "location": {
+        "file": "src/limiter.rs",
+        "start_line": 15,
+        "end_line": 20
+      },
+      "claim": "Snapshotting concurrent_jobs in Limiter::new prevents Limiter from observing dynamic updates to Settings during process execution.",
+      "reasoning": "Previously, Limiter held a reference to Settings and queried settings.concurrent_jobs() on every try_start() call. If the runner or configuration system updates Settings at runtime (for example on configuration reload or SIGHUP), Limiter will continue enforcing the initial concurrency limit for the remainder of the process lifetime.",
+      "falsification_question": "Does the codebase support or implement any dynamic reloading or mutation of `Settings` during process execution?",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/limiter.rs",
+          "start_line": 1,
+          "end_line": 35,
+          "excerpt": "    1 | //! Admission control: decides whether one more job may start.\n    2 | \n    3 | use crate::settings::Settings;\n    4 | \n    5 | /// Gate in front of the job runner.\n    6 | ///\n    7 | /// One limiter is built when the runner starts and lives for as long as the\n    8 | /// process does; `try_start` runs on every job start.\n    9 | pub struct Limiter {\n   10 |     concurrent_jobs: u32,\n   11 |     running: u32,\n   12 | }\n   13 | \n   14 | impl Limiter {\n   15 |     pub fn new(settings: &Settings) -> Self {\n   16 |         Self {\n   17 |             concurrent_jobs: settings.concurrent_jobs(),\n   18 |             running: 0,\n   19 |         }\n   20 |     }\n   21 | \n   22 |     /// Admit one job if there is room for it.\n   23 |     pub fn try_start(&mut self) -> bool {\n   24 |         if self.running >= self.concurrent_jobs {\n   25 |             return false;\n   26 |         }\n   27 |         self.running += 1;\n   28 |         true\n   29 |     }\n   30 | \n   31 |     /// Report that a job finished and gave its slot back.\n   32 |     pub fn finish(&mut self) {\n   33 |         self.running = self.running.saturating_sub(1);\n   34 |     }\n   35 | ",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-claimed-region"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 3,
+          "end_line": 3,
+          "symbol": "Settings",
+          "excerpt": "use crate::settings::Settings;",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 15,
+          "end_line": 15,
+          "symbol": "Settings",
+          "excerpt": "    pub fn new(settings: &Settings) -> Self {",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 48,
+          "end_line": 48,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(2);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 58,
+          "end_line": 58,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(1);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 69,
+          "end_line": 69,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(4);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/limiter.rs",
+          "start_line": 77,
+          "end_line": 77,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(0);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/reload.rs",
+          "start_line": 3,
+          "end_line": 3,
+          "symbol": "Settings",
+          "excerpt": "use crate::settings::Settings;",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/reload.rs",
+          "start_line": 18,
+          "end_line": 18,
+          "symbol": "Settings",
+          "excerpt": "pub fn apply(settings: &Settings, update: Update) {",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/reload.rs",
+          "start_line": 30,
+          "end_line": 30,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(2);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/reload.rs",
+          "start_line": 37,
+          "end_line": 37,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(8);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "Settings",
+          "excerpt": "/// A `Settings` value is a live view rather than a snapshot: the control",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 14,
+          "end_line": 14,
+          "symbol": "Settings",
+          "excerpt": "pub struct Settings {",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 18,
+          "end_line": 18,
+          "symbol": "Settings",
+          "excerpt": "impl Settings {",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 30,
+          "end_line": 30,
+          "symbol": "Settings",
+          "excerpt": "    /// Install a new value. Every holder of a `&Settings` sees it from here on.",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 42,
+          "end_line": 42,
+          "symbol": "Settings",
+          "excerpt": "        let s = Settings::new(2);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 43,
+          "end_line": 43,
+          "symbol": "Settings",
+          "excerpt": "        let view: &Settings = &s;",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "Search",
+          "file": "src/settings.rs",
+          "start_line": 50,
+          "end_line": 50,
+          "symbol": "Settings",
+          "excerpt": "        assert_eq!(Settings::new(3).concurrent_jobs(), 3);",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t1"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/settings.rs",
+          "start_line": 1,
+          "end_line": 52,
+          "excerpt": "    1 | //! The settings every component in the process shares.\n    2 | \n    3 | use std::cell::Cell;\n    4 | \n    5 | /// Operator settings.\n    6 | ///\n    7 | /// A `Settings` value is a live view rather than a snapshot: the control\n    8 | /// channel installs new values into it while the process is running (see\n    9 | /// [`crate::reload`]), and every component holding a reference is expected to\n   10 | /// observe the new value on its next read. The interior mutability is what\n   11 | /// makes that possible without unique access to something the whole process\n   12 | /// borrows.\n   13 | #[derive(Debug)]\n   14 | pub struct Settings {\n   15 |     concurrent_jobs: Cell<u32>,\n   16 | }\n   17 | \n   18 | impl Settings {\n   19 |     pub fn new(concurrent_jobs: u32) -> Self {\n   20 |         Self {\n   21 |             concurrent_jobs: Cell::new(concurrent_jobs),\n   22 |         }\n   23 |     }\n   24 | \n   25 |     /// How many jobs may be in flight at once, as of right now.\n   26 |     pub fn concurrent_jobs(&self) -> u32 {\n   27 |         self.concurrent_jobs.get()\n   28 |     }\n   29 | \n   30 |     /// Install a new value. Every holder of a `&Settings` sees it from here on.\n   31 |     pub fn set_concurrent_jobs(&self, jobs: u32) {\n   32 |         self.concurrent_jobs.set(jobs);\n   33 |     }\n   34 | }\n   35 | \n   36 | #[cfg(test)]\n   37 | mod tests {\n   38 |     use super::*;\n   39 | \n   40 |     #[test]\n   41 |     fn a_reference_taken_earlier_sees_the_new_value() {\n   42 |         let s = Settings::new(2);\n   43 |         let view: &Settings = &s;\n   44 |         s.set_concurrent_jobs(9);\n   45 |         assert_eq!(view.concurrent_jobs(), 9);\n   46 |     }\n   47 | \n   48 |     #[test]\n   49 |     fn the_initial_value_is_what_was_configured() {\n   50 |         assert_eq!(Settings::new(3).concurrent_jobs(), 3);\n   51 |     }\n   52 | }",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t2"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/reload.rs",
+          "start_line": 1,
+          "end_line": 40,
+          "excerpt": "    1 | //! The control channel: applies operator updates to the live settings.\n    2 | \n    3 | use crate::settings::Settings;\n    4 | \n    5 | /// One instruction from the operator.\n    6 | #[derive(Debug, Clone, Copy, PartialEq, Eq)]\n    7 | pub enum Update {\n    8 |     ConcurrentJobs(u32),\n    9 | }\n   10 | \n   11 | /// Apply an update to the process settings.\n   12 | ///\n   13 | /// This runs mid-flight, from the same loop that starts jobs: the runner polls\n   14 | /// the control channel between job starts, so admission control is already\n   15 | /// built and running when an update arrives. Raising the value is how an\n   16 | /// operator opens the throttle; lowering it is how they shed load without a\n   17 | /// restart.\n   18 | pub fn apply(settings: &Settings, update: Update) {\n   19 |     match update {\n   20 |         Update::ConcurrentJobs(n) => settings.set_concurrent_jobs(n),\n   21 |     }\n   22 | }\n   23 | \n   24 | #[cfg(test)]\n   25 | mod tests {\n   26 |     use super::*;\n   27 | \n   28 |     #[test]\n   29 |     fn an_update_raises_the_limit() {\n   30 |         let s = Settings::new(2);\n   31 |         apply(&s, Update::ConcurrentJobs(8));\n   32 |         assert_eq!(s.concurrent_jobs(), 8);\n   33 |     }\n   34 | \n   35 |     #[test]\n   36 |     fn an_update_lowers_the_limit() {\n   37 |         let s = Settings::new(8);\n   38 |         apply(&s, Update::ConcurrentJobs(1));\n   39 |         assert_eq!(s.concurrent_jobs(), 1);\n   40 |     }",
+          "tool_call_id": "n04-limiter-snapshot-limit-adv-1-t3"
+        }
+      ],
+      "verification": {
+        "outcome": "Supports",
+        "rationale": "The codebase implements dynamic updates to `Settings` via `reload::apply` using interior mutability (`Cell<u32>`), designed to allow updates during process execution. However, `Limiter::new` copies `concurrent_jobs` into an owned `u32` field on initialization, and `Limiter::try_start` checks only this stored value rather than reading from `Settings`, preventing `Limiter` from observing any runtime updates.",
+        "decisive_evidence": [
+          "src/limiter.rs:15-20",
+          "src/limiter.rs:24",
+          "src/settings.rs:7-12",
+          "src/reload.rs:18-22"
+        ]
+      },
+      "status": "Verified",
+      "status_reason": "fresh-context verification found the evidence supports the claim, backed by 19 repository evidence item(s)"
+    }
+  ],
+  "usage": {
+    "input_tokens": 11776,
+    "output_tokens": 2146,
+    "total_tokens": 13922
+  },
+  "cost_usd": 0.0168795,
+  "runtime_ms": 50964,
+  "llm_calls": 7,
+  "tool_calls": 3,
+  "retries": 3
+}

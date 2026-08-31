@@ -1,0 +1,65 @@
+{
+  "trajectory_id": "3206e9a0-1abf-412b-b375-ce3cd681782c",
+  "case_id": "n06-catalog-binary-search",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T11:03:49.353897700+00:00",
+  "finished_at": "2026-08-31T11:03:56.380484200+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "memory_carries_content": false,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\n`find` locates an entry with `binary_search_by` on the catalogue's slice instead of scanning it. Dispatch calls this once per message and the catalogue holds a few thousand entries in production, so the scan showed up in profiles; the comparator matches an entry's name against the requested one.\n\n## Diff\n\n```diff\n--- a/src/lookup.rs\n+++ b/src/lookup.rs\n@@ -4,7 +4,9 @@\n \n /// The entry registered under `name`.\n pub fn find<'a>(catalog: &'a Catalog, name: &str) -> Option<&'a Entry> {\n-    catalog.entries().iter().find(|e| e.name == name)\n+    let items = catalog.entries();\n+    let index = items.binary_search_by(|e| e.name.as_str().cmp(name)).ok()?;\n+    Some(&items[index])\n }\n \n /// The target `name` routes to.\n\n```\n\n## Current contents of the changed files\n\n\n### src/lookup.rs\n\n```rust\n    1 | //! Name lookups against a built catalogue. This is the dispatch hot path.\n    2 | \n    3 | use crate::catalog::{Catalog, Entry};\n    4 | \n    5 | /// The entry registered under `name`.\n    6 | pub fn find<'a>(catalog: &'a Catalog, name: &str) -> Option<&'a Entry> {\n    7 |     let items = catalog.entries();\n    8 |     let index = items.binary_search_by(|e| e.name.as_str().cmp(name)).ok()?;\n    9 |     Some(&items[index])\n   10 | }\n   11 | \n   12 | /// The target `name` routes to.\n   13 | pub fn target(catalog: &Catalog, name: &str) -> Option<u32> {\n   14 |     find(catalog, name).map(|e| e.target)\n   15 | }\n   16 | \n   17 | #[cfg(test)]\n   18 | mod tests {\n   19 |     use super::*;\n   20 | \n   21 |     fn entry(name: &str, target: u32) -> Entry {\n   22 |         Entry {\n   23 |             name: name.to_string(),\n   24 |             target,\n   25 |         }\n   26 |     }\n   27 | \n   28 |     fn catalog() -> Catalog {\n   29 |         Catalog::build([\n   30 |             entry(\"delta\", 4),\n   31 |             entry(\"alpha\", 1),\n   32 |             entry(\"charlie\", 3),\n   33 |             entry(\"bravo\", 2),\n   34 |         ])\n   35 |     }\n   36 | \n   37 |     #[test]\n   38 |     fn every_registered_name_is_found() {\n   39 |         let c = catalog();\n   40 |         for (name, want) in [(\"alpha\", 1), (\"bravo\", 2), (\"charlie\", 3), (\"delta\", 4)] {\n   41 |             assert_eq!(find(&c, name).map(|e| e.target), Some(want));\n   42 |         }\n   43 |     }\n   44 | \n   45 |     #[test]\n   46 |     fn an_unregistered_name_is_not_found() {\n   47 |         let c = catalog();\n   48 |         assert!(find(&c, \"echo\").is_none());\n   49 |         assert!(find(&c, \"aardvark\").is_none());\n   50 |     }\n   51 | \n   52 |     #[test]\n   53 |     fn target_reports_the_registered_target() {\n   54 |         assert_eq!(target(&catalog(), \"charlie\"), Some(3));\n   55 |         assert_eq!(target(&catalog(), \"nobody\"), None);\n   56 |     }\n   57 | \n   58 |     #[test]\n   59 |     fn a_lookup_in_an_empty_catalog_finds_nothing() {\n   60 |         assert!(find(&Catalog::build([]), \"alpha\").is_none());\n   61 |     }\n   62 | }\n```\n",
+      "response_text": "{\n  \"findings\": []\n}",
+      "usage": {
+        "input_tokens": 1396,
+        "output_tokens": 914,
+        "total_tokens": 2310
+      },
+      "latency_ms": 7026,
+      "attempts": 1
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "0 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [],
+  "usage": {
+    "input_tokens": 1396,
+    "output_tokens": 914,
+    "total_tokens": 2310
+  },
+  "cost_usd": 0.0044745,
+  "runtime_ms": 7026,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

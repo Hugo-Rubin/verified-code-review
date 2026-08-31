@@ -1,0 +1,255 @@
+{
+  "aggregate": {
+    "agent": "Advanced",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 6,
+    "counts": {
+      "true_positives": 3,
+      "false_positives": 1,
+      "false_negatives": 1
+    },
+    "precision": 0.75,
+    "recall": 0.75,
+    "f1": 0.75,
+    "false_positives_per_case": 0.16666666666666666,
+    "manual_triage_findings_per_case": 0.6666666666666666,
+    "withheld_findings_per_case": 0.3333333333333333,
+    "mean_cost_usd_per_case": 0.021371499999999998,
+    "mean_runtime_ms_per_case": 49672.333333333336,
+    "mean_llm_calls_per_case": 7.166666666666667,
+    "mean_tool_calls_per_case": 3.1666666666666665,
+    "total_input_tokens": 78147,
+    "total_output_tokens": 18565,
+    "ablation": "None",
+    "evidence_accuracy": 1.0,
+    "evidence_audit": {
+      "total": 38,
+      "checkable": 38,
+      "accurate": 38,
+      "mismatches": []
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "n01-log-capacity-guard",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [
+        {
+          "expected_id": "n01-f1",
+          "location": "src/logger.rs:32-35",
+          "issue_type": "Correctness",
+          "description": "The guard now compares the number of buffered entries against `config.max_entries`, but the ring does not hold `max_entries` entries. `RingBuffer::with_capacity` clamps its request to `HARD_CAP` (64), so for any configuration above 64 the ring fills at 64 and `len()` can never reach `max_entries`. The guard therefore never fires: `append` keeps returning `Ok`, `RingBuffer::push` silently overwrites the oldest entry, and the documented contract that the logger reports `LogError::Full` rather than discarding anything is broken. `rejected()` also stays at zero, so the loss is invisible to operators. The replaced `buffer.is_full()` asked the ring about its own real capacity and was correct at any configured value."
+        }
+      ],
+      "withheld": 0
+    },
+    {
+      "case_id": "n02-batch-summary-counters",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "n02-batch-summary-counters-adv-1",
+          "expected_id": "n02-f1",
+          "location": "src/pipeline.rs:53-62",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "n03-editor-dirty-check",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "n03-editor-dirty-check-adv-2",
+          "expected_id": "n03-f1",
+          "location": "src/editor.rs:37-39",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [
+        {
+          "prediction_id": "n03-editor-dirty-check-adv-1",
+          "location": "src/editor.rs:34-40",
+          "issue_type": "Performance",
+          "claim": "Editor::run clones the entire document and computes two full-document checksums on every operation, causing O(N) memory allocations and CPU overhead on every edit."
+        }
+      ],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "n04-limiter-snapshot-limit",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "n04-limiter-snapshot-limit-adv-1",
+          "expected_id": "n04-f1",
+          "location": "src/limiter.rs:15-20",
+          "issue_type": "StateManagement"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "n05-frame-header-slice",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 1
+    },
+    {
+      "case_id": "n06-catalog-binary-search",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 1
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "n01-log-capacity-guard",
+      "trajectory_id": "503f26ee-d5c9-44f4-9708-9539eea5aa29",
+      "runtime_ms": 25954,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 1,
+      "input_tokens": 2234,
+      "output_tokens": 920,
+      "cost_usd": 0.0051255,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n02-batch-summary-counters",
+      "trajectory_id": "091ec655-cf31-4cc4-99bd-c625d0310aeb",
+      "runtime_ms": 32344,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 8223,
+      "output_tokens": 2708,
+      "cost_usd": 0.016322249999999996,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n03-editor-dirty-check",
+      "trajectory_id": "1d9b6415-f171-4ba2-a567-896782833a44",
+      "runtime_ms": 99135,
+      "llm_calls": 13,
+      "tool_calls": 6,
+      "retries": 2,
+      "input_tokens": 26384,
+      "output_tokens": 6814,
+      "cost_usd": 0.0453405,
+      "reported_findings": 2,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n04-limiter-snapshot-limit",
+      "trajectory_id": "80ba4bee-4ecf-4252-8cd0-093dc4164bb3",
+      "runtime_ms": 60118,
+      "llm_calls": 10,
+      "tool_calls": 6,
+      "retries": 2,
+      "input_tokens": 18667,
+      "output_tokens": 2904,
+      "cost_usd": 0.02489025,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n05-frame-header-slice",
+      "trajectory_id": "f7aaea40-6cdd-42e4-ae3f-f7fdd00ec5ed",
+      "runtime_ms": 40206,
+      "llm_calls": 8,
+      "tool_calls": 4,
+      "retries": 0,
+      "input_tokens": 14643,
+      "output_tokens": 2704,
+      "cost_usd": 0.02112225,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "n06-catalog-binary-search",
+      "trajectory_id": "cc6ef6c3-19c4-4532-a02a-0ac17bec208f",
+      "runtime_ms": 40277,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 1,
+      "input_tokens": 7996,
+      "output_tokens": 2515,
+      "cost_usd": 0.015428249999999998,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    }
+  ],
+  "by_category": [
+    {
+      "category": "Trap",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 4,
+      "counts": {
+        "true_positives": 3,
+        "false_positives": 1,
+        "false_negatives": 1
+      },
+      "precision": 0.75,
+      "recall": 0.75,
+      "f1": 0.75
+    }
+  ],
+  "line_tolerance": 3
+}

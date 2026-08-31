@@ -1,0 +1,114 @@
+{
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "provider": "Vertex",
+  "started_at": "2026-08-31T10:50:54.004858200+00:00",
+  "finished_at": "2026-08-31T10:51:49.888623900+00:00",
+  "benchmark_dir": "benchmark/holdout4",
+  "case_count": 6,
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "memory_carries_content": false,
+    "ablation": "None"
+  },
+  "stats": [
+    {
+      "case_id": "n01-log-capacity-guard",
+      "trajectory_id": "f0bcdeb7-324e-4208-81aa-2d2d6c0a1f73",
+      "runtime_ms": 3591,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1713,
+      "output_tokens": 341,
+      "cost_usd": 0.0025635,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n02-batch-summary-counters",
+      "trajectory_id": "d3b9df01-d6ab-47ce-8f72-3405c0f28108",
+      "runtime_ms": 14642,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1868,
+      "output_tokens": 1967,
+      "cost_usd": 0.00877725,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n03-editor-dirty-check",
+      "trajectory_id": "ff1d0f40-4f47-4d3e-b1a3-ae62723f9db9",
+      "runtime_ms": 18763,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1890,
+      "output_tokens": 2129,
+      "cost_usd": 0.00940125,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n04-limiter-snapshot-limit",
+      "trajectory_id": "0dbf0b74-0971-4507-bda7-b80d80af21b7",
+      "runtime_ms": 3817,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1694,
+      "output_tokens": 343,
+      "cost_usd": 0.00255675,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n05-frame-header-slice",
+      "trajectory_id": "1eb0d1c5-c6ba-4178-9d16-a5d1771e5134",
+      "runtime_ms": 5572,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1962,
+      "output_tokens": 476,
+      "cost_usd": 0.0032565000000000003,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "n06-catalog-binary-search",
+      "trajectory_id": "ff7a050a-a85c-4481-984b-e6f72c31d007",
+      "runtime_ms": 9488,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1396,
+      "output_tokens": 1049,
+      "cost_usd": 0.00498075,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    }
+  ]
+}

@@ -1,0 +1,245 @@
+{
+  "trajectory_id": "0688b14f-c97d-4462-a16d-3400727ff77d",
+  "case_id": "m02-frame-size-bound",
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T10:19:01.954875800+00:00",
+  "finished_at": "2026-08-31T10:19:41.335143700+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "memory_carries_content": false,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "advanced-review/v6",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nYou are producing CANDIDATE findings, not final ones. Nothing you write here\nreaches a human directly. Each candidate is investigated against the actual\nrepository and then independently adjudicated, and only what survives is\nreported. A candidate that turns out to be wrong costs almost nothing. A real\ndefect you never raised is never checked at all.\n\nSo err toward proposing. Raise anything a careful reviewer would want confirmed\nbefore approving this change, including things you expect will turn out to be\nfine.\n\n- Anchor each candidate to a specific file and line range.\n- State each claim as something that can actually happen, not as a\n  conditional. Write \"callers can reach this with an empty list, and it will\n  panic\", not \"this will panic if the list is empty\" — the second is true of\n  the code whether or not the situation ever arises, so it cannot be\n  disproved and is not a finding.\n- State each claim as a single falsifiable sentence — something repository\n  evidence could confirm or refute.\n- Every candidate must name a consequence: what goes wrong, and for whom.\n  Incorrect output, a panic, data loss, a violated contract, a security\n  consequence, or a real cost at the scale this code runs at. If you cannot\n  finish the sentence \"and so the user gets...\", it is not a candidate.\n  Missing trait derives, a signature that is more fallible than it needs to\n  be, and unused declarations are observations about the code, not defects —\n  leave them out. The investigation stage can settle whether a claim is true;\n  it cannot make a true triviality worth a reviewer's time.\n- Pay particular attention to anything whose correctness depends on facts that\n  are not visible in the changed files. If the code is only correct given some\n  assumption about the rest of the repository, that assumption is a candidate.\n- Apply that concretely. Where this change calls something whose definition you\n  cannot see here, ask what it must return or do for this code to be right, and\n  raise that as a candidate stating the assumption. A guard is only as good as\n  the thing it calls; a name suggests what a function does but does not\n  establish it. This is the single most common way a change that looks correct\n  in isolation turns out not to be, and it is precisely what the investigation\n  stage can settle in one lookup.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Avoid vague concerns such as \"this looks fragile\"; say what would go wrong.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nReturn {\"findings\": []} only if there is genuinely nothing worth checking.\n\nUnder-proposing is the expensive mistake at this stage. Include a candidate\neven when you suspect it is fine, and in particular whenever the code's\ncorrectness depends on something you cannot see in the changed files — a\ncaller, a constructor, an invariant asserted in a comment, a value's origin.\nThose are the candidates the investigation stage exists to settle, and it can\nonly settle the ones you raise.",
+      "user": "## Change under review\n\n`encode` now compares the payload length against `MAX_FRAME_BYTES`, the same constant `decode` enforces, so both directions of the protocol are written against one number. The `PayloadTooLarge` error it returns reports that constant as the limit it applied.\n\n## Diff\n\n```diff\n--- a/src/frame.rs\n+++ b/src/frame.rs\n@@ -26,10 +26,10 @@\n \n /// Encode `payload` into a single frame.\n pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n-    if payload.len() > MAX_PAYLOAD_BYTES {\n+    if payload.len() > MAX_FRAME_BYTES {\n         return Err(FrameError::PayloadTooLarge {\n             len: payload.len(),\n-            limit: MAX_PAYLOAD_BYTES,\n+            limit: MAX_FRAME_BYTES,\n         });\n     }\n \n\n```\n\n## Current contents of the changed files\n\n\n### src/frame.rs\n\n```rust\n    1 | //! Encoding and decoding of one frame.\n    2 | //!\n    3 | //! A frame is `HEADER_BYTES` of header followed by the payload. The header\n    4 | //! carries the payload length as a big-endian `u32`, then four reserved bytes.\n    5 | \n    6 | /// Size of the fixed header that precedes every payload.\n    7 | pub const HEADER_BYTES: usize = 8;\n    8 | \n    9 | /// The transport refuses to carry a frame larger than this, in either\n   10 | /// direction.\n   11 | pub const MAX_FRAME_BYTES: usize = 4096;\n   12 | \n   13 | /// The largest payload that still fits inside `MAX_FRAME_BYTES` once the\n   14 | /// header is accounted for.\n   15 | pub const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;\n   16 | \n   17 | #[derive(Debug, PartialEq, Eq)]\n   18 | pub enum FrameError {\n   19 |     /// The caller offered more payload than a frame can carry.\n   20 |     PayloadTooLarge { len: usize, limit: usize },\n   21 |     /// The peer sent a frame the transport will not carry.\n   22 |     FrameTooLarge { len: usize },\n   23 |     /// The frame ended before the header or the declared payload did.\n   24 |     Truncated,\n   25 | }\n   26 | \n   27 | /// Encode `payload` into a single frame.\n   28 | pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n   29 |     if payload.len() > MAX_FRAME_BYTES {\n   30 |         return Err(FrameError::PayloadTooLarge {\n   31 |             len: payload.len(),\n   32 |             limit: MAX_FRAME_BYTES,\n   33 |         });\n   34 |     }\n   35 | \n   36 |     let mut out = Vec::with_capacity(HEADER_BYTES + payload.len());\n   37 |     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());\n   38 |     out.extend_from_slice(&[0u8; 4]);\n   39 |     out.extend_from_slice(payload);\n   40 |     Ok(out)\n   41 | }\n   42 | \n   43 | /// Decode a frame back into its payload.\n   44 | pub fn decode(frame: &[u8]) -> Result<Vec<u8>, FrameError> {\n   45 |     if frame.len() > MAX_FRAME_BYTES {\n   46 |         return Err(FrameError::FrameTooLarge { len: frame.len() });\n   47 |     }\n   48 |     if frame.len() < HEADER_BYTES {\n   49 |         return Err(FrameError::Truncated);\n   50 |     }\n   51 | \n   52 |     let len = u32::from_be_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;\n   53 |     let body = frame\n   54 |         .get(HEADER_BYTES..HEADER_BYTES + len)\n   55 |         .ok_or(FrameError::Truncated)?;\n   56 |     Ok(body.to_vec())\n   57 | }\n   58 | \n   59 | #[cfg(test)]\n   60 | mod tests {\n   61 |     use super::*;\n   62 | \n   63 |     #[test]\n   64 |     fn round_trips_a_small_payload() {\n   65 |         let frame = encode(b\"hello\").unwrap();\n   66 |         assert_eq!(frame.len(), HEADER_BYTES + 5);\n   67 |         assert_eq!(decode(&frame), Ok(b\"hello\".to_vec()));\n   68 |     }\n   69 | \n   70 |     #[test]\n   71 |     fn round_trips_an_empty_payload() {\n   72 |         let frame = encode(b\"\").unwrap();\n   73 |         assert_eq!(decode(&frame), Ok(Vec::new()));\n   74 |     }\n   75 | \n   76 |     #[test]\n   77 |     fn refuses_an_oversized_payload() {\n   78 |         let huge = vec![0u8; 10_000];\n   79 |         assert!(matches!(\n   80 |             encode(&huge),\n   81 |             Err(FrameError::PayloadTooLarge { .. })\n   82 |         ));\n   83 |     }\n   84 | \n   85 |     #[test]\n   86 |     fn decode_refuses_an_oversized_frame() {\n   87 |         let huge = vec![0u8; 5_000];\n   88 |         assert!(matches!(\n   89 |             decode(&huge),\n   90 |             Err(FrameError::FrameTooLarge { .. })\n   91 |         ));\n   92 |     }\n   93 | \n   94 |     #[test]\n   95 |     fn decode_refuses_a_truncated_frame() {\n   96 |         assert_eq!(decode(&[0, 0, 0]), Err(FrameError::Truncated));\n   97 |         let mut frame = encode(b\"hello\").unwrap();\n   98 |         frame.truncate(HEADER_BYTES + 2);\n   99 |         assert_eq!(decode(&frame), Err(FrameError::Truncated));\n  100 |     }\n  101 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Validation\",\n      \"severity\": \"High\",\n      \"file\": \"src/frame.rs\",\n      \"start_line\": 29,\n      \"end_line\": 34,\n      \"claim\": \"Payloads larger than MAX_PAYLOAD_BYTES but not exceeding MAX_FRAME_BYTES produce encoded frames exceeding MAX_FRAME_BYTES that fail to decode.\",\n      \"reasoning\": \"A frame consists of HEADER_BYTES (8 bytes) plus the payload. Comparing payload.len() against MAX_FRAME_BYTES allows payloads up to 4096 bytes, resulting in an encoded frame up to 4104 bytes, which decode rejects with FrameTooLarge (and which violates the transport frame limit).\",\n      \"consequence\": \"and so the user gets an encoded frame that cannot be decoded by decode() and violates transport constraints\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 2498,
+        "output_tokens": 451,
+        "total_tokens": 2949
+      },
+      "latency_ms": 7354,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "m02-frame-size-bound-adv-1",
+        "issue_type": "Validation",
+        "severity": "High",
+        "location": {
+          "file": "src/frame.rs",
+          "start_line": 29,
+          "end_line": 34
+        },
+        "claim": "Payloads larger than MAX_PAYLOAD_BYTES but not exceeding MAX_FRAME_BYTES produce encoded frames exceeding MAX_FRAME_BYTES that fail to decode.",
+        "reasoning": "A frame consists of HEADER_BYTES (8 bytes) plus the payload. Comparing payload.len() against MAX_FRAME_BYTES allows payloads up to 4096 bytes, resulting in an encoded frame up to 4104 bytes, which decode rejects with FrameTooLarge (and which violates the transport frame limit)."
+      }
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Falsify",
+      "prompt_version": "advanced-falsify/v2",
+      "system": "You are helping test a code-review finding.\n\nGiven a claim about a defect, write the single most decisive question whose\nanswer would show the claim is WRONG. The question must be answerable by\ninspecting the repository: callers, implementations, tests, configuration, or\ntype definitions.\n\nAsk about the thing the claim actually depends on, not about the mechanism.\nWhether a function panics on a bad input is usually not in doubt and can be\nread off the body; whether anything ever hands it a bad input is the question.\nSo when a claim rests on how the code is used, ask about the call sites by\nname.\n\nGood: \"Does every caller of parse_row check is_empty() before indexing?\"\nBad:  \"Does parse_row panic when the row is empty?\"  (asks the mechanism)\nBad:  \"Is this code correct?\"                        (unanswerable)\n\nNever make a comment the answer. If a doc comment already asserts the\nprecondition, the question is whether the callers honour it.\n\nReturn JSON of exactly this shape:\n\n{\"falsification_question\": \"<one question>\"}",
+      "user": "Claim: Payloads larger than MAX_PAYLOAD_BYTES but not exceeding MAX_FRAME_BYTES produce encoded frames exceeding MAX_FRAME_BYTES that fail to decode.\nLocation: src/frame.rs:29-34\nReviewer's reasoning: A frame consists of HEADER_BYTES (8 bytes) plus the payload. Comparing payload.len() against MAX_FRAME_BYTES allows payloads up to 4096 bytes, resulting in an encoded frame up to 4104 bytes, which decode rejects with FrameTooLarge (and which violates the transport frame limit).\n\nWhat evidence would prove this claim wrong?",
+      "response_text": "{\"falsification_question\": \"Does the length check in `src/frame.rs:29-34` compare `payload.len()` against `MAX_PAYLOAD_BYTES` (or `MAX_FRAME_BYTES - HEADER_BYTES`) rather than `MAX_FRAME_BYTES`?\"}",
+      "usage": {
+        "input_tokens": 372,
+        "output_tokens": 446,
+        "total_tokens": 818
+      },
+      "latency_ms": 19809,
+      "attempts": 1
+    },
+    {
+      "event": "FalsificationQuestion",
+      "candidate_id": "m02-frame-size-bound-adv-1",
+      "question": "Does the length check in `src/frame.rs:29-34` compare `payload.len()` against `MAX_PAYLOAD_BYTES` (or `MAX_FRAME_BYTES - HEADER_BYTES`) rather than `MAX_FRAME_BYTES`?"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nPayloads larger than MAX_PAYLOAD_BYTES but not exceeding MAX_FRAME_BYTES produce encoded frames exceeding MAX_FRAME_BYTES that fail to decode.\n\nLocation: src/frame.rs:29-34\n\n## Falsification question\n\nDoes the length check in `src/frame.rs:29-34` compare `payload.len()` against `MAX_PAYLOAD_BYTES` (or `MAX_FRAME_BYTES - HEADER_BYTES`) rather than `MAX_FRAME_BYTES`?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/frame.rs\n+++ b/src/frame.rs\n@@ -26,10 +26,10 @@\n \n /// Encode `payload` into a single frame.\n pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n-    if payload.len() > MAX_PAYLOAD_BYTES {\n+    if payload.len() > MAX_FRAME_BYTES {\n         return Err(FrameError::PayloadTooLarge {\n             len: payload.len(),\n-            limit: MAX_PAYLOAD_BYTES,\n+            limit: MAX_FRAME_BYTES,\n         });\n     }\n \n\n```\n\n## Investigation so far\n\n(nothing yet)\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": false,\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"file\": \"src/frame.rs\",\n    \"start_line\": 1,\n    \"end_line\": 60\n  },\n  \"rationale\": \"Read src/frame.rs to check the length check implementation in encode() and decode().\"\n}",
+      "usage": {
+        "input_tokens": 620,
+        "output_tokens": 226,
+        "total_tokens": 846
+      },
+      "latency_ms": 2813,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "m02-frame-size-bound-adv-1-t1",
+      "candidate_id": "m02-frame-size-bound-adv-1",
+      "tool": "read",
+      "arguments": {
+        "end_line": 60,
+        "file": "src/frame.rs",
+        "start_line": 1
+      },
+      "response": "src/frame.rs lines 1-60 of 101:\n    1 | //! Encoding and decoding of one frame.\n    2 | //!\n    3 | //! A frame is `HEADER_BYTES` of header followed by the payload. The header\n    4 | //! carries the payload length as a big-endian `u32`, then four reserved bytes.\n    5 | \n    6 | /// Size of the fixed header that precedes every payload.\n    7 | pub const HEADER_BYTES: usize = 8;\n    8 | \n    9 | /// The transport refuses to carry a frame larger than this, in either\n   10 | /// direction.\n   11 | pub const MAX_FRAME_BYTES: usize = 4096;\n   12 | \n   13 | /// The largest payload that still fits inside `MAX_FRAME_BYTES` once the\n   14 | /// header is accounted for.\n   15 | pub const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;\n   16 | \n   17 | #[derive(Debug, PartialEq, Eq)]\n   18 | pub enum FrameError {\n   19 |     /// The caller offered more payload than a frame can carry.\n   20 |     PayloadTooLarge { len: usize, limit: usize },\n   21 |     /// The peer sent a frame the transport will not carry.\n   22 |     FrameTooLarge { len: usize },\n   23 |     /// The frame ended before the header or the declared payload did.\n   24 |     Truncated,\n   25 | }\n   26 | \n   27 | /// Encode `payload` into a single frame.\n   28 | pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n   29 |     if payload.len() > MAX_FRAME_BYTES {\n   30 |         return Err(FrameError::PayloadTooLarge {\n   31 |             len: payload.len(),\n   32 |             limit: MAX_FRAME_BYTES,\n   33 |         });\n   34 |     }\n   35 | \n   36 |     let mut out = Vec::with_capacity(HEADER_BYTES + payload.len());\n   37 |     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());\n   38 |     out.extend_from_slice(&[0u8; 4]);\n   39 |     out.extend_from_slice(payload);\n   40 |     Ok(out)\n   41 | }\n   42 | \n   43 | /// Decode a frame back into its payload.\n   44 | pub fn decode(frame: &[u8]) -> Result<Vec<u8>, FrameError> {\n   45 |     if frame.len() > MAX_FRAME_BYTES {\n   46 |         return Err(FrameError::FrameTooLarge { len: frame.len() });\n   47 |     }\n   48 |     if frame.len() < HEADER_BYTES {\n   49 |         return Err(FrameError::Truncated);\n   50 |     }\n   51 | \n   52 |     let len = u32::from_be_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;\n   53 |     let body = frame\n   54 |         .get(HEADER_BYTES..HEADER_BYTES + len)\n   55 |         .ok_or(FrameError::Truncated)?;\n   56 |     Ok(body.to_vec())\n   57 | }\n   58 | \n   59 | #[cfg(test)]\n   60 | mod tests {\n",
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nPayloads larger than MAX_PAYLOAD_BYTES but not exceeding MAX_FRAME_BYTES produce encoded frames exceeding MAX_FRAME_BYTES that fail to decode.\n\nLocation: src/frame.rs:29-34\n\n## Falsification question\n\nDoes the length check in `src/frame.rs:29-34` compare `payload.len()` against `MAX_PAYLOAD_BYTES` (or `MAX_FRAME_BYTES - HEADER_BYTES`) rather than `MAX_FRAME_BYTES`?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/frame.rs\n+++ b/src/frame.rs\n@@ -26,10 +26,10 @@\n \n /// Encode `payload` into a single frame.\n pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n-    if payload.len() > MAX_PAYLOAD_BYTES {\n+    if payload.len() > MAX_FRAME_BYTES {\n         return Err(FrameError::PayloadTooLarge {\n             len: payload.len(),\n-            limit: MAX_PAYLOAD_BYTES,\n+            limit: MAX_FRAME_BYTES,\n         });\n     }\n \n\n```\n\n## Already looked up during this review\n\nThese are results of earlier tool calls on this repository, recorded so you do\nnot have to repeat them. They are lookups, not conclusions.\n\nread {\"end_line\":60,\"file\":\"src/frame.rs\",\"start_line\":1} -> src/frame.rs lines 1-60 of 101:\n\n## Investigation so far\n\n\n--- step 1 : read {\"end_line\":60,\"file\":\"src/frame.rs\",\"start_line\":1} ---\nsrc/frame.rs lines 1-60 of 101:\n    1 | //! Encoding and decoding of one frame.\n    2 | //!\n    3 | //! A frame is `HEADER_BYTES` of header followed by the payload. The header\n    4 | //! carries the payload length as a big-endian `u32`, then four reserved bytes.\n    5 | \n    6 | /// Size of the fixed header that precedes every payload.\n    7 | pub const HEADER_BYTES: usize = 8;\n    8 | \n    9 | /// The transport refuses to carry a frame larger than this, in either\n   10 | /// direction.\n   11 | pub const MAX_FRAME_BYTES: usize = 4096;\n   12 | \n   13 | /// The largest payload that still fits inside `MAX_FRAME_BYTES` once the\n   14 | /// header is accounted for.\n   15 | pub const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;\n   16 | \n   17 | #[derive(Debug, PartialEq, Eq)]\n   18 | pub enum FrameError {\n   19 |     /// The caller offered more payload than a frame can carry.\n   20 |     PayloadTooLarge { len: usize, limit: usize },\n   21 |     /// The peer sent a frame the transport will not carry.\n   22 |     FrameTooLarge { len: usize },\n   23 |     /// The frame ended before the header or the declared payload did.\n   24 |     Truncated,\n   25 | }\n   26 | \n   27 | /// Encode `payload` into a single frame.\n   28 | pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n   29 |     if payload.len() > MAX_FRAME_BYTES {\n   30 |         return Err(FrameError::PayloadTooLarge {\n   31 |             len: payload.len(),\n   32 |             limit: MAX_FRAME_BYTES,\n   33 |         });\n   34 |     }\n   35 | \n   36 |     let mut out = Vec::with_capacity(HEADER_BYTES + payload.len());\n   37 |     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());\n   38 |     out.extend_from_slice(&[0u8; 4]);\n   39 |     out.extend_from_slice(payload);\n   40 |     Ok(out)\n   41 | }\n   42 | \n   43 | /// Decode a frame back into its payload.\n   44 | pub fn decode(frame: &[u8]) -> Result<Vec<u8>, FrameError> {\n   45 |     if frame.len() > MAX_FRAME_BYTES {\n   46 |         return Err(FrameError::FrameTooLarge { len: frame.len() });\n   47 |     }\n   48 |     if frame.len() < HEADER_BYTES {\n   49 |         return Err(FrameError::Truncated);\n   50 |     }\n   51 | \n   52 |     let len = u32::from_be_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;\n   53 |     let body = frame\n   54 |         .get(HEADER_BYTES..HEADER_BYTES + len)\n   55 |         .ok_or(FrameError::Truncated)?;\n   56 |     Ok(body.to_vec())\n   57 | }\n   58 | \n   59 | #[cfg(test)]\n   60 | mod tests {\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": true,\n  \"tool\": null,\n  \"arguments\": null,\n  \"rationale\": \"Lines 29-34 in src/frame.rs show that `encode` checks `if payload.len() > MAX_FRAME_BYTES` and returns `limit: MAX_FRAME_BYTES`. It does not compare `payload.len()` against `MAX_PAYLOAD_BYTES` or `MAX_FRAME_BYTES - HEADER_BYTES`.\"\n}",
+      "usage": {
+        "input_tokens": 1593,
+        "output_tokens": 326,
+        "total_tokens": 1919
+      },
+      "latency_ms": 4292,
+      "attempts": 1
+    },
+    {
+      "event": "EvidenceAssembled",
+      "candidate_id": "m02-frame-size-bound-adv-1",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/frame.rs",
+          "start_line": 14,
+          "end_line": 49,
+          "excerpt": "   14 | /// header is accounted for.\n   15 | pub const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;\n   16 | \n   17 | #[derive(Debug, PartialEq, Eq)]\n   18 | pub enum FrameError {\n   19 |     /// The caller offered more payload than a frame can carry.\n   20 |     PayloadTooLarge { len: usize, limit: usize },\n   21 |     /// The peer sent a frame the transport will not carry.\n   22 |     FrameTooLarge { len: usize },\n   23 |     /// The frame ended before the header or the declared payload did.\n   24 |     Truncated,\n   25 | }\n   26 | \n   27 | /// Encode `payload` into a single frame.\n   28 | pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n   29 |     if payload.len() > MAX_FRAME_BYTES {\n   30 |         return Err(FrameError::PayloadTooLarge {\n   31 |             len: payload.len(),\n   32 |             limit: MAX_FRAME_BYTES,\n   33 |         });\n   34 |     }\n   35 | \n   36 |     let mut out = Vec::with_capacity(HEADER_BYTES + payload.len());\n   37 |     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());\n   38 |     out.extend_from_slice(&[0u8; 4]);\n   39 |     out.extend_from_slice(payload);\n   40 |     Ok(out)\n   41 | }\n   42 | \n   43 | /// Decode a frame back into its payload.\n   44 | pub fn decode(frame: &[u8]) -> Result<Vec<u8>, FrameError> {\n   45 |     if frame.len() > MAX_FRAME_BYTES {\n   46 |         return Err(FrameError::FrameTooLarge { len: frame.len() });\n   47 |     }\n   48 |     if frame.len() < HEADER_BYTES {\n   49 |         return Err(FrameError::Truncated);",
+          "tool_call_id": "m02-frame-size-bound-adv-1-claimed-region"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/frame.rs",
+          "start_line": 1,
+          "end_line": 60,
+          "excerpt": "    1 | //! Encoding and decoding of one frame.\n    2 | //!\n    3 | //! A frame is `HEADER_BYTES` of header followed by the payload. The header\n    4 | //! carries the payload length as a big-endian `u32`, then four reserved bytes.\n    5 | \n    6 | /// Size of the fixed header that precedes every payload.\n    7 | pub const HEADER_BYTES: usize = 8;\n    8 | \n    9 | /// The transport refuses to carry a frame larger than this, in either\n   10 | /// direction.\n   11 | pub const MAX_FRAME_BYTES: usize = 4096;\n   12 | \n   13 | /// The largest payload that still fits inside `MAX_FRAME_BYTES` once the\n   14 | /// header is accounted for.\n   15 | pub const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;\n   16 | \n   17 | #[derive(Debug, PartialEq, Eq)]\n   18 | pub enum FrameError {\n   19 |     /// The caller offered more payload than a frame can carry.\n   20 |     PayloadTooLarge { len: usize, limit: usize },\n   21 |     /// The peer sent a frame the transport will not carry.\n   22 |     FrameTooLarge { len: usize },\n   23 |     /// The frame ended before the header or the declared payload did.\n   24 |     Truncated,\n   25 | }\n   26 | \n   27 | /// Encode `payload` into a single frame.\n   28 | pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n   29 |     if payload.len() > MAX_FRAME_BYTES {\n   30 |         return Err(FrameError::PayloadTooLarge {\n   31 |             len: payload.len(),\n   32 |             limit: MAX_FRAME_BYTES,\n   33 |         });\n   34 |     }\n   35 | \n   36 |     let mut out = Vec::with_capacity(HEADER_BYTES + payload.len());\n   37 |     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());\n   38 |     out.extend_from_slice(&[0u8; 4]);\n   39 |     out.extend_from_slice(payload);\n   40 |     Ok(out)\n   41 | }\n   42 | \n   43 | /// Decode a frame back into its payload.\n   44 | pub fn decode(frame: &[u8]) -> Result<Vec<u8>, FrameError> {\n   45 |     if frame.len() > MAX_FRAME_BYTES {\n   46 |         return Err(FrameError::FrameTooLarge { len: frame.len() });\n   47 |     }\n   48 |     if frame.len() < HEADER_BYTES {\n   49 |         return Err(FrameError::Truncated);\n   50 |     }\n   51 | \n   52 |     let len = u32::from_be_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;\n   53 |     let body = frame\n   54 |         .get(HEADER_BYTES..HEADER_BYTES + len)\n   55 |         .ok_or(FrameError::Truncated)?;\n   56 |     Ok(body.to_vec())\n   57 | }\n   58 | \n   59 | #[cfg(test)]\n   60 | mod tests {",
+          "tool_call_id": "m02-frame-size-bound-adv-1-t1"
+        }
+      ]
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Verify",
+      "prompt_version": "fresh-verify/v5",
+      "system": "You are deciding whether a body of evidence establishes that a codebase has a real defect.\n\nYou did not write the claim and have no stake in it. Someone asserted it; your\ntask is to weigh the evidence.\n\nDecide one of:\n\n  \"Supports\"      - the evidence establishes a real defect, as claimed.\n  \"Contradicts\"   - the evidence establishes that this is not a defect.\n  \"Insufficient\"  - the evidence does not settle it either way.\n\nRules:\n- Judge only from the evidence provided. Do not assume facts about code you\n  were not shown.\n- Absence of evidence is not evidence. If the excerpts do not cover what the\n  claim depends on, the answer is \"Insufficient\", not \"Supports\".\n- \"Insufficient\" is a perfectly good answer and is expected to be common.\n- Quote the specific excerpts that decided it.\n\nWeigh comments by whether the repository could check them:\n\n- A comment asserting something the repository itself can settle — which\n  callers exist, what they pass, whether a guard runs first, whether a\n  constructor rejects a value — is a CLAIM, not evidence. It is exactly the\n  kind of thing that is wrong when the code is wrong. \"Callers check first\"\n  written above a function tells you what the author believed, not what the\n  callers do. Go and look at the call sites; if the evidence asserts something\n  about callers but contains no callers, that is \"Insufficient\", never\n  \"Contradicts\". A documented precondition does not make violating it\n  acceptable — the question is whether anything violates it.\n\n- A comment stating a fact from outside the repository — a database column\n  type, a wire-protocol constant, the size of production inputs, what a\n  downstream consumer requires — is different. Nothing in the repository can\n  confirm or refute it, and the people who wrote it knew things you do not.\n  Treat it as the best available evidence and reason from it. Do not dismiss a\n  finding merely because such a fact came from a comment rather than from\n  code; that standard would make every claim about the real world\n  unverifiable.\n\nA true statement is not automatically a defect:\n\n- You are judging the finding, not the sentence. Many claims are accurate\n  descriptions of the code that identify nothing wrong with it: a type that\n  does not derive a trait nobody needs, a function returning `Option` that\n  never returns `None`, a name someone dislikes. Confirming the description is\n  accurate does not make any of these a defect.\n- Ask what goes wrong, and for whom. If the evidence does not show incorrect\n  behaviour, a crash, data loss, a violated contract, a security consequence,\n  or a real cost at the scale the code actually runs at, then this is not a\n  defect and the answer is \"Contradicts\" — however accurate the claim is.\n- Reporting a true triviality wastes human attention just as surely as\n  reporting something false, so hold both to the same bar.\n\nReachability is part of the claim, not a separate question:\n\n- Most claims depend on the code reaching some state — a collection being\n  empty, a key being absent, a number being out of range, a caller passing a\n  particular value. Confirming that the code WOULD misbehave in that state\n  settles only half of it.\n- Code that would misbehave in a state it can never actually be in is not a\n  defect. If the evidence shows the state is prevented — by a constructor, a\n  guard, a type, or an invariant every mutation preserves — then the evidence\n  CONTRADICTS the claim, however faithfully the mechanism was described.\n- So do not answer \"Supports\" merely because the described mechanism is real.\n  Answer \"Supports\" only when the evidence also shows the triggering state is\n  reachable. If the evidence settles the mechanism but leaves reachability\n  open, that is \"Insufficient\".\n\nReturn JSON of exactly this shape:\n\n{\n  \"outcome\": \"Supports\" | \"Contradicts\" | \"Insufficient\",\n  \"rationale\": \"<2-4 sentences explaining what the evidence shows>\",\n  \"decisive_evidence\": [\"<short quote or file:line reference>\", ...]\n}",
+      "user": "## Claim\n\nPayloads larger than MAX_PAYLOAD_BYTES but not exceeding MAX_FRAME_BYTES produce encoded frames exceeding MAX_FRAME_BYTES that fail to decode.\n\nStated location: src/frame.rs:29-34\n\n## Question the evidence was gathered to answer\n\nDoes the length check in `src/frame.rs:29-34` compare `payload.len()` against `MAX_PAYLOAD_BYTES` (or `MAX_FRAME_BYTES - HEADER_BYTES`) rather than `MAX_FRAME_BYTES`?\n\n## Evidence gathered from the repository\n\n[E1] DiffHunk from src/frame.rs:14-49\n   14 | /// header is accounted for.\n   15 | pub const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;\n   16 | \n   17 | #[derive(Debug, PartialEq, Eq)]\n   18 | pub enum FrameError {\n   19 |     /// The caller offered more payload than a frame can carry.\n   20 |     PayloadTooLarge { len: usize, limit: usize },\n   21 |     /// The peer sent a frame the transport will not carry.\n   22 |     FrameTooLarge { len: usize },\n   23 |     /// The frame ended before the header or the declared payload did.\n   24 |     Truncated,\n   25 | }\n   26 | \n   27 | /// Encode `payload` into a single frame.\n   28 | pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n   29 |     if payload.len() > MAX_FRAME_BYTES {\n   30 |         return Err(FrameError::PayloadTooLarge {\n   31 |             len: payload.len(),\n   32 |             limit: MAX_FRAME_BYTES,\n   33 |         });\n   34 |     }\n   35 | \n   36 |     let mut out = Vec::with_capacity(HEADER_BYTES + payload.len());\n   37 |     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());\n   38 |     out.extend_from_slice(&[0u8; 4]);\n   39 |     out.extend_from_slice(payload);\n   40 |     Ok(out)\n   41 | }\n   42 | \n   43 | /// Decode a frame back into its payload.\n   44 | pub fn decode(frame: &[u8]) -> Result<Vec<u8>, FrameError> {\n   45 |     if frame.len() > MAX_FRAME_BYTES {\n   46 |         return Err(FrameError::FrameTooLarge { len: frame.len() });\n   47 |     }\n   48 |     if frame.len() < HEADER_BYTES {\n   49 |         return Err(FrameError::Truncated);\n\n[E2] FileRegion from src/frame.rs:1-60\n    1 | //! Encoding and decoding of one frame.\n    2 | //!\n    3 | //! A frame is `HEADER_BYTES` of header followed by the payload. The header\n    4 | //! carries the payload length as a big-endian `u32`, then four reserved bytes.\n    5 | \n    6 | /// Size of the fixed header that precedes every payload.\n    7 | pub const HEADER_BYTES: usize = 8;\n    8 | \n    9 | /// The transport refuses to carry a frame larger than this, in either\n   10 | /// direction.\n   11 | pub const MAX_FRAME_BYTES: usize = 4096;\n   12 | \n   13 | /// The largest payload that still fits inside `MAX_FRAME_BYTES` once the\n   14 | /// header is accounted for.\n   15 | pub const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;\n   16 | \n   17 | #[derive(Debug, PartialEq, Eq)]\n   18 | pub enum FrameError {\n   19 |     /// The caller offered more payload than a frame can carry.\n   20 |     PayloadTooLarge { len: usize, limit: usize },\n   21 |     /// The peer sent a frame the transport will not carry.\n   22 |     FrameTooLarge { len: usize },\n   23 |     /// The frame ended before the header or the declared payload did.\n   24 |     Truncated,\n   25 | }\n   26 | \n   27 | /// Encode `payload` into a single frame.\n   28 | pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n   29 |     if payload.len() > MAX_FRAME_BYTES {\n   30 |         return Err(FrameError::PayloadTooLarge {\n   31 |             len: payload.len(),\n   32 |             limit: MAX_FRAME_BYTES,\n   33 |         });\n   34 |     }\n   35 | \n   36 |     let mut out = Vec::with_capacity(HEADER_BYTES + payload.len());\n   37 |     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());\n   38 |     out.extend_from_slice(&[0u8; 4]);\n   39 |     out.extend_from_slice(payload);\n   40 |     Ok(out)\n   41 | }\n   42 | \n   43 | /// Decode a frame back into its payload.\n   44 | pub fn decode(frame: &[u8]) -> Result<Vec<u8>, FrameError> {\n   45 |     if frame.len() > MAX_FRAME_BYTES {\n   46 |         return Err(FrameError::FrameTooLarge { len: frame.len() });\n   47 |     }\n   48 |     if frame.len() < HEADER_BYTES {\n   49 |         return Err(FrameError::Truncated);\n   50 |     }\n   51 | \n   52 |     let len = u32::from_be_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;\n   53 |     let body = frame\n   54 |         .get(HEADER_BYTES..HEADER_BYTES + len)\n   55 |         .ok_or(FrameError::Truncated)?;\n   56 |     Ok(body.to_vec())\n   57 | }\n   58 | \n   59 | #[cfg(test)]\n   60 | mod tests {\n\n\n\nDoes the evidence support the claim, contradict it, or leave it unsettled?",
+      "response_text": "{\n  \"outcome\": \"Supports\",\n  \"rationale\": \"In `src/frame.rs:29`, `encode` checks `payload.len() > MAX_FRAME_BYTES` rather than `MAX_PAYLOAD_BYTES`. A payload with a size between `MAX_PAYLOAD_BYTES + 1` and `MAX_FRAME_BYTES` is accepted by `encode`, which then adds `HEADER_BYTES` (8 bytes), resulting in an encoded frame size greater than `MAX_FRAME_BYTES`. When passed to `decode`, `frame.len() > MAX_FRAME_BYTES` causes `decode` to reject the frame with `FrameError::FrameTooLarge`.\",\n  \"decisive_evidence\": [\n    \"src/frame.rs:15\",\n    \"src/frame.rs:29-34\",\n    \"src/frame.rs:36-40\",\n    \"src/frame.rs:45-47\"\n  ]\n}",
+      "usage": {
+        "input_tokens": 2481,
+        "output_tokens": 659,
+        "total_tokens": 3140
+      },
+      "latency_ms": 5107,
+      "attempts": 1
+    },
+    {
+      "event": "Verification",
+      "candidate_id": "m02-frame-size-bound-adv-1",
+      "result": {
+        "outcome": "Supports",
+        "rationale": "In `src/frame.rs:29`, `encode` checks `payload.len() > MAX_FRAME_BYTES` rather than `MAX_PAYLOAD_BYTES`. A payload with a size between `MAX_PAYLOAD_BYTES + 1` and `MAX_FRAME_BYTES` is accepted by `encode`, which then adds `HEADER_BYTES` (8 bytes), resulting in an encoded frame size greater than `MAX_FRAME_BYTES`. When passed to `decode`, `frame.len() > MAX_FRAME_BYTES` causes `decode` to reject the frame with `FrameError::FrameTooLarge`.",
+        "decisive_evidence": [
+          "src/frame.rs:15",
+          "src/frame.rs:29-34",
+          "src/frame.rs:36-40",
+          "src/frame.rs:45-47"
+        ]
+      }
+    },
+    {
+      "event": "Decision",
+      "candidate_id": "m02-frame-size-bound-adv-1",
+      "status": "Verified",
+      "reason": "fresh-context verification found the evidence supports the claim, backed by 1 repository evidence item(s)"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "m02-frame-size-bound-adv-1",
+      "issue_type": "Validation",
+      "severity": "High",
+      "location": {
+        "file": "src/frame.rs",
+        "start_line": 29,
+        "end_line": 34
+      },
+      "claim": "Payloads larger than MAX_PAYLOAD_BYTES but not exceeding MAX_FRAME_BYTES produce encoded frames exceeding MAX_FRAME_BYTES that fail to decode.",
+      "reasoning": "A frame consists of HEADER_BYTES (8 bytes) plus the payload. Comparing payload.len() against MAX_FRAME_BYTES allows payloads up to 4096 bytes, resulting in an encoded frame up to 4104 bytes, which decode rejects with FrameTooLarge (and which violates the transport frame limit).",
+      "falsification_question": "Does the length check in `src/frame.rs:29-34` compare `payload.len()` against `MAX_PAYLOAD_BYTES` (or `MAX_FRAME_BYTES - HEADER_BYTES`) rather than `MAX_FRAME_BYTES`?",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/frame.rs",
+          "start_line": 14,
+          "end_line": 49,
+          "excerpt": "   14 | /// header is accounted for.\n   15 | pub const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;\n   16 | \n   17 | #[derive(Debug, PartialEq, Eq)]\n   18 | pub enum FrameError {\n   19 |     /// The caller offered more payload than a frame can carry.\n   20 |     PayloadTooLarge { len: usize, limit: usize },\n   21 |     /// The peer sent a frame the transport will not carry.\n   22 |     FrameTooLarge { len: usize },\n   23 |     /// The frame ended before the header or the declared payload did.\n   24 |     Truncated,\n   25 | }\n   26 | \n   27 | /// Encode `payload` into a single frame.\n   28 | pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n   29 |     if payload.len() > MAX_FRAME_BYTES {\n   30 |         return Err(FrameError::PayloadTooLarge {\n   31 |             len: payload.len(),\n   32 |             limit: MAX_FRAME_BYTES,\n   33 |         });\n   34 |     }\n   35 | \n   36 |     let mut out = Vec::with_capacity(HEADER_BYTES + payload.len());\n   37 |     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());\n   38 |     out.extend_from_slice(&[0u8; 4]);\n   39 |     out.extend_from_slice(payload);\n   40 |     Ok(out)\n   41 | }\n   42 | \n   43 | /// Decode a frame back into its payload.\n   44 | pub fn decode(frame: &[u8]) -> Result<Vec<u8>, FrameError> {\n   45 |     if frame.len() > MAX_FRAME_BYTES {\n   46 |         return Err(FrameError::FrameTooLarge { len: frame.len() });\n   47 |     }\n   48 |     if frame.len() < HEADER_BYTES {\n   49 |         return Err(FrameError::Truncated);",
+          "tool_call_id": "m02-frame-size-bound-adv-1-claimed-region"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/frame.rs",
+          "start_line": 1,
+          "end_line": 60,
+          "excerpt": "    1 | //! Encoding and decoding of one frame.\n    2 | //!\n    3 | //! A frame is `HEADER_BYTES` of header followed by the payload. The header\n    4 | //! carries the payload length as a big-endian `u32`, then four reserved bytes.\n    5 | \n    6 | /// Size of the fixed header that precedes every payload.\n    7 | pub const HEADER_BYTES: usize = 8;\n    8 | \n    9 | /// The transport refuses to carry a frame larger than this, in either\n   10 | /// direction.\n   11 | pub const MAX_FRAME_BYTES: usize = 4096;\n   12 | \n   13 | /// The largest payload that still fits inside `MAX_FRAME_BYTES` once the\n   14 | /// header is accounted for.\n   15 | pub const MAX_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES;\n   16 | \n   17 | #[derive(Debug, PartialEq, Eq)]\n   18 | pub enum FrameError {\n   19 |     /// The caller offered more payload than a frame can carry.\n   20 |     PayloadTooLarge { len: usize, limit: usize },\n   21 |     /// The peer sent a frame the transport will not carry.\n   22 |     FrameTooLarge { len: usize },\n   23 |     /// The frame ended before the header or the declared payload did.\n   24 |     Truncated,\n   25 | }\n   26 | \n   27 | /// Encode `payload` into a single frame.\n   28 | pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {\n   29 |     if payload.len() > MAX_FRAME_BYTES {\n   30 |         return Err(FrameError::PayloadTooLarge {\n   31 |             len: payload.len(),\n   32 |             limit: MAX_FRAME_BYTES,\n   33 |         });\n   34 |     }\n   35 | \n   36 |     let mut out = Vec::with_capacity(HEADER_BYTES + payload.len());\n   37 |     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());\n   38 |     out.extend_from_slice(&[0u8; 4]);\n   39 |     out.extend_from_slice(payload);\n   40 |     Ok(out)\n   41 | }\n   42 | \n   43 | /// Decode a frame back into its payload.\n   44 | pub fn decode(frame: &[u8]) -> Result<Vec<u8>, FrameError> {\n   45 |     if frame.len() > MAX_FRAME_BYTES {\n   46 |         return Err(FrameError::FrameTooLarge { len: frame.len() });\n   47 |     }\n   48 |     if frame.len() < HEADER_BYTES {\n   49 |         return Err(FrameError::Truncated);\n   50 |     }\n   51 | \n   52 |     let len = u32::from_be_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;\n   53 |     let body = frame\n   54 |         .get(HEADER_BYTES..HEADER_BYTES + len)\n   55 |         .ok_or(FrameError::Truncated)?;\n   56 |     Ok(body.to_vec())\n   57 | }\n   58 | \n   59 | #[cfg(test)]\n   60 | mod tests {",
+          "tool_call_id": "m02-frame-size-bound-adv-1-t1"
+        }
+      ],
+      "verification": {
+        "outcome": "Supports",
+        "rationale": "In `src/frame.rs:29`, `encode` checks `payload.len() > MAX_FRAME_BYTES` rather than `MAX_PAYLOAD_BYTES`. A payload with a size between `MAX_PAYLOAD_BYTES + 1` and `MAX_FRAME_BYTES` is accepted by `encode`, which then adds `HEADER_BYTES` (8 bytes), resulting in an encoded frame size greater than `MAX_FRAME_BYTES`. When passed to `decode`, `frame.len() > MAX_FRAME_BYTES` causes `decode` to reject the frame with `FrameError::FrameTooLarge`.",
+        "decisive_evidence": [
+          "src/frame.rs:15",
+          "src/frame.rs:29-34",
+          "src/frame.rs:36-40",
+          "src/frame.rs:45-47"
+        ]
+      },
+      "status": "Verified",
+      "status_reason": "fresh-context verification found the evidence supports the claim, backed by 1 repository evidence item(s)"
+    }
+  ],
+  "usage": {
+    "input_tokens": 7564,
+    "output_tokens": 2108,
+    "total_tokens": 9672
+  },
+  "cost_usd": 0.013578,
+  "runtime_ms": 39379,
+  "llm_calls": 5,
+  "tool_calls": 1,
+  "retries": 0
+}
