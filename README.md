@@ -826,10 +826,10 @@ measured the trigger on runs where it never occurred.
 
 ### Deduplication was not inert. It was wrong.
 
-Replaying the rule over the advanced trajectories of **all 19 recorded runs** —
+Replaying the rule over the advanced trajectories of **all 26 recorded runs** —
 `vcr replay-dedup`, which calls no model and reads artifacts already in the
-repository — the trigger fires **6 times**, and *not one of those firings is a
-duplicate*. Every one is the same pair, in `c08-order-name-limit`:
+repository — the trigger fires **7 times**, and *not one of those firings is a
+duplicate*. Six are the same pair, in `c08-order-name-limit`:
 
 ```text
 Validation  src/order.rs:26-28   order.name  checked against MAX_QUANTITY
@@ -839,6 +839,12 @@ Validation  src/order.rs:30-32   order.notes checked against MAX_NAME_LEN
 Two fields, two distinct defects, **both in the ground truth**. They are joined
 only because 28 + 3 ≥ 30. Each merge would have turned two true positives into
 one true positive and one false negative.
+
+The seventh is in the Python pilot and arose independently: two `ApiContract`
+claims on `p02`, one about `cluster.unhealthy()` returning a count and one about
+`cluster.nodes()` returning a non-sequence. Different methods, different claims,
+same wrong merge. Two languages, two case authors, seven firings, zero
+duplicates.
 
 The cause was a single borrowed constant: the rule reused
 `cfg.match_line_tolerance`, the evaluator's ±3 slack. That slack exists to
@@ -890,7 +896,7 @@ and a test guards it.
 
 | Feature | First measurement | What measuring properly showed |
 |---|---|---|
-| Candidate deduplication | fired 0 times | fires 6 times across all recorded runs, **wrong every time**; fixed |
+| Candidate deduplication | fired 0 times | fires 7 times across all recorded runs, **wrong every time**; fixed |
 | Follow-up on "Insufficient" | fired 0 times | trigger unreachable; replaced with one that fires 6 times, declines 5, gains nothing; **off by default** |
 | Within-case memory | −3% calls, inside noise | unchanged — still no measurable benefit |
 

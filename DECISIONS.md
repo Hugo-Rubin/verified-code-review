@@ -1693,3 +1693,47 @@ was `vcr replay-dedup` asking what the rule had done across every recorded run.
 246 tests. `vcr review` ships. Two dogfood runs are recorded in full under
 `results-selfreview/` and `results-dogfood/`, with the write-up in
 `docs/dogfood.md`, including the defect it failed to find.
+
+---
+
+## 2026-08-31 01:30 UTC — Correction: the deduplication replay counts
+
+### Context
+
+The dedup replay figure was recorded as "6 firings across 19 recorded runs".
+Adding the held-out trials, the second-look runs and the dogfood runs took the
+repository to 26 recorded runs, and the documented number went stale.
+
+### Evidence
+
+`vcr replay-dedup --root .` now reports **7 firings, 0 of them strict
+overlaps**, across 26 runs. The seventh is new and did not come from `c08`:
+
+```text
+p02-primary-node-trap  [ApiContract]  x1 run(s)
+  src/status.py:14-14  cluster.unhealthy() returns an integer count ...
+  src/status.py:9-13   cluster.nodes() returns an iterator or set ...
+    seen in results-pilot-secondlook
+```
+
+Two different methods, two different claims, joined only by the ±3 tolerance.
+
+### Decision
+
+Counts corrected in README.md, docs/improvement-changelog.md,
+docs/architecture.md and the doc comment on `deduplicate_candidates`.
+
+The finding is **stronger**, not weaker: the wrong merge now has an instance in
+a second language, on a case written months apart from `c08` and by a different
+process, arising from a run nobody designed to test deduplication. Seven
+firings, zero duplicates, two languages.
+
+### A note on how this was caught
+
+By auditing every countable claim in the documentation against the artifacts,
+after finding an invented figure ("six months of recorded behaviour") in
+docs/dogfood.md. This project's whole argument is that assertions should be
+checked against evidence; unchecked numbers in its own prose are the cheapest
+possible way to undermine it. Verified in the same pass: 285 evidence citations
+across five trials, 70 findings with Insufficient at 0, 24 shipped benchmark
+cases, 86 adjudicated candidates.

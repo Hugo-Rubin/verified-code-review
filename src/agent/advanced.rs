@@ -600,8 +600,8 @@ async fn falsification_question(
 /// a location *estimate* while scoring. Deciding that two claims are the same
 /// claim is a different question, and it must not borrow that slack.
 ///
-/// Replayed across all 19 archived runs, the tolerant rule fires 5 times and
-/// **not one of those firings is a duplicate**. Every one is this pair, in
+/// Replayed across all recorded runs, the tolerant rule fires 7 times and
+/// **not one of those firings is a duplicate**. Six are this pair, in
 /// `c08-order-name-limit`:
 ///
 /// ```text
@@ -1435,7 +1435,7 @@ mod tests {
     fn adjacent_but_non_overlapping_candidates_are_never_merged() {
         // This is the literal geometry from `c08-order-name-limit`, and it is
         // the only shape the tolerant version of this rule ever fired on --
-        // 5 times across 19 archived runs, wrongly every time.
+        // 7 times across every recorded run, wrongly every time.
         //
         //   src/order.rs:26-28   order.name  checked against MAX_QUANTITY
         //   src/order.rs:30-32   order.notes checked against MAX_NAME_LEN

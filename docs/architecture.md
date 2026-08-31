@@ -309,7 +309,7 @@ recorded trajectory in the repository, separating merges that rest on genuinely
 overlapping line ranges from those that rest only on the evaluator's ±3
 matching tolerance. It exists because "fired 0 times in 3 trials" is a
 statement about *those three runs*, not about the rule — and replaying it over
-all 19 recorded runs showed the rule fires 6 times and is wrong every time.
+all 26 recorded runs showed the rule fires 7 times and is wrong every time.
 
 **`vcr audit-matches`** pairs every scored true positive with the ground truth
 it was credited for and prints both. The evaluator matches on location and
