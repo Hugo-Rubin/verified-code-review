@@ -117,6 +117,27 @@ the same way the `h04` held-out failure is.
 
 ---
 
+## Run 3 — what a useful review looks like
+
+Both runs above found nothing a human needed, which is honest and makes a poor
+illustration of the output. This one is the product surface working, using a
+benchmark case as input so the command reproduces byte-for-byte from committed
+files:
+
+```bash
+cargo run --quiet --bin vcr -- review   --repo benchmark/cases/c12-slot-guard-capacity/repository   --diff benchmark/cases/c12-slot-guard-capacity/diff.patch   --title "Add read endpoints over the record store"   --description "..." --out results-review-demo
+```
+
+One finding, 6 model calls, 2 tool calls, $0.0159 — a bounds check that reads as
+obviously correct and is not, because `Store::len` returns capacity rather than
+occupancy. The reader gets the claim, **the question it was checked against**, a
+verdict reached in a fresh context, and the exact lines in `src/store.rs` that
+settle it — a file the diff never touches.
+
+Full output in [`../results-review-demo/review.md`](../results-review-demo/review.md).
+
+---
+
 ## What dogfooding changed
 
 | | |
@@ -125,6 +146,7 @@ the same way the `h04` held-out failure is.
 | Bugs found **in our own output** | 1 (the renderer's false claim) |
 | Correct rejections on real code, on evidence from untouched files | 1 |
 | Prompts tuned in response | 0 |
+| Runs where the output was genuinely useful | 1 of 3, on a benchmark case |
 
 The honest summary is that `vcr review` demonstrably runs the full pipeline on
 arbitrary repositories and produces evidence-backed output, and that on two real

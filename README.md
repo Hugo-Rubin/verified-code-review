@@ -90,7 +90,74 @@ project's own worst bug. It did not find that bug, and it did find a false claim
 in our own report renderer. Both runs are written up in
 [`docs/dogfood.md`](docs/dogfood.md).
 
+<details>
+<summary><b>What a review actually looks like</b> — real output, reproducible with the command below</summary>
+
+```bash
+cargo run --quiet --bin vcr -- review \
+  --repo benchmark/cases/c12-slot-guard-capacity/repository \
+  --diff benchmark/cases/c12-slot-guard-capacity/diff.patch \
+  --title "Add read endpoints over the record store" \
+  --description "A new \`api\` module exposes \`fetch\` for a single slot and \`fetch_many\` for several. Both are bounds-checked and return \`None\` or skip the entry rather than panicking on an out-of-range index." \
+  --out results-review-demo
+```
+
+```text
+1 finding(s) for review · 0 investigated and cleared · 0 uncertain
+6 model call(s), 2 tool call(s), 35057 ms
+cost: $0.01586
+
+──────────────────────────────────────────────────────────────
+src/api.rs:8-13 · Medium · Correctness
+  Callers accessing a valid index in a slot-based store will trigger a panic in
+  `record_at` if slots can be vacant or if `store.len()` measures active record
+  count rather than slot capacity.
+
+  Checked by asking: Does `Store` store records densely such that every index
+  from `0` to `store.len() - 1` is guaranteed to be occupied and valid for
+  `record_at`?
+  Independent verdict: Supports
+    `Store::len` returns `self.capacity` rather than the count of populated
+    records in `self.records`. As a result, `fetch` only bounds-checks
+    `index >= store.len()` before calling `store.record_at(index)`, which
+    indexes directly into `&self.records[index]` and panics whenever `index` is
+    within capacity but beyond `self.records.len()`.
+  Evidence read: src/api.rs:1-28, src/store.rs:13, src/store.rs:1-80
+
+──────────────────────────────────────────────────────────────
+This system does not merge, reject, approve or modify anything. A
+human decides. Findings are evidence-backed claims, not verdicts.
+```
+
+Note what the reader is given: the claim, **the question it was checked
+against**, an independent verdict reached in a fresh context, and the exact
+repository lines that settle it — including `src/store.rs`, which the diff never
+touches. The change looks correct in isolation; `Store::len` returning capacity
+is what makes it wrong, and that fact is nowhere in the diff.
+
+The demo uses a benchmark case as its input so the command above reproduces
+byte-for-byte from committed files. Output saved in
+[`results-review-demo/`](results-review-demo/).
+
+</details>
+
 ---
+
+## Where everything is
+
+| Deliverable | Where |
+|---|---|
+| **Solution code** | [`src/`](src/) — `vcr` CLI. Every agent instruction is in [`src/prompts.rs`](src/prompts.rs), versioned per role |
+| **Improvement changelog** | [`docs/improvement-changelog.md`](docs/improvement-changelog.md) — every iteration, including the five that made things worse and the one that was actively harmful |
+| **Reproduction guide** | [`docs/reproduction.md`](docs/reproduction.md) — clean-environment setup, exact commands for solution, baseline and evaluation, expected output, runtime and cost |
+| **Agent trajectories** | [`docs/trajectories.md`](docs/trajectories.md) — guided reading of every role; raw records in [`results-final/t1/trajectories/`](results-final/t1/trajectories/) |
+| **Main failure mode & hot take** | [below](#main-failure-mode) |
+| Decision log | [`DECISIONS.md`](DECISIONS.md) — append-only, including every rejected alternative |
+| Architecture | [`docs/architecture.md`](docs/architecture.md) |
+| Held-out benchmark | [`docs/holdout.md`](docs/holdout.md) — cases written without sight of this system |
+| Dogfooding | [`docs/dogfood.md`](docs/dogfood.md) — including the defect of ours it failed to find |
+
+Run it on your own change in one command: [Using it on your own code](#using-it-on-your-own-code).
 
 ## Problem
 
@@ -595,8 +662,16 @@ commands, required configuration, expected output, runtime, and cost.
   dispatch, trait objects, re-exports, aliasing, macro-generated call paths and
   deep indirection are blind spots. Every trap here is resolvable by reading
   call sites; a trap turning on a trait object would likely defeat it.
-- **Findings are single-location.** A defect spanning several files that is
-  wrong only in combination has no representation in the schema.
+- **A finding anchors at one location, deliberately.** A defect that is wrong
+  only as an interaction between two files — `c03` (`store.rs` × `handler.rs`),
+  `h06` (`digest.rs` × `model.rs`) — is reported at one anchor, with the other
+  files present as cited `Evidence` rather than as part of the claim. The
+  information is in the schema; the *claim* is single-anchored. Making the
+  interaction first-class means adding a field to the reviewer's output
+  contract, which changes the review prompt, which would invalidate the
+  five-trial headline for a change we have no way to score — the evaluator
+  matches on the primary location either way. We chose the stale limitation
+  over an unmeasurable rewrite, and record the trade rather than the fix.
 - **One model for the system under test.** Every advanced-arm figure is
   `gemini-3.7-flash` on Vertex AI. The *baseline* was reproduced on Claude
   Sonnet 5 and agreed case-for-case — same F1 0.857, same 12 of 12 per-case
