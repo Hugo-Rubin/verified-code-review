@@ -269,6 +269,67 @@ case's changed ranges, and `vcr check` prints it as a warning. Both benchmarks
 are clean under it; that is how we know 17 of 18 already followed the
 convention, rather than believing it.
 
+## A second run, with the second look enabled
+
+The pilot was re-run once with the "second look" feedback path switched on —
+the pass that re-reads a case which finished with nothing to report, given the
+repository facts that closed each rejected claim. This is the pilot's other
+job: the frozen benchmark has no case the system misses, so the pilot is the
+only place a recall feature could show a gain.
+
+| Metric | Advanced, shipped config | Advanced, second look on |
+|---|---:|---:|
+| Precision | 1.000 | 0.667 |
+| Recall | 0.750 | 1.000 |
+| **F1** | **0.857** | **0.800** |
+| Cost/case | $0.0243 | $0.0260 |
+
+It fired on both traps — the only two cases that reported nothing. On `p02` it
+**declined**, returning an empty list rather than manufacturing a claim, which
+is the behaviour the prompt asks for. On `p05` it proposed:
+
+> Passing a `user_agent` key in overrides to `build_client` has no effect
+> because it is unconditionally overwritten with `'vcr/1.0'`.
+
+That is **true**. It is also not a defect — stamping a fixed user-agent is what
+the function is for — and the verifier confirmed it because it was asked
+whether the evidence establishes a defect and the statement is accurate at the
+level it operates on. This is the README's hot take recurring exactly: *most of
+what a code reviewer should suppress is true.*
+
+**The recall gain is not the second look's doing.** `p03` scored a true
+positive in this run, but the second look never ran on `p03` — something was
+reported there, so the trigger did not fire. And the finding that scored is not
+the defect. See below.
+
+Combined with the frozen benchmark, where the second look fired on exactly the
+four traps and declined on all four, the measurement is: **six firings, five
+correct declines, one invented finding, no recall gained anywhere, ~14% more
+cost.** It ships off by default.
+
+## The matcher credited a claim that is not the defect
+
+`p03`'s true positive in the second-look run was:
+
+> Non-integer float indices bypass the bounds check and get passed directly to
+> `cache.page_at`.
+
+The real defect is that `PagedCache.__len__` returns the configured capacity
+rather than the number of pages present. The reported claim is about floats.
+It scored a true positive because it landed on `src/api.py:9-11` — the same
+three lines — under `Validation`, which that finding's `also_accept` list
+allows.
+
+So **the second-look run's recall of 1.000 is overstated**: on the defect the
+case is actually about, `p03` was missed a third time. The figures in the table
+above are the evaluator's output, reported unaltered, with this correction
+stated next to them rather than folded in.
+
+This is the only spurious match found anywhere in the project. Every one of the
+40 matches in the five-trial headline run was read by hand against ground truth
+and none is spurious — see [`matching-audit.md`](matching-audit.md), which
+exists because of this case.
+
 ## What the pilot does not establish
 
 - **Six cases prove nothing statistically.** Two traps, two out-of-file
@@ -286,7 +347,10 @@ convention, rather than believing it.
   closures, `__eq__`/`__hash__` mismatches, `__slots__` interactions,
   decorator ordering, and the many ways `asyncio` goes wrong are untested.
 - **Same author as the reviewer.** The Rust benchmark carries this bias and so
-  does this one.
+  does this one. The [held-out benchmark](holdout.md) addresses it for Rust
+  only; there is no independently authored Python set.
+- **`p03` has now been missed three times**, once scoring a true positive for
+  the wrong claim. Any future Python work should start there.
 
 A real Python capability claim needs a Python benchmark built the way the Rust
 one was — a dozen cases, execution-verified, frozen, repeated trials, with
