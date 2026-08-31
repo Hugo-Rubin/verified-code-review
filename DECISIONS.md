@@ -1458,3 +1458,97 @@ evidence accuracy 1.000 (51/51). Still a pilot, still not a headline figure.
 Headline arms now at 5 trials: advanced F1 **0.988 ± 0.026**, recall
 **1.000 ± 0.000**, precision 0.978; baseline identical on all 12 cases in all 5
 trials, σ = 0.000 on every metric.
+
+---
+
+## 2026-08-31 00:45 UTC — Sprint 4b/4c: measuring the inert features, and a held-out benchmark
+
+### Context
+
+Sprint 3 reported three components as contributing nothing and kept all three,
+which was honest about what had been measured and wrong about what it meant.
+"Fired 0 times" measures the trigger, not the feature, and the trigger had only
+ever been observed on runs where it did not occur. Separately, the frozen
+benchmark's author bias needed cases from someone who cannot see the system.
+
+### Decisions
+
+1. **Deduplication reused the evaluator's matching tolerance, and that was a
+   category error.** `vcr replay-dedup` replays the rule over every recorded
+   run without calling a model. Across all 19 runs the trigger fires 6 times
+   and **none of the 6 is a duplicate**: all are `c08`'s `order.name` at 26-28
+   against `order.notes` at 30-32, two distinct ground-truth defects joined
+   only because 28 + 3 >= 30. Each merge would have cost a true positive.
+   Overlap is now strict. Two things had hidden it: `v6` stopped producing that
+   pair, and the unit test written to prove the feature worked used that exact
+   geometry and asserted the merge was correct.
+
+2. **The follow-up loop's trigger was unreachable, so it was replaced rather
+   than nudged.** `Insufficient` is 0 of 70; the evidence gate's other dead end
+   is also 0. Both were measured before anything was built, which is what
+   stopped a fourth inert feature being written. The new trigger — a case that
+   finishes with nothing to report — fires.
+
+3. **The second look ships off, on its own measurement.** It fired on exactly
+   the four frozen-benchmark traps and declined on all four; on the pilot it
+   fired on both traps, declined on one, and on the other proposed a
+   true-but-immaterial claim that became a false positive. Six firings, five
+   correct declines, no recall gained on either benchmark, ~14% more cost.
+   Default 0, guarded by a test.
+
+4. **A six-case held-out benchmark, authored by an agent denied the prompts,
+   the pipeline, the docs and every result.** Baseline F1 0.750, advanced
+   0.889. Every ground-truth claim re-derived by execution here rather than
+   taken from the authoring agent's report.
+
+5. **"Zero false positives on traps" is revised, not defended.** Both arms
+   produced a false positive on `h04`. The advanced trajectory failed in this
+   project's own documented main failure mode: the falsification question
+   targeted the mechanism instead of the precondition, and the investigation
+   ran `list_files`, saw `src/graph.rs` — which holds the constructor that
+   rejects the graph shape the claim needs — and stopped without opening it,
+   with four of eight tool calls unspent.
+
+6. **All 40 headline true positives audited by hand**, raw claim text
+   published. 7 of 8 defects described exactly in all five trials; `c12` hedged
+   and still counted, with the hedge stated.
+
+### Rejected alternatives
+
+- **Widening deduplication to merge across `issue_type`.** Rejected, and this
+  is the important one. The single false positive in the whole 5-trial headline
+  run (`t3`, `c03`) is a cross-category overlap, so widening would have taken
+  precision from 0.978 to 1.000. But those two claims are not duplicates: one
+  is the real defect, the other is "two hash lookups per update" — a true
+  statement that is not a defect. Merging them would have deleted a false
+  positive **for the wrong reason** and would suppress genuine second defects
+  elsewhere. Improving a headline number by accident is still tampering.
+- **Patching the prompt so `h04` passes.** Rejected. A prompt change written
+  against a case we just watched fail is the overfitting the ablation ladder
+  exists to catch, and it would destroy the only property that makes a held-out
+  set worth having. Reported instead.
+- **Patching `v6` so the Python `p03` is found.** Rejected for the same reason.
+- **Claiming the second look's single 12-case F1 of 1.000.** Rejected: inside
+  the noise of 0.988 +- 0.026, one run against five, and this project has
+  already been flattered by a single run once.
+- **Deleting the inert features.** Still rejected — but the reason has changed.
+  Deleting deduplication would have deleted the finding that it was wrong.
+- **Publishing the held-out result only if it agreed with the headline.** Never
+  on the table; it is written down because a held-out set used that way is not
+  one.
+
+### Consequence
+
+Headline, 5 trials: advanced F1 **0.988 +- 0.026**, precision 0.978, recall
+**1.000 +- 0.000**; baseline 0.857 +- 0.000, identical on all 12 cases in all 5
+trials. Held-out, 1 run: baseline 0.750, advanced **0.889**. Python pilot, 1
+run: baseline 0.667, advanced 0.857.
+
+Shipped configuration: `advanced-review/v6`, `advanced-falsify/v2`,
+`advanced-investigate/v2`, `fresh-verify/v5`, strict-overlap deduplication,
+within-case memory, second look **off**.
+
+Outstanding and unfixed, stated rather than resolved: the blind stopwatch
+session was not run, so human review time remains a labelled proxy; the `h04`
+trap failure is not patched; `p03` has been missed three times; within-case
+memory has 15/156 tool calls of measured headroom that was not built.
