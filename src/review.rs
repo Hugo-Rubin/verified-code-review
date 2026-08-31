@@ -139,7 +139,33 @@ pub fn render(traj: &Trajectory) -> String {
     }
 
     if reported.is_empty() {
-        out.push_str("\nNothing reported. That is a result, not a failure to run — every\ncandidate below was investigated against the repository and ruled out.\n");
+        // Two very different silences, and reporting the wrong one is a false
+        // statement about what the system did. Caught by running this tool on
+        // this project's own diff: it proposed nothing, and the report claimed
+        // every candidate had been investigated and ruled out.
+        let proposed = traj
+            .events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    crate::trajectory::TrajectoryEvent::CandidateProposed { .. }
+                )
+            })
+            .count();
+        if proposed == 0 {
+            out.push_str(
+                "\nNothing reported, and nothing proposed: the reviewer read the change and \
+                 raised\nno candidate to investigate. That is not the same as having checked \
+                 something\nand cleared it, and it is weaker evidence that the change is \
+                 sound.\n",
+            );
+        } else {
+            out.push_str(
+                "\nNothing reported. That is a result, not a failure to run — every candidate\n\
+                 below was investigated against the repository and ruled out.\n",
+            );
+        }
     }
 
     for f in &reported {
@@ -283,9 +309,28 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_review_says_so_explicitly() {
+    fn a_review_with_no_candidates_says_nothing_was_proposed() {
+        // Distinct from "investigated and cleared". Claiming the stronger one
+        // when no candidate was ever raised is a false statement about what
+        // the system did, and the first run of this command on a real diff
+        // made exactly that claim.
         let r = render(&traj_with(vec![]));
-        assert!(r.contains("Nothing reported"));
+        assert!(r.contains("nothing proposed"));
+        assert!(!r.contains("investigated against the repository and ruled out"));
+    }
+
+    #[test]
+    fn a_review_that_cleared_everything_says_so_instead() {
+        let cfg = RunConfig::mock();
+        let mut t = Trajectory::new("review", AgentKind::Advanced, &cfg);
+        let f = finding(FindingStatus::Rejected);
+        t.push(crate::trajectory::TrajectoryEvent::CandidateProposed {
+            candidate: f.candidate.clone(),
+        });
+        t.finish(vec![f], 100);
+        let r = render(&t);
+        assert!(r.contains("investigated against the repository and ruled out"));
+        assert!(!r.contains("nothing proposed"));
     }
 
     #[test]

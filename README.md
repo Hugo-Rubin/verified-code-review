@@ -70,6 +70,26 @@ Full history, including four changes that made things worse and one feature
 that did nothing at all:
 [`docs/improvement-changelog.md`](docs/improvement-changelog.md).
 
+### Using it on your own code
+
+It is a tool, not only a benchmark harness. Point it at a working tree and a
+diff and it runs the same pipeline, prompts, sandbox and evidence gate that
+produced every number above:
+
+```bash
+cargo run --quiet --bin vcr -- review --repo . --diff my-change.patch --out results-review
+```
+
+No ground truth, no score — a report for a person, listing what was found, the
+falsification question each claim was checked against, the repository lines
+actually read, and what was investigated and **cleared**, because a reviewer who
+disagrees with a rejection needs to see the evidence that closed it.
+
+We ran it on this repository, including on the commit that introduced this
+project's own worst bug. It did not find that bug, and it did find a false claim
+in our own report renderer. Both runs are written up in
+[`docs/dogfood.md`](docs/dogfood.md).
+
 ---
 
 ## Problem
@@ -615,6 +635,25 @@ in comments. Both versions are in the changelog with their numbers.
 What generalises: **the boundary of what an agent can verify is the boundary of
 what it should be allowed to treat as settled**, and that boundary has to be
 drawn deliberately, because the model will not draw it.
+
+**Dogfooding sharpened this into a second, sharper statement.** We pointed the
+reviewer at the commit that introduced this project's own worst defect — the
+deduplication rule that borrowed the evaluator's scoring tolerance to decide two
+claims were the same claim. It missed it, and the reason is instructive: every
+line of that code is correct. The comparison is sound, the constant is real, the
+arithmetic is safe, the tests pass. It is wrong only in **what the constant
+means**. So:
+
+> The system finds defects that are wrong *in the code*. It does not find
+> defects that are wrong *in the intent behind a name*.
+
+That is a limit of the approach and not just of this implementation.
+Falsification needs a claim that repository evidence can settle, and "this
+constant is being used for a purpose its definition does not support" is a claim
+about design intent — which the repository does not contain. What actually
+caught that bug was `vcr replay-dedup`, running the rule against every recorded
+run and asking what it had done. Full write-up:
+[`docs/dogfood.md`](docs/dogfood.md).
 
 ### The tool budget is never the constraint, and we can prove it
 
