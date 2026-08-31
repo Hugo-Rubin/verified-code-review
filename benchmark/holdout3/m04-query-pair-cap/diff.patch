@@ -1,0 +1,12 @@
+--- a/src/query.rs
++++ b/src/query.rs
+@@ -32,9 +32,6 @@
+         let (k, v) = seg.split_once('=').unwrap_or((seg, ""));
+         if k.is_empty() {
+             return Err(QueryError::EmptyKey);
+-        }
+-        if out.len() == MAX_PAIRS {
+-            return Err(QueryError::TooManyPairs);
+         }
+         out.push((k.to_string(), v.to_string()));
+     }

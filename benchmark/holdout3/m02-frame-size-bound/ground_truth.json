@@ -1,0 +1,18 @@
+{
+  "case_id": "m02-frame-size-bound",
+  "expected_findings": [
+    {
+      "id": "m02-f1",
+      "issue_type": "Validation",
+      "also_accept": [
+        "Correctness",
+        "ApiContract"
+      ],
+      "file": "src/frame.rs",
+      "start_line": 29,
+      "end_line": 32,
+      "description": "`encode` validates the payload against `MAX_FRAME_BYTES` (4096), but the quantity being bounded is the payload, not the whole frame. The frame it then builds is `HEADER_BYTES + payload.len()` bytes, so any payload between `MAX_PAYLOAD_BYTES + 1` (4089) and `MAX_FRAME_BYTES` (4096) is accepted and produces a frame of up to 4104 bytes, exceeding the limit the transport and `decode` enforce. The constant that expresses the intended bound, `MAX_PAYLOAD_BYTES = MAX_FRAME_BYTES - HEADER_BYTES`, is declared immediately above and is what the check used before."
+    }
+  ],
+  "notes": "Constructed by swapping one named constant for a related one that is larger by exactly `HEADER_BYTES`. The window of accepted-but-unsendable payloads is 8 bytes wide (4089..=4096).\n\nWhy the existing tests miss it: `refuses_an_oversized_payload` uses a 10,000-byte payload, which is over both constants and so is still rejected - and it matches with `matches!(.., Err(FrameError::PayloadTooLarge { .. }))` rather than asserting the `limit` field, so the changed limit value goes unnoticed. `decode_refuses_an_oversized_frame` feeds `decode` a 5,000-byte buffer directly rather than anything `encode` produced, so it never crosses the two functions. The round-trip tests use 0- and 5-byte payloads. Nothing in the suite encodes a payload anywhere near the boundary, and nothing asserts that everything `encode` accepts is something `decode` will take.\n\nVerified by execution: a throwaway integration test (deleted afterwards) printed:\n  MAX_FRAME_BYTES = 4096, MAX_PAYLOAD_BYTES = 4088, HEADER_BYTES = 8\n  encode(4090-byte payload) is_ok = true, frame len = Ok(4098)\n  decode(that frame) = Err(FrameTooLarge { len: 4098 })\n  frame len for a MAX_PAYLOAD_BYTES payload = 4096\nSo a payload `encode` accepts becomes a frame `decode` refuses; the largest payload that does round-trip is exactly `MAX_PAYLOAD_BYTES`.\n\nalso_accept covers Correctness (the arithmetic is off by `HEADER_BYTES`) and ApiContract (`encode` and `decode` no longer agree on what a legal frame is)."
+}

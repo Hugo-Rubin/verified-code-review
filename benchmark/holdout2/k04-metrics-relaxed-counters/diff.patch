@@ -1,0 +1,27 @@
+--- a/src/metrics.rs
++++ b/src/metrics.rs
+@@ -22,11 +22,11 @@
+     }
+ 
+     pub fn record_ok(&self) {
+-        self.processed.fetch_add(1, Ordering::SeqCst);
++        self.processed.fetch_add(1, Ordering::Relaxed);
+     }
+ 
+     pub fn record_err(&self) {
+-        self.failed.fetch_add(1, Ordering::SeqCst);
++        self.failed.fetch_add(1, Ordering::Relaxed);
+     }
+ 
+     /// A point-in-time reading of the two totals.
+@@ -36,8 +36,8 @@
+     /// workers have been joined.
+     pub fn snapshot(&self) -> Totals {
+         Totals {
+-            processed: self.processed.load(Ordering::SeqCst),
+-            failed: self.failed.load(Ordering::SeqCst),
++            processed: self.processed.load(Ordering::Relaxed),
++            failed: self.failed.load(Ordering::Relaxed),
+         }
+     }
+ }

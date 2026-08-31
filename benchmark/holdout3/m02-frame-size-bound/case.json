@@ -1,0 +1,6 @@
+{
+  "case_id": "m02-frame-size-bound",
+  "title": "State the encode size bound with the transport's frame limit",
+  "description": "`encode` now compares the payload length against `MAX_FRAME_BYTES`, the same constant `decode` enforces, so both directions of the protocol are written against one number. The `PayloadTooLarge` error it returns reports that constant as the limit it applied.",
+  "category": "RealIssue"
+}

@@ -1,0 +1,57 @@
+--- a/src/bus.rs
++++ b/src/bus.rs
+@@ -1,7 +1,7 @@
+ //! Fan-out of published messages to subscriber mailboxes.
+ 
+ use crate::subscriber::Subscriber;
+-use std::sync::{Arc, Mutex, Weak};
++use std::sync::{Arc, Mutex};
+ 
+ /// Delivers every published message to each live subscriber.
+ ///
+@@ -9,7 +9,7 @@
+ /// as the caller keeps the `Arc<Subscriber>` returned by `subscribe`.
+ #[derive(Default)]
+ pub struct Bus {
+-    subs: Mutex<Vec<Weak<Subscriber>>>,
++    subs: Mutex<Vec<Arc<Subscriber>>>,
+ }
+ 
+ impl Bus {
+@@ -19,30 +19,23 @@
+         self.subs
+             .lock()
+             .expect("bus poisoned")
+-            .push(Arc::downgrade(&sub));
++            .push(Arc::clone(&sub));
+         sub
+     }
+ 
+     /// Deliver `message` to every live subscriber, returning how many received
+     /// it.
+     pub fn publish(&self, message: &str) -> usize {
+-        let mut subs = self.subs.lock().expect("bus poisoned");
+-        subs.retain(|weak| weak.strong_count() > 0);
+-        let mut delivered = 0;
+-        for weak in subs.iter() {
+-            if let Some(sub) = weak.upgrade() {
+-                sub.deliver(message);
+-                delivered += 1;
+-            }
++        let subs = self.subs.lock().expect("bus poisoned");
++        for sub in subs.iter() {
++            sub.deliver(message);
+         }
+-        delivered
++        subs.len()
+     }
+ 
+     /// How many subscriptions are currently live.
+     pub fn subscriber_count(&self) -> usize {
+-        let mut subs = self.subs.lock().expect("bus poisoned");
+-        subs.retain(|weak| weak.strong_count() > 0);
+-        subs.len()
++        self.subs.lock().expect("bus poisoned").len()
+     }
+ 
+     pub fn new() -> Self {

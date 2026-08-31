@@ -1,0 +1,18 @@
+{
+  "case_id": "m01-retry-error-mapping",
+  "expected_findings": [
+    {
+      "id": "m01-f1",
+      "issue_type": "ErrorHandling",
+      "also_accept": [
+        "Correctness",
+        "ApiContract"
+      ],
+      "file": "src/client.rs",
+      "start_line": 31,
+      "end_line": 40,
+      "description": "The new `From<ParseError> for FetchError` maps every parser failure to `FetchError::Transport`, and `fetch_once` now routes parse failures through it with `?`. `FetchError::is_retryable` (src/error.rs) returns true for exactly `Transport`, so `fetch_with_retry` now treats an unparseable body as a retryable condition and repeats the identical request `MAX_ATTEMPTS` times before failing. The previous `map_err` produced `FetchError::Malformed`, which src/error.rs documents as the case where another attempt cannot help. Callers can also no longer distinguish a genuine connection failure from a body the parser rejected, because both now arrive as `Transport`."
+    }
+  ],
+  "notes": "Constructed by adding a `From` impl whose target variant differs from the one the previous explicit `map_err` chose, then switching the call site to `?`. The deciding fact - that `Transport` is the one retryable variant - sits in src/error.rs, one file away from the diff, but it is a five-line function, so this is a RealIssue rather than a Challenging case.\n\nWhy the existing tests miss it: the retry tests (`retries_a_transport_failure_then_succeeds`, `gives_up_after_max_attempts`, `an_unauthorized_response_is_not_retried`) all drive the loop with errors the transport itself returns, which never pass through the new conversion, so their attempt counts are unchanged. The one test that exercises a malformed body, `a_body_that_does_not_parse_is_reported_as_an_error`, asserts only `r.is_err()` - it never inspects the variant and never asserts the attempt count, and those are exactly the two things that changed. `only_transport_is_retryable` in src/error.rs tests the classification function in isolation, which is still correct; what changed is which errors get that classification.\n\nVerified by execution: a throwaway integration test (deleted afterwards) printed:\n  fetch_once(malformed body) = Err(Transport(\"no id= prefix in \\\"nonsense\\\"\"))\n  is_retryable = true\n  fetch_with_retry -> attempts = 4, result = Err(Transport(\"no id= prefix in \\\"nonsense\\\"\"))\n  MAX_ATTEMPTS = 4\nBefore the change the same input produced a single attempt and `FetchError::Malformed`.\n\nalso_accept covers Correctness (four identical requests instead of one) and ApiContract (a public error variant no longer means what src/error.rs documents it to mean)."
+}

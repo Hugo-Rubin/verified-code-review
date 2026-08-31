@@ -1,0 +1,14 @@
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -46,10 +46,7 @@
+         None => DEFAULT_RATE,
+     };
+ 
+-    let burst = match raw.get("burst") {
+-        Some(v) => v.parse::<u32>().map_err(|_| ConfigError::Invalid("burst"))?,
+-        None => DEFAULT_BURST,
+-    };
++    let burst = raw.get("burst").and_then(|v| v.parse().ok()).unwrap_or_default();
+ 
+     Ok(Config {
+         rate_per_sec,

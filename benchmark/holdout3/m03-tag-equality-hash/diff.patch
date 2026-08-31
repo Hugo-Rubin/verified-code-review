@@ -1,0 +1,33 @@
+--- a/src/tag.rs
++++ b/src/tag.rs
+@@ -3,8 +3,17 @@
+ use std::collections::HashSet;
+ 
+ /// A label attached to a resource.
+-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
++///
++/// Tags are written by users, who are inconsistent about capitalisation, so
++/// `"Release"` and `"release"` name the same tag.
++#[derive(Debug, Clone, Eq, Hash)]
+ pub struct Tag(String);
++
++impl PartialEq for Tag {
++    fn eq(&self, other: &Self) -> bool {
++        self.0.eq_ignore_ascii_case(&other.0)
++    }
++}
+ 
+ impl Tag {
+     pub fn new(s: impl Into<String>) -> Self {
+@@ -51,8 +60,9 @@
+     use super::*;
+ 
+     #[test]
+-    fn identical_tags_are_equal() {
+-        assert_eq!(Tag::new("release"), Tag::new("release"));
++    fn tags_compare_without_regard_to_case() {
++        assert_eq!(Tag::new("Release"), Tag::new("release"));
++        assert_eq!(Tag::new("RELEASE"), Tag::new("release"));
+     }
+ 
+     #[test]

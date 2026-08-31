@@ -1,0 +1,6 @@
+{
+  "case_id": "k05-walk-borrow-scope",
+  "title": "Iterate a node's children in place during walk",
+  "description": "`walk` copied each node's child vector before recursing, which allocates once per node and bumps a reference count for every child in the tree. It now borrows the node once and iterates the children where they live, so a traversal no longer allocates.",
+  "category": "Challenging"
+}

@@ -1,0 +1,20 @@
+--- a/src/client.rs
++++ b/src/client.rs
+@@ -28,10 +28,16 @@
+     Ok(Record { id })
+ }
+ 
++impl From<ParseError> for FetchError {
++    fn from(e: ParseError) -> Self {
++        FetchError::Transport(e.0)
++    }
++}
++
+ /// Fetch a body and parse it. One attempt, no retrying.
+ pub fn fetch_once(t: &mut dyn Transport) -> Result<Record, FetchError> {
+     let body = t.get()?;
+-    parse_record(&body).map_err(|e| FetchError::Malformed(e.0))
++    Ok(parse_record(&body)?)
+ }
+ 
+ /// Repeat `fetch_once` while the failure is retryable, up to `MAX_ATTEMPTS`

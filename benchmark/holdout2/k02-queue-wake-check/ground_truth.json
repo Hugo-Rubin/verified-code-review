@@ -1,0 +1,15 @@
+{
+  "case_id": "k02-queue-wake-check",
+  "expected_findings": [
+    {
+      "id": "k02-f1",
+      "issue_type": "Concurrency",
+      "also_accept": ["Correctness", "ApiContract"],
+      "file": "src/queue.rs",
+      "start_line": 66,
+      "end_line": 69,
+      "description": "Replacing the predicate loop with a single `if` breaks `pop`'s documented contract that `None` is returned only after the queue is closed and drained. `push` signals with `notify_all`, so a single pushed item wakes every blocked consumer; each one re-acquires the mutex in turn, the first takes the item and the rest fall straight through to `state.items.pop_front()` on an empty deque and return `None` from an open queue. The same hole is opened for a spurious wakeup, which `Condvar::wait` is explicitly allowed to produce. The condition has to be re-tested after every wakeup, which is exactly what the loop did."
+    }
+  ],
+  "notes": "Constructed by changing `while` to `if` around a `Condvar::wait`. The trigger, `notify_all` in `push`, is unchanged code eight lines above the edit in the same file, so the case is solvable from the diff plus one nearby read.\n\nWhy the shipped suite misses it: only one of the four tests in src/queue.rs ever blocks a consumer, and it blocks exactly one. `a_consumer_blocks_until_an_item_arrives` and `closing_releases_a_blocked_consumer` each spawn a single consumer thread, so `notify_all` wakes exactly one waiter and the item (or the closed flag) it was waiting for is always still there when it re-acquires the guard. The remaining two tests never block at all, because the queue is non-empty or already closed on entry, so they skip the conditional entirely. Nothing in the suite has two consumers blocked at once, which is the situation the loop existed to handle.\n\nalso_accept covers Correctness and ApiContract (`pop` returning `None` from an open queue contradicts its own doc comment two lines above the edit).\n\nVerified by execution: a throwaway integration test parked two consumers, waited on the crate's own `waiting()` accessor until both were provably inside `Condvar::wait` (the counter is incremented under the guard, which `wait` only releases once it is parked), then pushed one item. Output, with the crate as shipped:\n\n    running 1 test\n    queue closed = false\n    two blocked consumers, one push -> pop results = [None, Some(7)]\n    expected                                       = [Some(7), Some(7)]\n\n    thread 'one_push_against_two_blocked_consumers' (115984) panicked at tests\\zz_throwaway.rs:27:5:\n    assertion `left == right` failed\n      left: [None, Some(7)]\n     right: [Some(7), Some(7)]\n    test one_push_against_two_blocked_consumers ... FAILED\n\n    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\nOne consumer received `None` while `is_closed()` was still false. The demonstration does not depend on a spurious wakeup or on any timing race: it is forced entirely by `notify_all` plus the waiter-count handshake. The throwaway test was deleted afterwards; `cargo test` on the shipped crate reports `4 passed; 0 failed`."
+}

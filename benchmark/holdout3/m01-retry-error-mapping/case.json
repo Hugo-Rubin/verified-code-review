@@ -1,0 +1,6 @@
+{
+  "case_id": "m01-retry-error-mapping",
+  "title": "Convert parse failures with `?` in fetch_once",
+  "description": "`fetch_once` now leans on `?` for the parse step instead of an explicit `map_err`, and a `From<ParseError> for FetchError` impl is added next to the call site so the conversion lives in one place. Parse failures on this path come from bodies that arrived over a flaky link, so the conversion produces `FetchError::Transport` carrying the parser's message.",
+  "category": "RealIssue"
+}

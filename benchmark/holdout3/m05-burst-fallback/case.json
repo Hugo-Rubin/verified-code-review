@@ -1,0 +1,6 @@
+{
+  "case_id": "m05-burst-fallback",
+  "title": "Fall back for burst instead of failing the tenant load",
+  "description": "`parse_config` no longer returns an error when the `burst` key is absent or when its value does not parse; it falls back instead, so one stray line in a tenant file does not take that tenant's whole configuration offline. `rate` keeps its stricter handling, because a missing rate has no fallback that makes sense.",
+  "category": "Challenging"
+}

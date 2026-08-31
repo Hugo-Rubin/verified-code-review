@@ -1,0 +1,6 @@
+{
+  "case_id": "m03-tag-equality-hash",
+  "title": "Compare tags without regard to capitalisation",
+  "description": "Users type tags inconsistently, so `Release` and `release` are meant to name the same tag. `PartialEq` for `Tag` is now hand-written on top of `eq_ignore_ascii_case` instead of derived, and the equality unit test was updated to cover mixed capitalisation. `as_str` still returns the spelling the user typed.",
+  "category": "RealIssue"
+}

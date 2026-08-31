@@ -1,0 +1,6 @@
+{
+  "case_id": "k03-bus-subscriber-handles",
+  "title": "Store subscriber handles directly on the bus",
+  "description": "The subscriber list held `Weak<Subscriber>` entries, so `publish` had to upgrade each one on every message and both `publish` and `subscriber_count` swept the list for expired entries before doing their real work. The list now holds the handle itself, which makes `publish` a straight iteration and turns `subscriber_count` into a length read.",
+  "category": "RealIssue"
+}

@@ -1,0 +1,14 @@
+--- a/src/walk.rs
++++ b/src/walk.rs
+@@ -11,9 +11,9 @@
+ 
+ /// Visit `node` and everything beneath it.
+ pub fn walk(node: &Rc<RefCell<Node>>, visitor: &mut dyn Visitor, depth: u32) {
+-    let children = node.borrow().children.clone();
++    let current = node.borrow();
+     visitor.visit(node, depth);
+-    for child in children.iter() {
++    for child in current.children.iter() {
+         walk(child, visitor, depth + 1);
+     }
+ }

@@ -1,0 +1,19 @@
+{
+  "case_id": "m05-burst-fallback",
+  "expected_findings": [
+    {
+      "id": "m05-f1",
+      "issue_type": "ErrorHandling",
+      "also_accept": [
+        "Validation",
+        "Correctness",
+        "ApiContract"
+      ],
+      "file": "src/config.rs",
+      "start_line": 49,
+      "end_line": 49,
+      "description": "`unwrap_or_default()` yields `0` for `burst`, and `0` is not a neutral default here: src/limiter.rs documents and implements a zero burst as the sentinel that turns throttling off entirely - `Limiter::is_unlimited` returns `burst == 0`, and `allow` then admits every request without consulting the rate. So a tenant file with a mistyped burst value, or one that simply omits the key, now loads successfully and silently disables rate limiting for that tenant, where before it either failed loudly with `ConfigError::Invalid(\"burst\")` or used `DEFAULT_BURST` (5). The `DEFAULT_BURST` constant declared in this file is no longer consulted by any code path."
+    }
+  ],
+  "notes": "Challenging: the diff on its own reads as an ordinary \"be lenient about a missing field\" change, and nothing in src/config.rs says what a burst of 0 means. The deciding evidence is in src/limiter.rs, which the diff does not touch: the doc comment on `Limiter` states that a zero burst is the throttling-off sentinel, and `is_unlimited` / `allow` / `tick` implement it. A reviewer who reads only the diff and its own file cannot decide this; one who follows `Config::into_limiter` into `Limiter::new` can.\n\nThe change also quietly moves the no-key default from `DEFAULT_BURST` (5, still declared and still public in src/config.rs) to 0, so the code and the documented default now disagree - the same defect from the other direction.\n\nWhy the existing tests miss it: every config test supplies a valid `burst` - `reads_rate_and_burst` (\"burst = 20\"), `skips_comments_and_blank_lines` (\"burst = 9\"), `a_parsed_config_builds_a_working_limiter` (\"burst = 1\") - and `refuses_a_rate_that_does_not_parse` supplies \"burst = 9\" as well, so no test ever parses a config whose burst is missing or unparseable. The limiter tests construct `Limiter::new` directly, including `a_zero_burst_admits_everything`, which asserts that the sentinel behaviour is correct rather than that config parsing cannot reach it. Both halves are tested and both are individually correct; only their new composition is not.\n\nVerified by execution: a throwaway integration test (deleted afterwards) printed:\n  DEFAULT_BURST = 5\n  parse_config(burst = twenty) -> Config { rate_per_sec: 10, burst: 0 }\n  is_unlimited = true\n  requests admitted out of 1000 = 1000\n  parse_config(no burst key) -> Config { rate_per_sec: 10, burst: 0 }\nBefore the change the first call returned Err(ConfigError::Invalid(\"burst\")) and the last returned burst = 5.\n\nalso_accept covers Validation (an unparseable value is accepted), Correctness (the resulting limiter admits everything) and ApiContract (`parse_config` no longer honours its own documented default)."
+}

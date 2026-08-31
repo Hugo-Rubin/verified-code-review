@@ -1,0 +1,6 @@
+{
+  "case_id": "m04-query-pair-cap",
+  "title": "Drop the per-pair counter from parse_query",
+  "description": "`parse_query` no longer counts pairs against `MAX_PAIRS` on every segment. The query length limit is the binding constraint on that path, and the branch sat in the router's hot loop. `parse_body`, whose input is allowed to be far larger, keeps the counter.",
+  "category": "Trap"
+}

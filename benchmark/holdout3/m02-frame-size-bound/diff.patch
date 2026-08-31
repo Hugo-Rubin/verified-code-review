@@ -1,0 +1,15 @@
+--- a/src/frame.rs
++++ b/src/frame.rs
+@@ -26,10 +26,10 @@
+ 
+ /// Encode `payload` into a single frame.
+ pub fn encode(payload: &[u8]) -> Result<Vec<u8>, FrameError> {
+-    if payload.len() > MAX_PAYLOAD_BYTES {
++    if payload.len() > MAX_FRAME_BYTES {
+         return Err(FrameError::PayloadTooLarge {
+             len: payload.len(),
+-            limit: MAX_PAYLOAD_BYTES,
++            limit: MAX_FRAME_BYTES,
+         });
+     }
+ 

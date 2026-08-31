@@ -1,0 +1,6 @@
+{
+  "case_id": "k02-queue-wake-check",
+  "title": "Drop the re-check loop from Queue::pop",
+  "description": "`Queue::pop` re-tested the empty/closed condition in a loop after returning from `Condvar::wait`. `push` and `close` both update the state under the queue mutex before signalling, so the condition a consumer waited on has already been established by the time `wait` hands the guard back. The loop is now a plain conditional wait.",
+  "category": "RealIssue"
+}

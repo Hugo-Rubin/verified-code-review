@@ -1,0 +1,6 @@
+{
+  "case_id": "k01-counter-update-window",
+  "title": "Run the update closure outside the counters lock",
+  "description": "`Counters::update` used to hold the map lock while it called the caller's closure. The closure is arbitrary caller code that may be slow or may itself reach back into the same `Counters`, and a std `Mutex` is not reentrant, so the author reworked `update` to read the current value, run the closure, and then store the result, leaving the lock held only for the two map operations.",
+  "category": "RealIssue"
+}

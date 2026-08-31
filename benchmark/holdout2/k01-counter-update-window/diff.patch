@@ -1,0 +1,14 @@
+--- a/src/counters.rs
++++ b/src/counters.rs
+@@ -25,9 +25,9 @@
+     where
+         F: FnOnce(u64) -> u64,
+     {
++        let current = self.get(key);
++        let next = f(current);
+         let mut inner = self.inner.lock().expect("counters poisoned");
+-        let current = inner.get(key).copied().unwrap_or(0);
+-        let next = f(current);
+         inner.insert(key.to_string(), next);
+     }
+ 

@@ -1,0 +1,18 @@
+{
+  "case_id": "m03-tag-equality-hash",
+  "expected_findings": [
+    {
+      "id": "m03-f1",
+      "issue_type": "ApiContract",
+      "also_accept": [
+        "Correctness",
+        "StateManagement"
+      ],
+      "file": "src/tag.rs",
+      "start_line": 9,
+      "end_line": 16,
+      "description": "`PartialEq` is now case-insensitive while `Hash` is still derived over the raw `String`, so two `Tag`s that compare equal can hash differently. That violates the `Hash`/`Eq` contract the standard library requires of `HashSet` keys, and `TagSet` stores `Tag` in a `HashSet` a few lines below. `TagSet::contains` misses a tag that was inserted under a different capitalisation, and `TagSet::insert` reports such a tag as new and stores a second copy, so the set holds entries its own `PartialEq` calls duplicates."
+    }
+  ],
+  "notes": "Constructed by replacing a derived `PartialEq` with a hand-written case-insensitive one while leaving the derived `Hash` in place. rustc does not diagnose this (clippy's `derived_hash_with_manual_eq` would, but the crate builds warning-free under plain `cargo test`).\n\nWhy the existing tests miss it: the change added `tags_compare_without_regard_to_case`, which tests `Tag` equality directly and passes, so the suite looks like it covers the new behaviour. Every `TagSet` test, however, uses a single spelling throughout - `inserting_the_same_tag_twice_is_a_no_op` inserts \"release\" twice, `an_inserted_tag_is_found` looks up the exact string it inserted, and `distinct_tags_are_all_kept` uses two tags that differ in more than case. No test crosses the two halves by inserting one capitalisation and looking up another, which is the only way the inconsistency becomes visible.\n\nVerified by execution: a throwaway integration test (deleted afterwards) printed:\n  a == b : true\n  hash(a) == hash(b) : false\n  contains(\"release\") after inserting \"Release\" : false\n  insert(\"release\") reported as new : true\n  set len : 2\nwith a = Tag::new(\"Release\"), b = Tag::new(\"release\"), hashed with DefaultHasher.\n\nalso_accept covers Correctness (lookups return the answer the type's own equality contradicts) and StateManagement (the set accumulates duplicate entries)."
+}

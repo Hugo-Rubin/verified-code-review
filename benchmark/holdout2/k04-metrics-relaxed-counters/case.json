@@ -1,0 +1,6 @@
+{
+  "case_id": "k04-metrics-relaxed-counters",
+  "title": "Lower the job counters to relaxed ordering",
+  "description": "The two job counters used `Ordering::SeqCst` for both their increments and their reads, which puts a full barrier on the hot path of every job. They are aggregate tallies, so the increments and the reads were lowered to `Ordering::Relaxed`.",
+  "category": "Trap"
+}
