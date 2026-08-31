@@ -675,16 +675,20 @@ commands, required configuration, expected output, runtime, and cost.
   dispatch, trait objects, re-exports, aliasing, macro-generated call paths and
   deep indirection are blind spots. Every trap here is resolvable by reading
   call sites; a trap turning on a trait object would likely defeat it.
-- **A finding anchors at one location, deliberately.** A defect that is wrong
-  only as an interaction between two files — `c03` (`store.rs` × `handler.rs`),
-  `h06` (`digest.rs` × `model.rs`) — is reported at one anchor, with the other
-  files present as cited `Evidence` rather than as part of the claim. The
-  information is in the schema; the *claim* is single-anchored. Making the
-  interaction first-class means adding a field to the reviewer's output
-  contract, which changes the review prompt, which would invalidate the
-  five-trial headline for a change we have no way to score — the evaluator
-  matches on the primary location either way. We chose the stale limitation
-  over an unmeasurable rewrite, and record the trade rather than the fix.
+- **A finding anchors at one location, and the interaction is derived rather
+  than claimed.** A defect that is wrong only as an interaction between two
+  files — `c03` (`store.rs` × `handler.rs`), `h06` (`digest.rs` × `model.rs`) —
+  is reported at one anchor. Reports now also print **"Depends on code in:"**,
+  built by Rust from the files the investigation actually read and cited, minus
+  the anchor's own file. On the worked example above that resolves to
+  `src/store.rs` — the file that makes the guard wrong and that the diff never
+  touches.
+  It is derived, never asserted: the model cannot name a file it did not open,
+  which is the same rule that governs every other piece of evidence here. What
+  is still missing is a first-class *claim* about an interaction, and that is
+  not being added: a new field in the reviewer's output contract changes the
+  review prompt, which would invalidate fifteen trials, for something the
+  evaluator matches on the primary location either way.
 - **One model for the system under test.** Every advanced-arm figure is
   `gemini-3.7-flash` on Vertex AI. The *baseline* was reproduced on Claude
   Sonnet 5 and agreed case-for-case — same F1 0.857, same 12 of 12 per-case

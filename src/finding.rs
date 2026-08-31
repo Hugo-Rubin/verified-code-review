@@ -236,6 +236,45 @@ pub struct Finding {
 }
 
 impl Finding {
+    /// Other files this finding actually depends on.
+    ///
+    /// A finding anchors at one location, which is the right place for a human
+    /// to start. But the defects worth catching here are usually an
+    /// *interaction*: a guard in one file that is only wrong because of what a
+    /// function in another file returns. Naming just the anchor tells the
+    /// reader where to look and not what makes it wrong.
+    ///
+    /// This is **derived, not asserted**. It is the set of files the
+    /// investigation actually read or searched and cited as evidence, minus the
+    /// file the claim already points at. The model never authors this list —
+    /// Rust builds it from tool results, the same rule that governs every other
+    /// piece of evidence in the system — so it cannot name a file the
+    /// investigation did not open.
+    ///
+    /// Deliberately derived rather than added to the reviewer's output schema:
+    /// a new output field changes the review prompt, which would invalidate
+    /// every recorded trial, for information the pipeline already has.
+    pub fn related_files(&self) -> Vec<String> {
+        let anchor = &self.candidate.location.file;
+        let mut seen: Vec<String> = Vec::new();
+        for e in &self.evidence {
+            // Only evidence the investigation retrieved counts, on the same
+            // rule the evidence gate uses: a diff hunk is the starting
+            // material and a directory listing is not a fact about behaviour.
+            if !matches!(e.kind, EvidenceKind::Search | EvidenceKind::FileRegion) {
+                continue;
+            }
+            let Some(file) = &e.file else { continue };
+            if file == anchor || e.excerpt.trim().is_empty() {
+                continue;
+            }
+            if !seen.contains(file) {
+                seen.push(file.clone());
+            }
+        }
+        seen
+    }
+
     /// Wrap a candidate that never went through investigation (baseline path).
     pub fn from_candidate_unverified(candidate: CandidateFinding) -> Self {
         Self {

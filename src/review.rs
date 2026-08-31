@@ -202,6 +202,12 @@ pub fn render(traj: &Trajectory) -> String {
         if !cited.is_empty() {
             out.push_str(&format!("  Evidence read: {}\n", cited.join(", ")));
         }
+        // The anchor says where to start; this says what makes it wrong. Both
+        // matter for a defect that is an interaction between two files.
+        let related = f.related_files();
+        if !related.is_empty() {
+            out.push_str(&format!("  Depends on code in: {}\n", related.join(", ")));
+        }
     }
 
     if !cleared.is_empty() {
@@ -372,5 +378,66 @@ mod tests {
         let case = build_case(&req, "--- a\n+++ b\n".into()).unwrap();
         assert_eq!(case.id(), "review");
         assert!(case.repo.resolve("ground_truth.json").is_err());
+    }
+
+    #[test]
+    fn related_files_names_the_other_file_a_defect_depends_on() {
+        let mut f = finding(FindingStatus::Verified);
+        f.evidence = vec![
+            crate::finding::Evidence {
+                kind: crate::finding::EvidenceKind::FileRegion,
+                file: Some("src/store.rs".into()),
+                start_line: Some(10),
+                end_line: Some(20),
+                symbol: None,
+                excerpt: "fn len(&self) -> usize { self.capacity }".into(),
+                tool_call_id: "t1".into(),
+            },
+            // Same file as the anchor: already where the reader is looking.
+            crate::finding::Evidence {
+                kind: crate::finding::EvidenceKind::FileRegion,
+                file: Some("src/a.rs".into()),
+                start_line: Some(1),
+                end_line: Some(5),
+                symbol: None,
+                excerpt: "fn a() {}".into(),
+                tool_call_id: "t2".into(),
+            },
+        ];
+        assert_eq!(f.related_files(), vec!["src/store.rs".to_string()]);
+        assert!(render(&traj_with(vec![f])).contains("Depends on code in: src/store.rs"));
+    }
+
+    #[test]
+    fn related_files_ignores_the_seeded_diff_hunk_and_directory_listings() {
+        // Same rule as the evidence gate: the claimed region is the reviewer's
+        // starting material and a file listing is not a fact about behaviour.
+        let mut f = finding(FindingStatus::Verified);
+        f.evidence = vec![
+            crate::finding::Evidence {
+                kind: crate::finding::EvidenceKind::DiffHunk,
+                file: Some("src/seeded.rs".into()),
+                start_line: Some(1),
+                end_line: Some(9),
+                symbol: None,
+                excerpt: "context".into(),
+                tool_call_id: "t1".into(),
+            },
+            crate::finding::Evidence {
+                kind: crate::finding::EvidenceKind::FileList,
+                file: Some("src/listed.rs".into()),
+                start_line: None,
+                end_line: None,
+                symbol: None,
+                excerpt: "src/listed.rs".into(),
+                tool_call_id: "t2".into(),
+            },
+        ];
+        assert!(f.related_files().is_empty());
+    }
+
+    #[test]
+    fn a_finding_with_no_investigation_names_no_related_files() {
+        assert!(finding(FindingStatus::Verified).related_files().is_empty());
     }
 }
