@@ -4,12 +4,16 @@
     {
       "id": "c07-f1",
       "issue_type": "ErrorHandling",
-      "also_accept": ["ResourceManagement", "Correctness", "ApiContract"],
+      "also_accept": [
+        "ResourceManagement",
+        "Correctness",
+        "ApiContract"
+      ],
       "file": "src/report.rs",
       "start_line": 15,
       "end_line": 24,
       "description": "`BufWriter` does flush on drop, but its `Drop` impl has no way to report failure and discards the error. Removing the explicit `flush()?` means an I/O failure while writing out the final buffered chunk - a full disk, a quota, a broken pipe - is silently swallowed, and `write_report` returns `Ok(())` after producing a truncated file. The `?` operators inside the loop do not cover this: they only see errors for data that has already left the buffer."
     }
   ],
-  "notes": "The stated justification is half true, which is what makes the case worth including. `BufWriter` genuinely does flush on drop, so the data is usually written. What drop cannot do is propagate an error, so the function's `Result` becomes a lie exactly when it matters.\n\nThe existing test passes and will keep passing: it writes two small rows to a temp file that always succeeds, so the error path is never exercised. A reviewer cannot lean on the suite here.\n\nEverything needed is inside the changed file. The case tests whether the reviewer knows the difference between 'the bytes get written' and 'failures get reported', rather than accepting the redundancy argument at face value.\n\nThe primary category is ErrorHandling because the defect is a swallowed error. also_accept covers ResourceManagement (a writer not closed properly), Correctness, and ApiContract (a Result that no longer reflects success)."
+  "notes": "The stated justification is half true, which is what makes the case worth including. `BufWriter` genuinely does flush on drop, so the data is usually written. What drop cannot do is propagate an error, so the function's `Result` becomes a lie exactly when it matters.\n\nThe existing test passes and will keep passing: it writes two small rows to a temp file that always succeeds, so the error path is never exercised. A reviewer cannot lean on the suite here.\n\nEverything needed is inside the changed file. The case tests whether the reviewer knows the difference between 'the bytes get written' and 'failures get reported', rather than accepting the redundancy argument at face value.\n\nThe primary category is ErrorHandling because the defect is a swallowed error. also_accept covers ResourceManagement (a writer not closed properly), Correctness, and ApiContract (a Result that no longer reflects success).\n\nVerified by execution and by inspection of the flush path:\n    write_report(...) -> Ok(())\n    bytes written      = 36\n    source contains an explicit flush? false\n  The happy path is correct, which is why the tests pass. The defect is on the\n  error path and is structural rather than observable from a successful call:\n  the final buffered chunk is now flushed by `BufWriter`'s `Drop`, whose\n  `Result` is discarded by definition, so an I/O failure at that moment cannot\n  reach the `Ok(())` this function returns. Recorded honestly: this is the one\n  case in the benchmark whose ground truth rests on a reachability argument\n  about `Drop` rather than on an observed wrong value."
 }

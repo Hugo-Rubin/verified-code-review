@@ -4,12 +4,16 @@
     {
       "id": "c05-f1",
       "issue_type": "ErrorHandling",
-      "also_accept": ["Correctness", "Validation", "ApiContract"],
+      "also_accept": [
+        "Correctness",
+        "Validation",
+        "ApiContract"
+      ],
       "file": "src/config.rs",
       "start_line": 19,
       "end_line": 24,
       "description": "The parse failure falls back to 0, and 0 is not a neutral default in this crate - `NO_TIMEOUT` is documented ten lines above as meaning 'wait forever'. A typo such as `30s` or `thirty` therefore does not fall back to `DEFAULT_TIMEOUT_SECS`; it silently disables the request deadline entirely. The previous signature surfaced the malformed value as `ConfigError::NotANumber`."
     }
   ],
-  "notes": "The defect is not the removal of the Result - that is a defensible API simplification. The defect is the specific fallback value chosen: `unwrap_or(0)` collides with the crate's own documented sentinel for 'no timeout'. `DEFAULT_TIMEOUT_SECS` sits immediately above it and is what the `None` arm uses.\n\nEverything needed is inside the changed file, so no repository investigation is required. What the case demands is that the reviewer connect the fallback to the `NO_TIMEOUT` constant rather than reading `unwrap_or(0)` as a harmless default.\n\nAll three existing tests still pass: none feeds `request_timeout` an unparseable value.\n\nA reviewer that reports only 'the error is now swallowed' at these lines still matches, since the location and category are the same. also_accept covers Correctness, Validation, and ApiContract."
+  "notes": "The defect is not the removal of the Result - that is a defensible API simplification. The defect is the specific fallback value chosen: `unwrap_or(0)` collides with the crate's own documented sentinel for 'no timeout'. `DEFAULT_TIMEOUT_SECS` sits immediately above it and is what the `None` arm uses.\n\nEverything needed is inside the changed file, so no repository investigation is required. What the case demands is that the reviewer connect the fallback to the `NO_TIMEOUT` constant rather than reading `unwrap_or(0)` as a harmless default.\n\nAll three existing tests still pass: none feeds `request_timeout` an unparseable value.\n\nA reviewer that reports only 'the error is now swallowed' at these lines still matches, since the location and category are the same. also_accept covers Correctness, Validation, and ApiContract.\n\nVerified by execution:\n    DEFAULT_TIMEOUT_SECS = 30\n    NO_TIMEOUT           = 0ns\n    request_timeout(Some(\"30s\"))    = 0ns   unbounded=true\n    request_timeout(Some(\"thirty\")) = 0ns   unbounded=true\n    request_timeout(Some(\"45\"))     = 45s   unbounded=false\n    request_timeout(None)           = 30s   unbounded=false\n  A malformed value does not fall back to the 30s default; it produces\n  NO_TIMEOUT, which this crate documents as \"wait forever\"."
 }

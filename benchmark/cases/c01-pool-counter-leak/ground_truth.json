@@ -4,12 +4,15 @@
     {
       "id": "c01-f1",
       "issue_type": "ResourceManagement",
-      "also_accept": ["StateManagement", "Correctness"],
+      "also_accept": [
+        "StateManagement",
+        "Correctness"
+      ],
       "file": "src/pool.rs",
       "start_line": 56,
       "end_line": 60,
       "description": "The early return on the exhausted path leaves the active counter incremented. `acquire` raises `*n` before testing it, but the `Err(PoolError::Exhausted)` branch returns without undoing the increment and no `Conn` is constructed, so nothing will ever decrement it. Each rejected acquisition therefore permanently inflates the counter, and after `max` rejections the pool reports itself exhausted forever even when every connection has been released."
     }
   ],
-  "notes": "Constructed by rewriting a correct check-then-increment into an increment-then-check. The defect is visible in the diff alone; no repository investigation is required to find it. Its purpose is to measure recall on a straightforward real bug and to detect an advanced system that has become over-eager to reject findings.\n\nThe two pre-existing unit tests in src/pool.rs still pass after the change: `refuses_beyond_the_limit` asserts only that the second acquire returns `Exhausted`, never that the counter recovers afterwards. A reviewer cannot rely on the test suite to catch this.\n\nalso_accept covers StateManagement (a counter left in a wrong state) and Correctness (the `>` boundary), both defensible readings of the same defect at the same location."
+  "notes": "Constructed by rewriting a correct check-then-increment into an increment-then-check. The defect is visible in the diff alone; no repository investigation is required to find it. Its purpose is to measure recall on a straightforward real bug and to detect an advanced system that has become over-eager to reject findings.\n\nThe two pre-existing unit tests in src/pool.rs still pass after the change: `refuses_beyond_the_limit` asserts only that the second acquire returns `Exhausted`, never that the counter recovers afterwards. A reviewer cannot rely on the test suite to catch this.\n\nalso_accept covers StateManagement (a counter left in a wrong state) and Correctness (the `>` boundary), both defensible readings of the same defect at the same location.\n\nVerified by execution:\n    2 successful acquires      -> active = 2\n    2 REJECTED acquires        -> active = 4      (leak observed)\n    both connections released  -> active = 2      (expected 0)\n    pool permanently exhausted -> true\n  Each rejected acquisition permanently inflates the counter."
 }

@@ -76,10 +76,10 @@ def check_case(case_dir: pathlib.Path, language: str) -> list[str]:
             problems.append(f"{name}: Trap with {n} expected finding(s)")
         if category != "Trap" and n == 0:
             problems.append(f"{name}: {category} with no expected findings")
-        if "Verified by execution:" not in gt.get("notes", ""):
+        if "Verified by execution" not in gt.get("notes", ""):
             problems.append(
                 f"{name}: notes do not record an execution check "
-                '("Verified by execution:")'
+                '("Verified by execution")'
             )
     except Exception as e:  # noqa: BLE001
         problems.append(f"{name}: ground_truth.json unreadable: {e}")
