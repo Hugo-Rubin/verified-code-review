@@ -1,0 +1,274 @@
+{
+  "aggregate": {
+    "agent": "Advanced",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 6,
+    "counts": {
+      "true_positives": 4,
+      "false_positives": 2,
+      "false_negatives": 0
+    },
+    "precision": 0.6666666666666666,
+    "recall": 1.0,
+    "f1": 0.8,
+    "false_positives_per_case": 0.3333333333333333,
+    "manual_triage_findings_per_case": 1.0,
+    "withheld_findings_per_case": 1.0,
+    "mean_cost_usd_per_case": 0.025971000000000004,
+    "mean_runtime_ms_per_case": 71271.5,
+    "mean_llm_calls_per_case": 11.5,
+    "mean_tool_calls_per_case": 4.0,
+    "total_input_tokens": 79773,
+    "total_output_tokens": 25599,
+    "ablation": "None",
+    "evidence_accuracy": 1.0,
+    "evidence_audit": {
+      "total": 45,
+      "checkable": 45,
+      "accurate": 45,
+      "mismatches": []
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "p01-retry-swallows-failure",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "p01-retry-swallows-failure-adv-2",
+          "expected_id": "p01-f1",
+          "location": "src/uploader.py:29-37",
+          "issue_type": "ErrorHandling"
+        }
+      ],
+      "unmatched_predictions": [
+        {
+          "prediction_id": "p01-retry-swallows-failure-adv-1",
+          "location": "src/uploader.py:39-44",
+          "issue_type": "ApiContract",
+          "claim": "upload_all appends None to the receipts list upon failure and continues uploading subsequent chunks instead of aborting or failing."
+        }
+      ],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "p02-primary-node-trap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 3
+    },
+    {
+      "case_id": "p03-len-is-capacity",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "p03-len-is-capacity-adv-2",
+          "expected_id": "p03-f1",
+          "location": "src/api.py:9-11",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 1
+    },
+    {
+      "case_id": "p04-mutable-default-cache",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "p04-mutable-default-cache-adv-1",
+          "expected_id": "p04-f1",
+          "location": "src/registry.py:10-18",
+          "issue_type": "StateManagement"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "p05-shared-config-trap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [
+        {
+          "prediction_id": "p05-shared-config-trap-adv2-1",
+          "location": "src/client.py:20-21",
+          "issue_type": "Correctness",
+          "claim": "Passing a user_agent key in overrides to build_client has no effect because it is unconditionally overwritten with 'vcr/1.0'."
+        }
+      ],
+      "missed": [],
+      "withheld": 2
+    },
+    {
+      "case_id": "p06-generator-consumed-twice",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "p06-generator-consumed-twice-adv-1",
+          "expected_id": "p06-f1",
+          "location": "src/pipeline.py:15-19",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "p01-retry-swallows-failure",
+      "trajectory_id": "627c723e-a356-45d2-8b92-db2ed93d2c63",
+      "runtime_ms": 34736,
+      "llm_calls": 9,
+      "tool_calls": 2,
+      "retries": 0,
+      "input_tokens": 9717,
+      "output_tokens": 3235,
+      "cost_usd": 0.019419,
+      "reported_findings": 2,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p02-primary-node-trap",
+      "trajectory_id": "0d52181d-dcf3-4007-b6a9-d591d9d898d7",
+      "runtime_ms": 98757,
+      "llm_calls": 17,
+      "tool_calls": 6,
+      "retries": 3,
+      "input_tokens": 18914,
+      "output_tokens": 5414,
+      "cost_usd": 0.034488000000000005,
+      "reported_findings": 0,
+      "withheld_findings": 3
+    },
+    {
+      "case_id": "p03-len-is-capacity",
+      "trajectory_id": "3fe2b291-fa00-48cb-89cc-290fae1fa02c",
+      "runtime_ms": 80658,
+      "llm_calls": 13,
+      "tool_calls": 6,
+      "retries": 3,
+      "input_tokens": 16298,
+      "output_tokens": 5143,
+      "cost_usd": 0.03150975,
+      "reported_findings": 1,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "p04-mutable-default-cache",
+      "trajectory_id": "d1b4a7c5-85bb-4a05-a85f-0e3cd026c74c",
+      "runtime_ms": 40514,
+      "llm_calls": 7,
+      "tool_calls": 3,
+      "retries": 1,
+      "input_tokens": 10477,
+      "output_tokens": 2733,
+      "cost_usd": 0.0181065,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p05-shared-config-trap",
+      "trajectory_id": "31c3747f-5372-4c9e-b9dd-8941f762e04c",
+      "runtime_ms": 153211,
+      "llm_calls": 18,
+      "tool_calls": 6,
+      "retries": 5,
+      "input_tokens": 19460,
+      "output_tokens": 7203,
+      "cost_usd": 0.04160625,
+      "reported_findings": 1,
+      "withheld_findings": 2
+    },
+    {
+      "case_id": "p06-generator-consumed-twice",
+      "trajectory_id": "aaf4ca66-78b4-4e78-8e19-11c3812ffac6",
+      "runtime_ms": 19753,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 4907,
+      "output_tokens": 1871,
+      "cost_usd": 0.0106965,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ],
+  "by_category": [
+    {
+      "category": "RealIssue",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 2,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "category": "Trap",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 2,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "f1": 0.8
+    }
+  ],
+  "line_tolerance": 3
+}

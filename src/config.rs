@@ -169,8 +169,21 @@ fn default_followups() -> u32 {
     1
 }
 
+/// Off by default, and that is a measurement rather than a hedge.
+///
+/// The second look fires on exactly the cases that report nothing, which on
+/// both benchmarks means the traps. Across 6 firings it declined 5 times --
+/// the correct answer -- and on the sixth proposed a true-but-immaterial claim
+/// that the verifier confirmed and the evaluator scored as a false positive.
+/// It bought no recall on either benchmark and cost roughly 14% more per case.
+///
+/// The five-trial headline was measured without it, and a single 12-case trial
+/// with it scored F1 1.000 -- which is inside the noise of 0.988 +- 0.026 and
+/// is exactly the kind of single run this project has already been flattered
+/// by once. So it ships off, with the code, the tests and the ablation flag
+/// kept, and the numbers reported.
 fn default_second_looks() -> u32 {
-    1
+    0
 }
 
 fn env_opt(key: &str) -> Option<String> {
@@ -260,7 +273,7 @@ impl RunConfig {
             match_line_tolerance: env_or("VCR_MATCH_LINE_TOLERANCE", 3_u32)?,
             max_tool_calls_per_finding: env_or("VCR_MAX_TOOL_CALLS_PER_FINDING", 8_u32)?,
             max_followup_investigations: env_or("VCR_MAX_FOLLOWUP_INVESTIGATIONS", 1_u32)?,
-            max_second_looks: env_or("VCR_MAX_SECOND_LOOKS", 1_u32)?,
+            max_second_looks: env_or("VCR_MAX_SECOND_LOOKS", 0_u32)?,
             max_read_lines: env_or("VCR_MAX_READ_LINES", 200_u32)?,
             max_search_results: env_or("VCR_MAX_SEARCH_RESULTS", 40_u32)?,
             ablation: Ablation::None,
@@ -286,6 +299,8 @@ impl RunConfig {
             match_line_tolerance: 3,
             max_tool_calls_per_finding: 8,
             max_followup_investigations: 1,
+            // Enabled in the offline config so the branch is exercised by
+            // tests. The shipped default is 0; see `default_second_looks`.
             max_second_looks: 1,
             max_read_lines: 200,
             max_search_results: 40,
@@ -361,5 +376,32 @@ mod tests {
         let c = RunConfig::mock();
         assert!(c.llm.pricing.is_none());
         assert_eq!(c.llm.provider, Provider::Mock);
+    }
+    #[test]
+    fn the_second_look_ships_off() {
+        // Guards a decision, not an implementation detail. The headline
+        // figures were measured with this at 0, and a run that silently
+        // enabled it would no longer describe the configuration reported in
+        // the README.
+        assert_eq!(default_second_looks(), 0);
+    }
+
+    #[test]
+    fn a_trajectory_recorded_before_the_second_look_existed_still_loads() {
+        // Same rule as `max_followup_investigations`: a recorded run is
+        // evidence, and a new setting must never make old evidence
+        // unreadable.
+        let older = r#"{
+            "llm": {"provider":"Vertex","model":"m","location":"global","auth":"ApiKey",
+                    "temperature":0.0,"max_output_tokens":8192,"timeout_secs":180,"max_retries":5},
+            "match_line_tolerance": 3,
+            "max_tool_calls_per_finding": 8,
+            "max_read_lines": 200,
+            "max_search_results": 40
+        }"#;
+        let cfg: RunConfig =
+            serde_json::from_str(older).expect("an older trajectory must still load");
+        assert_eq!(cfg.max_second_looks, 0);
+        assert_eq!(cfg.max_followup_investigations, 1);
     }
 }

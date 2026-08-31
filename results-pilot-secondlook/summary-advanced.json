@@ -1,0 +1,113 @@
+{
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "provider": "Vertex",
+  "started_at": "2026-08-31T00:00:55.234438500+00:00",
+  "finished_at": "2026-08-31T00:08:02.902166900+00:00",
+  "benchmark_dir": "benchmark/pilot-python",
+  "case_count": 6,
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 1,
+    "ablation": "None"
+  },
+  "stats": [
+    {
+      "case_id": "p01-retry-swallows-failure",
+      "trajectory_id": "627c723e-a356-45d2-8b92-db2ed93d2c63",
+      "runtime_ms": 34736,
+      "llm_calls": 9,
+      "tool_calls": 2,
+      "retries": 0,
+      "input_tokens": 9717,
+      "output_tokens": 3235,
+      "cost_usd": 0.019419,
+      "reported_findings": 2,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p02-primary-node-trap",
+      "trajectory_id": "0d52181d-dcf3-4007-b6a9-d591d9d898d7",
+      "runtime_ms": 98757,
+      "llm_calls": 17,
+      "tool_calls": 6,
+      "retries": 3,
+      "input_tokens": 18914,
+      "output_tokens": 5414,
+      "cost_usd": 0.034488000000000005,
+      "reported_findings": 0,
+      "withheld_findings": 3
+    },
+    {
+      "case_id": "p03-len-is-capacity",
+      "trajectory_id": "3fe2b291-fa00-48cb-89cc-290fae1fa02c",
+      "runtime_ms": 80658,
+      "llm_calls": 13,
+      "tool_calls": 6,
+      "retries": 3,
+      "input_tokens": 16298,
+      "output_tokens": 5143,
+      "cost_usd": 0.03150975,
+      "reported_findings": 1,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "p04-mutable-default-cache",
+      "trajectory_id": "d1b4a7c5-85bb-4a05-a85f-0e3cd026c74c",
+      "runtime_ms": 40514,
+      "llm_calls": 7,
+      "tool_calls": 3,
+      "retries": 1,
+      "input_tokens": 10477,
+      "output_tokens": 2733,
+      "cost_usd": 0.0181065,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "p05-shared-config-trap",
+      "trajectory_id": "31c3747f-5372-4c9e-b9dd-8941f762e04c",
+      "runtime_ms": 153211,
+      "llm_calls": 18,
+      "tool_calls": 6,
+      "retries": 5,
+      "input_tokens": 19460,
+      "output_tokens": 7203,
+      "cost_usd": 0.04160625,
+      "reported_findings": 1,
+      "withheld_findings": 2
+    },
+    {
+      "case_id": "p06-generator-consumed-twice",
+      "trajectory_id": "aaf4ca66-78b4-4e78-8e19-11c3812ffac6",
+      "runtime_ms": 19753,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 4907,
+      "output_tokens": 1871,
+      "cost_usd": 0.0106965,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ]
+}

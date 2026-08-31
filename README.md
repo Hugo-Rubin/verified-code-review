@@ -8,48 +8,57 @@ On a frozen 12-case benchmark it recovers the defects a direct reviewer misses
 — the ones whose deciding evidence lives in files the change does not touch —
 while staying clean on all four false-positive traps.
 
-Mean of **3 trials per arm**, same model (`gemini-3.7-flash`), temperature 0.
+Mean of **5 trials per arm**, same model (`gemini-3.7-flash`), temperature 0.
 
 | Metric | Simple baseline | Agent solution | Change |
 |---|---:|---:|---:|
-| **Primary outcome — finding F1** | 0.857 | **0.980** | **+0.123** |
-| Precision | 1.000 | 0.963 | −0.037 |
+| **Primary outcome — finding F1** | 0.857 | **0.988** | **+0.131** |
+| Precision | 1.000 | 0.978 | −0.022 |
 | Recall | 0.750 | **1.000** | **+0.250** |
-| Human time per task (proxy) ¹ | 0.50 findings/case | 0.69 findings/case | +0.19 |
-| **Cost per task** | **$0.0032** | **$0.0159** | ×5.0 |
-| Runtime per task | 11.1 s | 38.9 s | +27.8 s |
+| Human time per task (proxy) ¹ | 0.50 findings/case | 0.68 findings/case | +0.18 |
+| **Cost per task** | **$0.0032** | **$0.0153** | ×4.8 |
+| Runtime per task | 9.1 s | 37.7 s | +28.6 s |
 | Evidence accuracy ² | n/a — gathers none | **1.000** | — |
 
 The advanced arm found **every real defect in every trial** (recall 1.000,
-σ = 0.000) and beat the baseline in all three runs — its worst F1 (0.941) still
-exceeds the baseline's (0.857, identical in all three).
+σ = 0.000) and beat the baseline in all five runs — its worst F1 (0.941) still
+exceeds the baseline's (0.857, identical in all five). One false positive
+occurred across the whole 5-trial run, in one trial of `c03`.
+
+**Replicated on cases this project's author never saw.** A six-case held-out
+benchmark, written by a separate agent denied access to the prompts, the
+pipeline, the docs and every result, reproduces the direction: baseline F1
+0.750, advanced **0.889**, again separating on the case whose evidence lives
+outside the diff. It also produced a false positive on a trap, which the frozen
+benchmark's traps never do — see [`docs/holdout.md`](docs/holdout.md).
 
 ¹ Manual-triage proxy — findings a human must read and judge. **Not** a direct
 measurement of human review time. A blind stopwatch harness for the real
 measurement ships as `vcr triage`; see [Cost and human time](#cost-and-human-time).
 ² Fraction of cited excerpts that really appear at the lines they cite, checked
-deterministically against the repository, 48–60 citations per run.
+deterministically against the repository, 41–75 citations per run (285 across the five trials, all correct).
 
 ### The whole ladder, measured
 
-Every stage switched off in turn, 3 trials each, same benchmark:
+Every stage switched off in turn, same benchmark. Headline arms are means of
+5 trials; the two ablation rows are means of 3.
 
-| Configuration | F1 | Precision | Recall | Cost/case |
-|---|---:|---:|---:|---:|
-| Simple baseline | 0.857 | 1.000 | 0.750 | $0.0032 |
-| Advanced prompt alone (no investigation, no falsification) | 0.742 | 0.607 | 0.958 | $0.0038 |
-| **+ investigation**, no falsification | 0.828 | 0.707 | 1.000 | $0.0112 |
-| **+ falsification** — the full system | **0.980** | 0.963 | 1.000 | $0.0159 |
+| Configuration | Trials | F1 | Precision | Recall | Cost/case |
+|---|---:|---:|---:|---:|---:|
+| Simple baseline | 5 | 0.857 | 1.000 | 0.750 | $0.0032 |
+| Advanced prompt alone (no investigation, no falsification) | 3 | 0.742 | 0.607 | 0.958 | $0.0038 |
+| **+ investigation**, no falsification | 3 | 0.828 | 0.707 | 1.000 | $0.0112 |
+| **+ falsification** — the full system | 5 | **0.988** | 0.978 | 1.000 | $0.0153 |
 
 Read the middle two rows carefully, because they are the result.
 
 **Neither half beats the baseline on its own.** The advanced prompt alone scores
 0.742 — *worse than doing nothing clever*. Adding repository investigation
 lifts it to 0.828, which is still **below** the baseline's 0.857. Only when
-falsification is added does the system reach 0.980.
+falsification is added does the system reach 0.988.
 
 Investigation supplies the recall (0.750 → 1.000). Falsification is what makes
-that recall affordable, taking precision from 0.707 to 0.963. Remove either and
+that recall affordable, taking precision from 0.707 to 0.978. Remove either and
 you have something worse than the simple prompt you started with.
 
 Full numbers: [`results-trials/`](results-trials/) and [`results/`](results-final/).
@@ -405,13 +414,14 @@ is the concrete reason the audit above exists.
 ## Results
 
 All arms, `gemini-3.7-flash` via Vertex AI, temperature 0, frozen benchmark,
-**3 trials each**. Mean ± sample standard deviation.
+Headline arms **5 trials**, ablations **3 trials**. Mean ± sample standard
+deviation.
 
 | Metric | Baseline | Prompt alone | + investigation | **Advanced (full)** |
 |---|---:|---:|---:|---:|
-| Precision | 1.000 ± 0.000 | 0.607 ± 0.052 | 0.707 ± 0.035 | **0.963 ± 0.064** |
+| Precision | 1.000 ± 0.000 | 0.607 ± 0.052 | 0.707 ± 0.035 | **0.978 ± 0.050** |
 | Recall | 0.750 ± 0.000 | 0.958 ± 0.072 | 1.000 ± 0.000 | **1.000 ± 0.000** |
-| **F1** | 0.857 ± 0.000 | 0.742 ± 0.052 | 0.828 ± 0.024 | **0.980 ± 0.034** |
+| **F1** | 0.857 ± 0.000 | 0.742 ± 0.052 | 0.828 ± 0.024 | **0.988 ± 0.026** |
 | False positives/case | 0.00 | 0.42 | 0.28 | 0.03 |
 | Findings to triage/case | 0.50 | 1.06 | 0.94 | 0.69 |
 | Evidence accuracy | n/a | 1.000 | 1.000 | 1.000 ± 0.000 |
@@ -439,14 +449,14 @@ still below the baseline. Only the combination clears it. This is the most
 important row in the table and the one we got wrong when reasoning without it.
 
 **The baseline is perfectly stable; the advanced arm nearly is.** The baseline
-scored identically on all twelve cases in all three trials, σ = 0.000 on every
+scored identically on all twelve cases in all five trials, σ = 0.000 on every
 metric. The advanced arm's recall is also σ = 0.000 — it found every defect
 every time. All of its remaining variance is one case, `c03`, which produced
 one extra false positive in one trial out of three.
 
 **Precision costs more than recall here.** Getting recall to 1.000 was a
 candidate-generation problem and was solved by an instruction. Getting
-precision back to 0.963 afterwards took the entire falsification apparatus —
+precision back to 0.978 afterwards took the entire falsification apparatus —
 four roles, ~6.5 model calls and ~2.5 tool calls per case, and 5× the cost of
 the baseline.
 
@@ -624,7 +634,7 @@ nothing clever, and we can put numbers on it.**
 | Simple baseline | 0.857 |
 | Advanced prompt alone | **0.742** |
 | + repository investigation | **0.828** |
-| + falsification (full) | **0.980** |
+| + falsification (full) | **0.988** |
 
 Both middle rows sit *below* the baseline. A reviewer told to propose broadly
 is worse than one told to be careful. Give it repository tools and it is still
@@ -636,36 +646,119 @@ regression. We shipped a changelog twice claiming to know which change mattered
 most — first candidate generation, then falsification — and the ablations
 corrected us both times. The real answer is that they are one mechanism:
 investigation buys recall (0.750 → 1.000), falsification buys back the
-precision that costs (0.707 → 0.963), and neither survives alone.
+precision that costs (0.707 → 0.978), and neither survives alone.
 
 The generalisable version: **if you can only ship half of a
 propose-then-verify design, ship neither.**
 
-**Third, an anti-take: we built three features on good reasoning and measured
-all three as worthless.**
+**Third, an anti-take: we built three features on good reasoning, measured all
+three as worthless — and then found out that "worthless" was the charitable
+reading of one of them.**
 
-| Feature | The reasoning | The measurement |
+The first version of this section reported three zeros:
+
+| Feature | The reasoning | First measurement |
 |---|---|---|
 | Follow-up on "Insufficient" | The verdict names what is missing — go get it | Fired **0** times in 36 verifications |
 | Candidate deduplication | Duplicate reports cost a second triage | Fired **0** times in 3 trials |
 | Within-case memory | Stop re-reading files a sibling candidate opened | Used everywhere; −3% calls, −1% cost, inside noise |
 
-Each was prompted by a real observation in the trajectories. Each seemed
-obviously worth building. All three are correct, tested, and kept — they cost
-nothing idle — and none is claimed as an improvement.
+All three were correct, tested and kept. None was claimed as an improvement.
+That felt like the honest end of the story. It was not, because **"fired 0
+times" is a measurement of the trigger, not of the feature**, and we had only
+measured the trigger on runs where it never occurred.
 
-Saying that honestly took more work than building them. "Never fired" and "is
-broken" produce identical evidence, so the follow-up loop had to be driven with
-a scripted mock to prove it works when its trigger occurs. That test found a
-bug: the trajectory recorded only the *final* verdict, so a follow-up would
-have appeared with no visible cause. It had survived precisely because the
-branch had never run.
+### Deduplication was not inert. It was wrong.
 
-Two lessons we would carry forward. The difference between "a self-correcting
-agent" and "an agent with an unused self-correction branch" is whether someone
-measured. And the difference between "inert" and "broken" is whether someone
-tested — an untested path in an agent is where defects hide, and "it never
-triggers" is exactly when you are least likely to look.
+Replaying the rule over the advanced trajectories of **all 19 recorded runs** —
+`vcr replay-dedup`, which calls no model and reads artifacts already in the
+repository — the trigger fires **6 times**, and *not one of those firings is a
+duplicate*. Every one is the same pair, in `c08-order-name-limit`:
+
+```text
+Validation  src/order.rs:26-28   order.name  checked against MAX_QUANTITY
+Validation  src/order.rs:30-32   order.notes checked against MAX_NAME_LEN
+```
+
+Two fields, two distinct defects, **both in the ground truth**. They are joined
+only because 28 + 3 ≥ 30. Each merge would have turned two true positives into
+one true positive and one false negative.
+
+The cause was a single borrowed constant: the rule reused
+`cfg.match_line_tolerance`, the evaluator's ±3 slack. That slack exists to
+forgive an off-by-a-line in a location *estimate* while scoring. Deciding that
+two claims are *the same claim* is a different question and must not borrow it.
+Overlap is now strict.
+
+Two things kept this hidden, and both are worth naming:
+
+1. **A later, unrelated change saved us.** The `v6` candidate prompt stopped
+   producing that pair, so the trigger went quiet before anyone looked at what
+   it did when it fired.
+2. **The unit test encoded the bug.** The test written to prove deduplication
+   worked used the `c08` geometry *verbatim* — 26-28 against 30-32 — and
+   asserted the merge was correct. A green test suite was evidence for the
+   defect.
+
+### The follow-up loop had an unreachable trigger, so we gave it a reachable one
+
+Across 70 findings the verifier returned `Supports` 44 times and `Contradicts`
+26 times, and `Insufficient` **zero** times. Broadening it to the evidence
+gate's other dead end — `Supports` downgraded for want of concrete evidence —
+would not have helped either: that path also fired 0 times. Measuring first
+prevented building a fourth inert feature.
+
+The state that *does* occur is a case finishing with **nothing to report**. The
+change being genuinely fine and the reviewer having looked in the wrong place
+produce identical output, and the pipeline stopped either way. So it now looks
+once more, shown each rejected claim **together with the repository facts that
+closed it** — the only place in the pipeline where falsification output feeds
+back into generation rather than only filtering it.
+
+It fires. On the frozen benchmark it fired on **exactly the four traps** — the
+only four cases that report nothing — and **declined on all four**, returning
+an empty list rather than manufacturing something. On the Python pilot it fired
+on both traps, declined on one, and on the other proposed a claim that was
+perfectly true and not a defect, which the verifier confirmed and the evaluator
+scored as a false positive.
+
+Six firings, five correct declines, one invented finding, no recall gained on
+either benchmark, ~14% more cost per case. **So it ships off.** A single
+12-case trial with it enabled scored F1 1.000, and that number is not being
+claimed: it is inside the noise of 0.988 ± 0.026, from one run against five,
+and this project has already been flattered by a single run once. The code, the
+seven tests and the `--ablation no-second-look` flag are kept; the default is 0
+and a test guards it.
+
+### The revised scoreboard
+
+| Feature | First measurement | What measuring properly showed |
+|---|---|---|
+| Candidate deduplication | fired 0 times | fires 6 times across all recorded runs, **wrong every time**; fixed |
+| Follow-up on "Insufficient" | fired 0 times | trigger unreachable; replaced with one that fires 6 times, declines 5, gains nothing; **off by default** |
+| Within-case memory | −3% calls, inside noise | unchanged — still no measurable benefit |
+
+### What we would carry forward
+
+**"Never fired" and "is broken" produce identical evidence.** This was already
+the lesson from the follow-up loop, where a scripted mock proved the branch
+worked and, in doing so, found a real bug: the trajectory recorded only the
+*final* verdict, so a follow-up would have appeared with no visible cause. We
+wrote that lesson down, and then failed to apply it to the feature sitting next
+to it. Deduplication had six unit tests and none of them replayed it against a
+real run.
+
+**An unused branch is not neutral, it is unmeasured.** The cost of a dormant
+feature is not the CPU it does not use; it is that its next firing is
+unobserved, and you will not be watching. If you cannot make the trigger occur
+on purpose, replay the rule over artifacts you already have — it is cheap, it
+calls no model, and it is the only thing that would have caught this.
+
+**Prefer the measurement that could embarrass you.** Every check that made this
+section longer — the replay, the by-hand
+[matching audit](docs/matching-audit.md), the
+[held-out benchmark](docs/holdout.md) — was optional, and every one of them
+found something the happy path had missed.
 
 ## Agent trajectories
 
