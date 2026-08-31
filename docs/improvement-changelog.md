@@ -199,6 +199,13 @@ sound reasoning and measured all three as contributing nothing:
 All three are correct, tested, and kept — they cost nothing when idle and would
 plausibly matter on a different benchmark. None is claimed as an improvement.
 
+> **This conclusion did not survive Sprint 4b, and the correction is the more
+> useful result.** "Fired 0 times" measures the *trigger*, not the feature.
+> Replayed over every recorded run, deduplication fires 6 times and is **wrong
+> every time**; the follow-up loop's trigger turned out to be unreachable
+> rather than merely unlucky. Only within-case memory is genuinely inert. See
+> [Sprint 4b](#sprint-4b--measuring-the-three-features-that-earned-nothing).
+
 The pattern is the lesson. Every one of these was justified by a real
 observation in the trajectories, and every one seemed obviously worth building.
 The single component that *does* carry the result — falsification, worth +0.152
@@ -259,6 +266,12 @@ The tempting move — nudging the verifier to say `Insufficient` more often so
 the feature would have something to do — was not made. That is tuning the
 measurement to justify the code.
 
+> **Sprint 4b revisited this and reached a different answer**, without taking
+> that tempting move. The verdict was not "make `Insufficient` more likely" but
+> "find a trigger that already occurs": a case that finishes with **nothing to
+> report**. That fires — on exactly the traps — and it still does not help, so
+> it ships off. The loop is now measured rather than dormant.
+
 ---
 
 ## Sprint 4 — widening the evidence, and a benchmark defect we caught by result
@@ -278,6 +291,36 @@ duplicate false positive on `p01` in the three-case run did not recur — that
 same second claim was investigated and **rejected** this time, which is why
 pilot precision reads 1.000 rather than 0.500. One run either way; do not read
 a trend into it.
+
+---
+
+## Sprint 4b — measuring the three features that "earned nothing"
+
+Sprint 3 reported three components as contributing nothing and kept all three.
+That was honest about what had been measured and wrong about what it meant,
+because **"fired 0 times" measures the trigger, not the feature** — and the
+trigger had only been observed on runs where it never occurred.
+
+| Stage | What was tried and why | Evidence | Decision |
+|---|---|---|---|
+| **Deduplication replay** ❌❌ | "Fired 0 times in 3 trials" is not a statement about what the rule *does*. `vcr replay-dedup` replays it over the advanced trajectories of every recorded run — no model, artifacts only — and separates merges that rest on genuinely overlapping ranges from those that rest only on the evaluator's ±3 matching tolerance. | Across **all 19 recorded runs** the trigger fires **6 times, and 0 are duplicates.** All 6 are `c08-order-name-limit`: `Validation src/order.rs:26-28` (`order.name` vs `MAX_QUANTITY`) against `Validation src/order.rs:30-32` (`order.notes` vs `MAX_NAME_LEN`) — two distinct defects, **both in the ground truth**, joined only because 28 + 3 ≥ 30. Each merge would have converted two true positives into one true positive and one false negative. | **Fixed.** Overlap is now strict; the rule may not borrow the evaluator's slack. Two things had hidden it: the `v6` prompt change stopped producing that pair, and the unit test written to prove the feature worked used that exact geometry and asserted the merge was **correct**. The test encoded the defect. |
+| **A reachable trigger for the follow-up loop** | The `Insufficient` verdict never occurs: 44 `Supports`, 26 `Contradicts`, **0 `Insufficient`** across 70 findings. Before building anything, the obvious alternative was measured too — `Supports` downgraded by the evidence gate for want of concrete evidence — and that path also fired **0** times. The state that *does* occur is a case finishing with nothing to report. | The second look is shown every rejected claim **together with the repository facts that closed it**, and asked what a reviewer focused on those questions would have walked past. It is the only path where falsification output feeds back into generation rather than only filtering it. Anything it proposes re-enters the full pipeline; anything restating a settled claim is dropped before it costs an investigation. | Kept, **off by default**. |
+| **Second look, measured** ❌ | Run on both benchmarks. | Fired on **exactly the four traps** on the frozen benchmark — the only four cases that report nothing — and **declined on all four**. On the Python pilot it fired on both traps, declined on one, and on the other proposed a claim that was **true and not a defect**; the verifier confirmed it and the evaluator scored a false positive. Six firings, five correct declines, **no recall gained on either benchmark**, ~14% more cost per case. | **Default 0**, guarded by a test. A single 12-case trial with it enabled scored F1 1.000 — inside the noise of 0.988 ± 0.026, one run against five, and this document already records being flattered by a single run once. Not claimed. |
+| **Within-case memory** ❌ | Re-examined for the same "trigger vs feature" error. | Unchanged: used on every case, −3% calls, −1% cost, inside noise. Replaying reads showed 15 of 156 tool calls were regions already covered by an earlier read in the same case, so there is real headroom — but nothing was built for it, because there was no time to measure a change as carefully as the other two were measured. | Kept, still reported as no measurable benefit. Headroom recorded as future work, not as an improvement. |
+
+**The revised scoreboard.** Of the three "inert" features, one was actively
+harmful and is fixed, one had an unreachable trigger and now has a reachable one
+that measurably does not help, and one is genuinely inert.
+
+---
+
+## Sprint 4c — the held-out benchmark, and one honest revision
+
+| Stage | What was tried and why | Evidence | Decision |
+|---|---|---|---|
+| **Six cases written without sight of the reviewer** | Every prompt rule here was written after reading trajectories from the frozen benchmark, and the same person wrote both. That bias cannot be argued away; it needs cases from an author who cannot see the system. A separate agent authored six, denied `src/prompts.rs`, `src/agent/**`, `README.md`, `DECISIONS.md`, `docs/**` and every `results*/` directory. It never ran the reviewer. | **Baseline F1 0.750, advanced F1 0.889.** The advantage replicates, by the same mechanism: the arms agree on every defect visible in the diff and separate on `h06`, whose deciding predicate lives in an untouched file. Evidence accuracy 1.000 (23/23) on files never seen before. | Kept. See [`holdout.md`](holdout.md). |
+| **"Zero false positives on traps" did not survive** ❌ | The frozen benchmark's four traps are clean in all five trials. The held-out set has two. | **Both arms produced a false positive on `h04`.** The advanced trajectory fails in this project's *own documented main failure mode*: the falsification question targeted the mechanism (*"does `resolve` deduplicate before returning?"*) rather than the precondition, and the investigation ran `list_files`, saw `src/graph.rs` — which holds the only constructor, the one that rejects the graph shape the claim needs — and **stopped without opening it, with four of eight tool calls unspent**. | **Not patched.** A prompt change written against a case we just watched fail is the overfitting the ablation ladder exists to catch, and it would destroy the only property that makes a held-out set worth having. The README's trap claim is revised instead. |
+| **By-hand audit of every true positive** | Location-plus-category matching is a proxy for "found the defect" and can credit a claim that lands on the right lines for the wrong reason. No deterministic matcher can tell; a model judge is forbidden here. | All 40 matches in the 5-trial run read against ground truth, raw text published in [`matching-audit.md`](matching-audit.md). **7 of 8 defects described exactly in all five trials; `c12` hedged** (right failure, cause stated conditionally). **The matcher did produce one spurious match — on the Python pilot**, where `p03` scored a true positive for a claim about float indices that landed on the real defect's three lines under an `also_accept` category. | Audit published. `c12` still counted as a true positive, with the hedge stated. The pilot's spurious match is reported where the pilot numbers are. |
 
 ---
 
@@ -304,6 +347,9 @@ a trend into it.
 | `results-pilot/` | 3 | Python pilot, first three cases (superseded by the run below) | 0.000 | 0.500 |
 | `results-pilot/` | 6 | Python pilot, expanded and re-run (separate benchmark) | 0.667 | 0.857 |
 | `results-sonnet/` | 12 | cross-model: baseline on Claude Sonnet 5 | 0.857 | — |
+| `results-secondlook/` | 12 | second look enabled, single trial | — | 1.000 |
+| `results-pilot-secondlook/` | 6 | Python pilot, second look enabled | — | 0.800 |
+| `results-holdout/` | 6 | **held-out benchmark, authored without sight of the reviewer** | **0.750** | **0.889** |
 
 Nothing has been removed from this table. The ❌ rows are changes that made the
 system worse; they were reverted, refined, or — in the ablation's case — run
