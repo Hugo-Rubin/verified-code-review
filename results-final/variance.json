@@ -2,19 +2,19 @@
   {
     "arm": "advanced",
     "model": "gemini-3.7-flash",
-    "trials": 5,
+    "trials": 10,
     "metrics": [
       {
         "metric": "precision",
-        "trials": 5,
+        "trials": 10,
         "mean": 0.9777777777777779,
         "min": 0.8888888888888888,
         "max": 1.0,
-        "stdev": 0.04969039949999535
+        "stdev": 0.04684855792842046
       },
       {
         "metric": "recall",
-        "trials": 5,
+        "trials": 10,
         "mean": 1.0,
         "min": 1.0,
         "max": 1.0,
@@ -22,31 +22,31 @@
       },
       {
         "metric": "f1",
-        "trials": 5,
+        "trials": 10,
         "mean": 0.9882352941176471,
         "min": 0.9411764705882352,
         "max": 1.0,
-        "stdev": 0.026306682088232877
+        "stdev": 0.02480217772681087
       },
       {
         "metric": "false_positives_per_case",
-        "trials": 5,
+        "trials": 10,
         "mean": 0.016666666666666666,
         "min": 0.0,
         "max": 0.08333333333333333,
-        "stdev": 0.037267799624996496
+        "stdev": 0.03513641844631533
       },
       {
         "metric": "findings_to_triage_per_case",
-        "trials": 5,
-        "mean": 0.6833333333333332,
+        "trials": 10,
+        "mean": 0.6833333333333333,
         "min": 0.6666666666666666,
         "max": 0.75,
-        "stdev": 0.03726779962499651
+        "stdev": 0.03513641844631534
       },
       {
         "metric": "evidence_accuracy",
-        "trials": 5,
+        "trials": 10,
         "mean": 1.0,
         "min": 1.0,
         "max": 1.0,
@@ -54,23 +54,24 @@
       },
       {
         "metric": "cost_usd_per_case",
-        "trials": 5,
-        "mean": 0.0153110625,
+        "trials": 10,
+        "mean": 0.015495100000000001,
         "min": 0.0136685625,
         "max": 0.0174195625,
-        "stdev": 0.0013503712532057155
+        "stdev": 0.0009972882016338388
       },
       {
         "metric": "runtime_ms_per_case",
-        "trials": 5,
-        "mean": 37737.48333333334,
+        "trials": 10,
+        "mean": 39697.2,
         "min": 30526.083333333332,
-        "max": 45992.833333333336,
-        "stdev": 6226.682261925065
+        "max": 51164.833333333336,
+        "stdev": 5993.774434958367
       }
     ],
     "unstable_cases": [
-      "c03-session-touch-context (TP/FP per trial: 1/0, 1/0, 1/1, 1/0, 1/0)"
+      "c03-session-touch-context (TP/FP per trial: 1/0, 1/0, 1/0, 1/1, 1/0, 1/0, 1/0, 1/0, 1/0, 1/0)",
+      "c08-order-name-limit (TP/FP per trial: 1/0, 1/0, 1/0, 1/0, 1/0, 1/0, 1/0, 1/1, 1/0, 1/0)"
     ]
   },
   {
@@ -227,11 +228,11 @@
   {
     "arm": "baseline",
     "model": "gemini-3.7-flash",
-    "trials": 5,
+    "trials": 10,
     "metrics": [
       {
         "metric": "precision",
-        "trials": 5,
+        "trials": 10,
         "mean": 1.0,
         "min": 1.0,
         "max": 1.0,
@@ -239,7 +240,7 @@
       },
       {
         "metric": "recall",
-        "trials": 5,
+        "trials": 10,
         "mean": 0.75,
         "min": 0.75,
         "max": 0.75,
@@ -247,15 +248,15 @@
       },
       {
         "metric": "f1",
-        "trials": 5,
-        "mean": 0.8571428571428571,
+        "trials": 10,
+        "mean": 0.857142857142857,
         "min": 0.8571428571428571,
         "max": 0.8571428571428571,
-        "stdev": 0.0
+        "stdev": 1.1702778228589004e-16
       },
       {
         "metric": "false_positives_per_case",
-        "trials": 5,
+        "trials": 10,
         "mean": 0.0,
         "min": 0.0,
         "max": 0.0,
@@ -263,7 +264,7 @@
       },
       {
         "metric": "findings_to_triage_per_case",
-        "trials": 5,
+        "trials": 10,
         "mean": 0.5,
         "min": 0.5,
         "max": 0.5,
@@ -271,7 +272,7 @@
       },
       {
         "metric": "evidence_accuracy",
-        "trials": 5,
+        "trials": 10,
         "mean": 1.0,
         "min": 1.0,
         "max": 1.0,
@@ -279,19 +280,19 @@
       },
       {
         "metric": "cost_usd_per_case",
-        "trials": 5,
-        "mean": 0.0031848749999999993,
-        "min": 0.003135312500000001,
-        "max": 0.0033112500000000004,
-        "stdev": 0.000074306231337789
+        "trials": 10,
+        "mean": 0.0032188125,
+        "min": 0.0031265625000000004,
+        "max": 0.0033184375,
+        "stdev": 0.00007990646658924286
       },
       {
         "metric": "runtime_ms_per_case",
-        "trials": 5,
-        "mean": 9099.583333333332,
-        "min": 5441.75,
+        "trials": 10,
+        "mean": 8186.333333333334,
+        "min": 5281.25,
         "max": 21772.083333333332,
-        "stdev": 7089.964492153681
+        "stdev": 4958.24264918629
       }
     ],
     "unstable_cases": []
