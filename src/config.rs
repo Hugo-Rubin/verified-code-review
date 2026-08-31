@@ -156,6 +156,14 @@ pub struct RunConfig {
     /// make old evidence unreadable.
     #[serde(default = "default_second_looks")]
     pub max_second_looks: u32,
+    /// Whether within-case memory carries the *content* of regions already
+    /// read, rather than a one-line summary of each lookup.
+    ///
+    /// Off by default, for the same reason the second look is: the shipped
+    /// figures were measured without it, and turning it on changes what the
+    /// investigator sees. Measured separately; see the changelog.
+    #[serde(default)]
+    pub memory_carries_content: bool,
     /// Which stage, if any, is switched off for this run.
     #[serde(default = "ablation_none")]
     pub ablation: Ablation,
@@ -274,6 +282,9 @@ impl RunConfig {
             max_tool_calls_per_finding: env_or("VCR_MAX_TOOL_CALLS_PER_FINDING", 8_u32)?,
             max_followup_investigations: env_or("VCR_MAX_FOLLOWUP_INVESTIGATIONS", 1_u32)?,
             max_second_looks: env_or("VCR_MAX_SECOND_LOOKS", 0_u32)?,
+            memory_carries_content: env_opt("VCR_MEMORY_CARRIES_CONTENT")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
             max_read_lines: env_or("VCR_MAX_READ_LINES", 200_u32)?,
             max_search_results: env_or("VCR_MAX_SEARCH_RESULTS", 40_u32)?,
             ablation: Ablation::None,
@@ -302,6 +313,7 @@ impl RunConfig {
             // Enabled in the offline config so the branch is exercised by
             // tests. The shipped default is 0; see `default_second_looks`.
             max_second_looks: 1,
+            memory_carries_content: false,
             max_read_lines: 200,
             max_search_results: 40,
             ablation: Ablation::None,

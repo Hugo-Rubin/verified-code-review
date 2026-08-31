@@ -62,7 +62,7 @@ pub async fn run(case: &Case, client: &LlmClient, cfg: &RunConfig) -> Result<Tra
     }
 
     // Facts carried between candidates within this case. Never verdicts.
-    let mut memory = CaseMemory::default();
+    let mut memory = CaseMemory::new(cfg.memory_carries_content);
     let mut findings = Vec::new();
 
     for candidate in candidates {
@@ -659,17 +659,49 @@ fn deduplicate_candidates(
 #[derive(Default)]
 struct CaseMemory {
     entries: Vec<String>,
+    /// Whether to carry the full response of a lookup rather than one line.
+    carry_content: bool,
 }
 
+/// Upper bound on the characters one remembered lookup may contribute.
+///
+/// Without a cap, a case with several large reads would push the investigator's
+/// prompt past anything useful, and the memory would start crowding out the
+/// evidence it is supposed to save re-reading.
+const MEMORY_CONTENT_BUDGET: usize = 2_000;
+
 impl CaseMemory {
+    fn new(carry_content: bool) -> Self {
+        Self {
+            entries: Vec::new(),
+            carry_content,
+        }
+    }
+
     fn record(&mut self, tool: &str, arguments: &serde_json::Value, response: &str, ok: bool) {
         if !ok {
             return;
         }
-        // One line per lookup: enough to recognise a repeat, not enough to
-        // replace actually reading the file.
-        let summary = response.lines().next().unwrap_or("").trim().to_string();
-        let entry = format!("{tool} {arguments} -> {summary}");
+        // Default: one line per lookup — enough to recognise a repeat, not
+        // enough to replace actually reading the file.
+        //
+        // With `carry_content`, the whole response is kept instead, so a later
+        // candidate can answer from what an earlier one already retrieved
+        // rather than spending a step of its own budget re-reading it. Measured
+        // separately, and off by default; the shipped figures were taken with
+        // one-line summaries.
+        let body = if self.carry_content {
+            let trimmed = response.trim();
+            if trimmed.chars().count() > MEMORY_CONTENT_BUDGET {
+                let head: String = trimmed.chars().take(MEMORY_CONTENT_BUDGET).collect();
+                format!("{head}\n... (truncated)")
+            } else {
+                trimmed.to_string()
+            }
+        } else {
+            response.lines().next().unwrap_or("").trim().to_string()
+        };
+        let entry = format!("{tool} {arguments} -> {body}");
         if !self.entries.contains(&entry) {
             self.entries.push(entry);
         }
@@ -1970,5 +2002,68 @@ fn caller() { a(); }
         assert!(settled_questions(&[f.clone()]).is_empty());
         f.status = FindingStatus::Rejected;
         assert!(!settled_questions(&[f]).is_empty());
+    }
+
+    #[test]
+    fn memory_carries_one_line_by_default() {
+        let mut m = CaseMemory::new(false);
+        m.record(
+            "read",
+            &serde_json::json!({"file": "a.rs"}),
+            "first line\nsecond line\nthird line",
+            true,
+        );
+        let r = m.render().unwrap();
+        assert!(r.contains("first line"));
+        assert!(!r.contains("second line"));
+    }
+
+    #[test]
+    fn memory_can_carry_the_whole_response() {
+        let mut m = CaseMemory::new(true);
+        m.record(
+            "read",
+            &serde_json::json!({"file": "a.rs"}),
+            "first line\nsecond line\nthird line",
+            true,
+        );
+        let r = m.render().unwrap();
+        assert!(r.contains("second line"));
+        assert!(r.contains("third line"));
+    }
+
+    #[test]
+    fn carried_content_is_capped() {
+        // A case with several large reads must not crowd the investigator's
+        // prompt with memory at the expense of the evidence itself.
+        let mut m = CaseMemory::new(true);
+        let huge = "x".repeat(MEMORY_CONTENT_BUDGET * 3);
+        m.record("read", &serde_json::json!({"file": "a.rs"}), &huge, true);
+        let r = m.render().unwrap();
+        assert!(r.contains("... (truncated)"));
+        assert!(r.chars().count() < MEMORY_CONTENT_BUDGET + 200);
+    }
+
+    #[test]
+    fn carrying_content_still_records_no_verdicts() {
+        // The rule that makes memory safe does not depend on how much it
+        // carries: it carries what tools returned, never what anyone concluded.
+        let mut m = CaseMemory::new(true);
+        m.record(
+            "read",
+            &serde_json::json!({"file": "a.rs"}),
+            "fn a() {}",
+            true,
+        );
+        let r = m.render().unwrap();
+        for verdict in [
+            "Supports",
+            "Contradicts",
+            "Insufficient",
+            "Verified",
+            "Rejected",
+        ] {
+            assert!(!r.contains(verdict), "memory leaked a verdict: {verdict}");
+        }
     }
 }
