@@ -5,8 +5,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use verified_code_reviewer::{
     bench,
+    bench::Language,
     config::{Ablation, RunConfig},
     replay,
+    review::{self, ReviewRequest},
     runner::{self, Aggregate},
     trajectory::AgentKind,
 };
@@ -66,8 +68,53 @@ impl From<AblationArg> for Ablation {
     }
 }
 
+/// Language a real change is written in.
+#[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
+enum LanguageArg {
+    Rust,
+    Python,
+}
+
+impl From<LanguageArg> for Language {
+    fn from(l: LanguageArg) -> Self {
+        match l {
+            LanguageArg::Rust => Language::Rust,
+            LanguageArg::Python => Language::Python,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum Command {
+    /// Review a real change: a working tree plus a diff.
+    ///
+    /// Runs the same pipeline, prompts, sandbox and evidence gate that produced
+    /// every number in the README. There is no ground truth and no score here
+    /// — the output is a report for a human to act on, which is the only thing
+    /// this system produces.
+    Review {
+        /// Repository to read. This is the sandbox boundary: nothing outside
+        /// it can be opened.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// Unified diff to review. Use "-" or omit to read stdin.
+        #[arg(long)]
+        diff: Option<PathBuf>,
+        /// One line describing the change, as its author would put it.
+        #[arg(long, default_value = "A proposed change")]
+        title: String,
+        /// The author's stated rationale. Neutral wording matters: telling the
+        /// reviewer a bug exists is a good way to be told one does.
+        #[arg(long, default_value = "No description was supplied by the author.")]
+        description: String,
+        #[arg(long, value_enum, default_value = "rust")]
+        language: LanguageArg,
+        #[arg(long, value_enum, default_value = "advanced")]
+        agent: AgentArg,
+        /// Write the trajectory and a rendered review here.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Check configuration and the benchmark without calling the model.
     Check {
         #[arg(long, default_value = "benchmark/cases")]
@@ -169,6 +216,26 @@ async fn main() -> Result<()> {
 
     match Cli::parse().command {
         Command::Check { benchmark } => cmd_check(&benchmark),
+        Command::Review {
+            repo,
+            diff,
+            title,
+            description,
+            language,
+            agent,
+            out,
+        } => {
+            cmd_review(ReviewRequest {
+                repo,
+                diff_path: diff,
+                title,
+                description,
+                language: language.into(),
+                agent: agent.into(),
+                out,
+            })
+            .await
+        }
         Command::Run {
             agent,
             benchmark,
@@ -194,6 +261,29 @@ async fn main() -> Result<()> {
             reviewer,
         } => cmd_triage(&benchmark, &out, &arms, seed, &reviewer),
     }
+}
+
+async fn cmd_review(req: ReviewRequest) -> Result<()> {
+    let cfg = RunConfig::from_env().context("configuration is not ready; run `vcr check`")?;
+
+    eprintln!(
+        "reviewing {} with the {} agent ({})",
+        req.repo.display(),
+        match req.agent {
+            AgentKind::Baseline => "baseline",
+            AgentKind::Advanced => "advanced",
+        },
+        cfg.llm.model
+    );
+
+    let traj = review::review(&req, &cfg).await?;
+    print!("{}", review::render(&traj));
+
+    if let Some(out) = &req.out {
+        let path = review::write_report(&traj, out)?;
+        eprintln!("review: {}", path.display());
+    }
+    Ok(())
 }
 
 fn cmd_check(benchmark: &std::path::Path) -> Result<()> {

@@ -541,14 +541,16 @@ commands, required configuration, expected output, runtime, and cost.
 ## Limitations
 
 - **Twelve cases is small.** One finding moves F1 by roughly 0.03–0.06. Treat
-  the direction as the result, not the third decimal place. A further six
-  held-out cases and six Python pilot cases exist, but each is a single run and
-  neither is folded into the headline.
+  the direction as the result, not the third decimal place. Six held-out cases
+  (3 trials per arm) and six Python pilot cases (1 run per arm) exist and are
+  reported separately; neither is folded into the headline.
 - **Five trials, not thirty.** Enough to show the baseline is perfectly stable
   (identical on all 12 cases in all 5 trials, σ = 0.000 on every metric) and
   that the advanced arm's remaining spread comes from a single case (`c03`),
-  but far too few for a confidence interval. The arms were not run interleaved,
-  so a drift in provider behaviour between arms would be invisible.
+  but far too few for a confidence interval. The headline arms were not run
+  interleaved, so a drift in provider behaviour between arms would be invisible
+  there. The held-out trials alternate which arm runs first, which detects a
+  consistent one-directional drift but is still not true interleaving.
 - **Synthetic benchmark.** The cases are realistic in shape and every
   ground-truth claim was verified by execution, but they are small crates
   written for this project, not harvested from real pull requests.
@@ -565,10 +567,10 @@ commands, required configuration, expected output, runtime, and cost.
 - **Human review time is still a proxy in the headline table.** A blind
   stopwatch harness (`vcr triage`) is implemented and documented, but the
   reported figure remains findings-to-triage per case until a session is run.
-- **One ablation is implemented but unmeasured.** `no-falsification` and
-  `candidates-only` were each run across 3 trials and are reported in the
-  ablation ladder. `no-followup` is not, because the branch it disables never
-  fires — see the note on inert features below. `no-second-look` is measured.
+- **One ablation is implemented but unmeasured.** `no-falsification`,
+  `candidates-only` and `no-second-look` are all measured and reported.
+  `no-followup` is not, because the branch it disables never fires — measured
+  at 0 of 70 verifications, see the anti-take below.
 - **Textual investigation only.** `search` is literal-substring. Dynamic
   dispatch, trait objects, re-exports, aliasing, macro-generated call paths and
   deep indirection are blind spots. Every trap here is resolvable by reading
