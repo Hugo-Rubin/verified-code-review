@@ -1,0 +1,96 @@
+{
+  "trajectory_id": "f59b87dc-b76c-41ff-9995-841af3c14207",
+  "case_id": "m05-burst-fallback",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T05:27:46.775451100+00:00",
+  "finished_at": "2026-08-31T05:27:53.131489800+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\n`parse_config` no longer returns an error when the `burst` key is absent or when its value does not parse; it falls back instead, so one stray line in a tenant file does not take that tenant's whole configuration offline. `rate` keeps its stricter handling, because a missing rate has no fallback that makes sense.\n\n## Diff\n\n```diff\n--- a/src/config.rs\n+++ b/src/config.rs\n@@ -46,10 +46,7 @@\n         None => DEFAULT_RATE,\n     };\n \n-    let burst = match raw.get(\"burst\") {\n-        Some(v) => v.parse::<u32>().map_err(|_| ConfigError::Invalid(\"burst\"))?,\n-        None => DEFAULT_BURST,\n-    };\n+    let burst = raw.get(\"burst\").and_then(|v| v.parse().ok()).unwrap_or_default();\n \n     Ok(Config {\n         rate_per_sec,\n\n```\n\n## Current contents of the changed files\n\n\n### src/config.rs\n\n```rust\n    1 | //! Reading a tenant's throttle configuration.\n    2 | \n    3 | use crate::limiter::Limiter;\n    4 | use std::collections::HashMap;\n    5 | \n    6 | /// Rate used when a tenant file does not name one.\n    7 | pub const DEFAULT_RATE: u32 = 1;\n    8 | \n    9 | /// Burst used when a tenant file does not name one.\n   10 | pub const DEFAULT_BURST: u32 = 5;\n   11 | \n   12 | #[derive(Debug, PartialEq, Eq)]\n   13 | pub enum ConfigError {\n   14 |     /// A key was present but its value did not parse.\n   15 |     Invalid(&'static str),\n   16 | }\n   17 | \n   18 | #[derive(Debug, PartialEq, Eq)]\n   19 | pub struct Config {\n   20 |     pub rate_per_sec: u32,\n   21 |     pub burst: u32,\n   22 | }\n   23 | \n   24 | impl Config {\n   25 |     pub fn into_limiter(self) -> Limiter {\n   26 |         Limiter::new(self.rate_per_sec, self.burst)\n   27 |     }\n   28 | }\n   29 | \n   30 | /// Parse a tenant file of `key = value` lines. Blank lines and `#` comments\n   31 | /// are skipped, and unknown keys are ignored.\n   32 | pub fn parse_config(text: &str) -> Result<Config, ConfigError> {\n   33 |     let mut raw: HashMap<&str, &str> = HashMap::new();\n   34 |     for line in text.lines() {\n   35 |         let line = line.trim();\n   36 |         if line.is_empty() || line.starts_with('#') {\n   37 |             continue;\n   38 |         }\n   39 |         if let Some((k, v)) = line.split_once('=') {\n   40 |             raw.insert(k.trim(), v.trim());\n   41 |         }\n   42 |     }\n   43 | \n   44 |     let rate_per_sec = match raw.get(\"rate\") {\n   45 |         Some(v) => v.parse::<u32>().map_err(|_| ConfigError::Invalid(\"rate\"))?,\n   46 |         None => DEFAULT_RATE,\n   47 |     };\n   48 | \n   49 |     let burst = raw.get(\"burst\").and_then(|v| v.parse().ok()).unwrap_or_default();\n   50 | \n   51 |     Ok(Config {\n   52 |         rate_per_sec,\n   53 |         burst,\n   54 |     })\n   55 | }\n   56 | \n   57 | #[cfg(test)]\n   58 | mod tests {\n   59 |     use super::*;\n   60 | \n   61 |     #[test]\n   62 |     fn reads_rate_and_burst() {\n   63 |         assert_eq!(\n   64 |             parse_config(\"rate = 10\\nburst = 20\"),\n   65 |             Ok(Config {\n   66 |                 rate_per_sec: 10,\n   67 |                 burst: 20\n   68 |             })\n   69 |         );\n   70 |     }\n   71 | \n   72 |     #[test]\n   73 |     fn skips_comments_and_blank_lines() {\n   74 |         let text = \"# tenant acme\\n\\nrate = 3\\n\\n# burst below\\nburst = 9\\n\";\n   75 |         assert_eq!(\n   76 |             parse_config(text),\n   77 |             Ok(Config {\n   78 |                 rate_per_sec: 3,\n   79 |                 burst: 9\n   80 |             })\n   81 |         );\n   82 |     }\n   83 | \n   84 |     #[test]\n   85 |     fn refuses_a_rate_that_does_not_parse() {\n   86 |         assert_eq!(\n   87 |             parse_config(\"rate = fast\\nburst = 9\"),\n   88 |             Err(ConfigError::Invalid(\"rate\"))\n   89 |         );\n   90 |     }\n   91 | \n   92 |     #[test]\n   93 |     fn a_parsed_config_builds_a_working_limiter() {\n   94 |         let mut l = parse_config(\"rate = 1\\nburst = 1\").unwrap().into_limiter();\n   95 |         assert!(l.allow());\n   96 |         assert!(!l.allow());\n   97 |     }\n   98 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Correctness\",\n      \"severity\": \"High\",\n      \"file\": \"src/config.rs\",\n      \"start_line\": 49,\n      \"end_line\": 49,\n      \"claim\": \"Using unwrap_or_default() sets missing or unparseable burst values to 0 instead of DEFAULT_BURST.\",\n      \"reasoning\": \"u32::default() yields 0 rather than the intended DEFAULT_BURST constant (5). When burst is omitted or invalid, the limiter will be configured with a burst capacity of 0 instead of using the default fallback.\",\n      \"issue_type\": \"Correctness\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 1807,
+        "output_tokens": 660,
+        "total_tokens": 2467
+      },
+      "latency_ms": 6355,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "m05-burst-fallback-base-1",
+        "issue_type": "Correctness",
+        "severity": "High",
+        "location": {
+          "file": "src/config.rs",
+          "start_line": 49,
+          "end_line": 49
+        },
+        "claim": "Using unwrap_or_default() sets missing or unparseable burst values to 0 instead of DEFAULT_BURST.",
+        "reasoning": "u32::default() yields 0 rather than the intended DEFAULT_BURST constant (5). When burst is omitted or invalid, the limiter will be configured with a burst capacity of 0 instead of using the default fallback."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "m05-burst-fallback-base-1",
+      "issue_type": "Correctness",
+      "severity": "High",
+      "location": {
+        "file": "src/config.rs",
+        "start_line": 49,
+        "end_line": 49
+      },
+      "claim": "Using unwrap_or_default() sets missing or unparseable burst values to 0 instead of DEFAULT_BURST.",
+      "reasoning": "u32::default() yields 0 rather than the intended DEFAULT_BURST constant (5). When burst is omitted or invalid, the limiter will be configured with a burst capacity of 0 instead of using the default fallback.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1807,
+    "output_tokens": 660,
+    "total_tokens": 2467
+  },
+  "cost_usd": 0.00383025,
+  "runtime_ms": 6355,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

@@ -38,6 +38,14 @@ benchmark's traps never do — so trap performance on *unseen* traps is weaker
 and less stable than the headline suggests. See
 [`docs/holdout.md`](docs/holdout.md).
 
+**And a negative result that bounds the claim.** Two *further* agent-authored
+sets (10 more cases, same blocklist) produced defects that are legible in the
+diff itself — and there the **baseline scores a perfect 1.000**, while the
+advanced arm ties on one set and loses on the other. The advantage is not
+general: it exists on defects whose changed line reads as *correct*, and
+nowhere else. [`docs/benchmarks.md`](docs/benchmarks.md) has the numbers and
+why it happened.
+
 ¹ Manual-triage proxy — findings a human must read and judge. **Not** a direct
 measurement of human review time. A blind stopwatch harness for the real
 measurement ships as `vcr triage`; see [Cost and human time](#cost-and-human-time).
@@ -156,6 +164,7 @@ byte-for-byte from committed files. Output saved in
 | **Main failure mode & hot take** | [below](#main-failure-mode) |
 | Decision log | [`DECISIONS.md`](DECISIONS.md) — append-only, including every rejected alternative |
 | Architecture | [`docs/architecture.md`](docs/architecture.md) |
+| Benchmarks | [`docs/benchmarks.md`](docs/benchmarks.md) — five case sets, what each is for, and where the advantage stops |
 | Held-out benchmark | [`docs/holdout.md`](docs/holdout.md) — cases written without sight of this system |
 | Dogfooding | [`docs/dogfood.md`](docs/dogfood.md) — including the defect of ours it failed to find |
 
@@ -638,9 +647,10 @@ commands, required configuration, expected output, runtime, and cost.
 ## Limitations
 
 - **Twelve cases is small.** One finding moves F1 by roughly 0.03–0.06. Treat
-  the direction as the result, not the third decimal place. Six held-out cases
-  (6 trials per arm) and six Python pilot cases (1 run per arm) exist and are
-  reported separately; neither is folded into the headline.
+  the direction as the result, not the third decimal place. Sixteen further
+  Rust cases across three independently authored sets, and six Python pilot
+  cases, exist and are reported separately; **none is folded into the
+  headline**, and two of those sets show no advantage at all.
 - **Fifteen trials, not thirty.** Enough to show the baseline is perfectly
   stable (identical on all 12 cases in all 15 trials, σ = 0.000 on every
   metric) and that the advanced arm's remaining spread is two rare false
@@ -654,16 +664,21 @@ commands, required configuration, expected output, runtime, and cost.
 - **Synthetic benchmark.** The cases are realistic in shape and every
   ground-truth claim was verified by execution, but they are small crates
   written for this project, not harvested from real pull requests.
-- **Author bias, partly addressed.** The frozen benchmark was written by the
-  same person who built the reviewer. A six-case **held-out** benchmark
-  ([`docs/holdout.md`](docs/holdout.md)) was authored by a separate agent
-  denied access to the prompts, the pipeline, the docs and every result. Over 6
-  trials the advantage replicates (baseline F1 0.750 ± 0.000, advanced
-  **0.944 ± 0.061**, recall 1.000 ± 0.000) — and both of its traps produced
-  false positives, `h04` in one trial of six and `h05` in two, which the frozen
-  benchmark's four traps never do. Trap performance on unseen traps is weaker and less stable than the
-  headline suggests. The authoring agent is still an LLM, so this reduces the
-  bias rather than removing it; harvested pull requests would be the real fix.
+- **Author bias, partly addressed — and the check found a real boundary.**
+  The frozen benchmark was written by the same person who built the reviewer.
+  Sixteen further cases were authored by three separate agents, each denied the
+  prompts, the pipeline, the docs, every result, and each other's work
+  ([`docs/benchmarks.md`](docs/benchmarks.md)).
+  On [`holdout`](docs/holdout.md) the advantage replicates over 6 trials
+  (baseline F1 0.750 ± 0.000, advanced **0.944 ± 0.061**) — though both of its
+  traps produced false positives, `h04` once in six trials and `h05` twice,
+  which the frozen benchmark's four traps never do.
+  On `holdout2` and `holdout3` it **does not replicate at all**: the baseline
+  scores 1.000 on both and the advanced arm loses on one. Those ten cases turn
+  out to be diff-legible, so they never exercise the mechanism. That is a real
+  bound on the claim rather than a flaw in the cases, and it is reported as
+  found. The authoring agents are still LLMs, so this reduces author bias
+  rather than removing it; harvested pull requests would be the real fix.
 - **Human review time is still a proxy in the headline table.** A blind
   stopwatch harness (`vcr triage`) is implemented and documented, but the
   reported figure remains findings-to-triage per case until a session is run.

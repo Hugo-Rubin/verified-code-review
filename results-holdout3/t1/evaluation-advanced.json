@@ -1,0 +1,241 @@
+{
+  "aggregate": {
+    "agent": "Advanced",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 5,
+    "counts": {
+      "true_positives": 4,
+      "false_positives": 1,
+      "false_negatives": 0
+    },
+    "precision": 0.8,
+    "recall": 1.0,
+    "f1": 0.888888888888889,
+    "false_positives_per_case": 0.2,
+    "manual_triage_findings_per_case": 1.0,
+    "withheld_findings_per_case": 0.0,
+    "mean_cost_usd_per_case": 0.0161646,
+    "mean_runtime_ms_per_case": 45841.6,
+    "mean_llm_calls_per_case": 5.8,
+    "mean_tool_calls_per_case": 1.8,
+    "total_input_tokens": 45474,
+    "total_output_tokens": 12458,
+    "ablation": "None",
+    "evidence_accuracy": 1.0,
+    "evidence_audit": {
+      "total": 24,
+      "checkable": 24,
+      "accurate": 24,
+      "mismatches": []
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "m01-retry-error-mapping",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "m01-retry-error-mapping-adv-1",
+          "expected_id": "m01-f1",
+          "location": "src/client.rs:31-35",
+          "issue_type": "ErrorHandling"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "m02-frame-size-bound",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "m02-frame-size-bound-adv-1",
+          "expected_id": "m02-f1",
+          "location": "src/frame.rs:29-34",
+          "issue_type": "Validation"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "m03-tag-equality-hash",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "m03-tag-equality-hash-adv-1",
+          "expected_id": "m03-f1",
+          "location": "src/tag.rs:9-16",
+          "issue_type": "ApiContract"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "m04-query-pair-cap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [
+        {
+          "prediction_id": "m04-query-pair-cap-adv-1",
+          "location": "src/query.rs:19-39",
+          "issue_type": "Validation",
+          "claim": "A query string containing short key-only segments can exceed MAX_PAIRS without exceeding MAX_QUERY_LEN, allowing callers to receive more pairs than the router's pair limit allows."
+        }
+      ],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "m05-burst-fallback",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "m05-burst-fallback-adv-1",
+          "expected_id": "m05-f1",
+          "location": "src/config.rs:49",
+          "issue_type": "ErrorHandling"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "m01-retry-error-mapping",
+      "trajectory_id": "d62757c7-c77c-4ba1-bdb4-4e55cb16b389",
+      "runtime_ms": 49876,
+      "llm_calls": 7,
+      "tool_calls": 3,
+      "retries": 0,
+      "input_tokens": 12470,
+      "output_tokens": 2808,
+      "cost_usd": 0.0198825,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m02-frame-size-bound",
+      "trajectory_id": "5d4cce39-3fc0-4ca4-b272-bb58ae219458",
+      "runtime_ms": 35616,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 8032,
+      "output_tokens": 2624,
+      "cost_usd": 0.015864,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m03-tag-equality-hash",
+      "trajectory_id": "dee8a03b-0eb1-4e8c-b03a-528f1655fbfb",
+      "runtime_ms": 41803,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 1,
+      "input_tokens": 7090,
+      "output_tokens": 1933,
+      "cost_usd": 0.012566250000000001,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m04-query-pair-cap",
+      "trajectory_id": "567d5d5c-9132-4de5-9023-4280225c2d52",
+      "runtime_ms": 60680,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 0,
+      "input_tokens": 9773,
+      "output_tokens": 3046,
+      "cost_usd": 0.01875225,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "m05-burst-fallback",
+      "trajectory_id": "1ba2f85d-63ab-42a1-b1fe-c146b5a53646",
+      "runtime_ms": 41233,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 0,
+      "input_tokens": 8109,
+      "output_tokens": 2047,
+      "cost_usd": 0.013758000000000001,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ],
+  "by_category": [
+    {
+      "category": "RealIssue",
+      "case_count": 3,
+      "counts": {
+        "true_positives": 3,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "category": "Trap",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
+  ],
+  "line_tolerance": 3
+}

@@ -1,0 +1,96 @@
+{
+  "trajectory_id": "1a52e87a-7cb5-49e6-8dfd-14725f9daad8",
+  "case_id": "k01-counter-update-window",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T05:24:02.325761300+00:00",
+  "finished_at": "2026-08-31T05:24:08.915955800+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\n`Counters::update` used to hold the map lock while it called the caller's closure. The closure is arbitrary caller code that may be slow or may itself reach back into the same `Counters`, and a std `Mutex` is not reentrant, so the author reworked `update` to read the current value, run the closure, and then store the result, leaving the lock held only for the two map operations.\n\n## Diff\n\n```diff\n--- a/src/counters.rs\n+++ b/src/counters.rs\n@@ -25,9 +25,9 @@\n     where\n         F: FnOnce(u64) -> u64,\n     {\n+        let current = self.get(key);\n+        let next = f(current);\n         let mut inner = self.inner.lock().expect(\"counters poisoned\");\n-        let current = inner.get(key).copied().unwrap_or(0);\n-        let next = f(current);\n         inner.insert(key.to_string(), next);\n     }\n \n\n```\n\n## Current contents of the changed files\n\n\n### src/counters.rs\n\n```rust\n    1 | //! A set of named counters shared between threads.\n    2 | \n    3 | use std::collections::HashMap;\n    4 | use std::sync::Mutex;\n    5 | \n    6 | /// Named `u64` counters. Cheap to share behind an `Arc`.\n    7 | #[derive(Default)]\n    8 | pub struct Counters {\n    9 |     inner: Mutex<HashMap<String, u64>>,\n   10 | }\n   11 | \n   12 | impl Counters {\n   13 |     pub fn new() -> Self {\n   14 |         Self::default()\n   15 |     }\n   16 | \n   17 |     /// Current value of `key`, or zero if it has never been set.\n   18 |     pub fn get(&self, key: &str) -> u64 {\n   19 |         let inner = self.inner.lock().expect(\"counters poisoned\");\n   20 |         inner.get(key).copied().unwrap_or(0)\n   21 |     }\n   22 | \n   23 |     /// Set `key` to `f(current)`.\n   24 |     pub fn update<F>(&self, key: &str, f: F)\n   25 |     where\n   26 |         F: FnOnce(u64) -> u64,\n   27 |     {\n   28 |         let current = self.get(key);\n   29 |         let next = f(current);\n   30 |         let mut inner = self.inner.lock().expect(\"counters poisoned\");\n   31 |         inner.insert(key.to_string(), next);\n   32 |     }\n   33 | \n   34 |     /// Add `delta` to `key`.\n   35 |     pub fn add(&self, key: &str, delta: u64) {\n   36 |         self.update(key, |current| current + delta);\n   37 |     }\n   38 | \n   39 |     /// Every counter, sorted by name.\n   40 |     pub fn snapshot(&self) -> Vec<(String, u64)> {\n   41 |         let inner = self.inner.lock().expect(\"counters poisoned\");\n   42 |         let mut out: Vec<(String, u64)> = inner.iter().map(|(k, v)| (k.clone(), *v)).collect();\n   43 |         out.sort();\n   44 |         out\n   45 |     }\n   46 | }\n   47 | \n   48 | #[cfg(test)]\n   49 | mod tests {\n   50 |     use super::*;\n   51 | \n   52 |     #[test]\n   53 |     fn a_missing_counter_reads_as_zero() {\n   54 |         let c = Counters::new();\n   55 |         assert_eq!(c.get(\"misses\"), 0);\n   56 |     }\n   57 | \n   58 |     #[test]\n   59 |     fn add_accumulates() {\n   60 |         let c = Counters::new();\n   61 |         c.add(\"hits\", 2);\n   62 |         c.add(\"hits\", 3);\n   63 |         assert_eq!(c.get(\"hits\"), 5);\n   64 |     }\n   65 | \n   66 |     #[test]\n   67 |     fn update_stores_the_computed_value() {\n   68 |         let c = Counters::new();\n   69 |         c.add(\"hits\", 4);\n   70 |         c.update(\"hits\", |current| current * 10);\n   71 |         assert_eq!(c.get(\"hits\"), 40);\n   72 |     }\n   73 | \n   74 |     #[test]\n   75 |     fn snapshot_is_sorted_by_name() {\n   76 |         let c = Counters::new();\n   77 |         c.add(\"b\", 1);\n   78 |         c.add(\"a\", 2);\n   79 |         assert_eq!(\n   80 |             c.snapshot(),\n   81 |             vec![(\"a\".to_string(), 2), (\"b\".to_string(), 1)]\n   82 |         );\n   83 |     }\n   84 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Concurrency\",\n      \"severity\": \"High\",\n      \"file\": \"src/counters.rs\",\n      \"start_line\": 28,\n      \"end_line\": 31,\n      \"claim\": \"`Counters::update` creates a race condition by releasing the lock between reading the counter and writing the updated value.\",\n      \"reasoning\": \"Because `self.get` acquires and releases the mutex before `f` runs, concurrent calls to `update` or `add` on the same key can read identical initial values and overwrite each other's changes, leading to lost updates.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 1677,
+        "output_tokens": 510,
+        "total_tokens": 2187
+      },
+      "latency_ms": 6589,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "k01-counter-update-window-base-1",
+        "issue_type": "Concurrency",
+        "severity": "High",
+        "location": {
+          "file": "src/counters.rs",
+          "start_line": 28,
+          "end_line": 31
+        },
+        "claim": "`Counters::update` creates a race condition by releasing the lock between reading the counter and writing the updated value.",
+        "reasoning": "Because `self.get` acquires and releases the mutex before `f` runs, concurrent calls to `update` or `add` on the same key can read identical initial values and overwrite each other's changes, leading to lost updates."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "k01-counter-update-window-base-1",
+      "issue_type": "Concurrency",
+      "severity": "High",
+      "location": {
+        "file": "src/counters.rs",
+        "start_line": 28,
+        "end_line": 31
+      },
+      "claim": "`Counters::update` creates a race condition by releasing the lock between reading the counter and writing the updated value.",
+      "reasoning": "Because `self.get` acquires and releases the mutex before `f` runs, concurrent calls to `update` or `add` on the same key can read identical initial values and overwrite each other's changes, leading to lost updates.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1677,
+    "output_tokens": 510,
+    "total_tokens": 2187
+  },
+  "cost_usd": 0.0031702500000000003,
+  "runtime_ms": 6590,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

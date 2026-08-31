@@ -1,0 +1,242 @@
+{
+  "trajectory_id": "dee8a03b-0eb1-4e8c-b03a-528f1655fbfb",
+  "case_id": "m03-tag-equality-hash",
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T05:29:19.021090500+00:00",
+  "finished_at": "2026-08-31T05:30:00.826018+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "advanced-review/v6",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nYou are producing CANDIDATE findings, not final ones. Nothing you write here\nreaches a human directly. Each candidate is investigated against the actual\nrepository and then independently adjudicated, and only what survives is\nreported. A candidate that turns out to be wrong costs almost nothing. A real\ndefect you never raised is never checked at all.\n\nSo err toward proposing. Raise anything a careful reviewer would want confirmed\nbefore approving this change, including things you expect will turn out to be\nfine.\n\n- Anchor each candidate to a specific file and line range.\n- State each claim as something that can actually happen, not as a\n  conditional. Write \"callers can reach this with an empty list, and it will\n  panic\", not \"this will panic if the list is empty\" — the second is true of\n  the code whether or not the situation ever arises, so it cannot be\n  disproved and is not a finding.\n- State each claim as a single falsifiable sentence — something repository\n  evidence could confirm or refute.\n- Every candidate must name a consequence: what goes wrong, and for whom.\n  Incorrect output, a panic, data loss, a violated contract, a security\n  consequence, or a real cost at the scale this code runs at. If you cannot\n  finish the sentence \"and so the user gets...\", it is not a candidate.\n  Missing trait derives, a signature that is more fallible than it needs to\n  be, and unused declarations are observations about the code, not defects —\n  leave them out. The investigation stage can settle whether a claim is true;\n  it cannot make a true triviality worth a reviewer's time.\n- Pay particular attention to anything whose correctness depends on facts that\n  are not visible in the changed files. If the code is only correct given some\n  assumption about the rest of the repository, that assumption is a candidate.\n- Apply that concretely. Where this change calls something whose definition you\n  cannot see here, ask what it must return or do for this code to be right, and\n  raise that as a candidate stating the assumption. A guard is only as good as\n  the thing it calls; a name suggests what a function does but does not\n  establish it. This is the single most common way a change that looks correct\n  in isolation turns out not to be, and it is precisely what the investigation\n  stage can settle in one lookup.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Avoid vague concerns such as \"this looks fragile\"; say what would go wrong.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nReturn {\"findings\": []} only if there is genuinely nothing worth checking.\n\nUnder-proposing is the expensive mistake at this stage. Include a candidate\neven when you suspect it is fine, and in particular whenever the code's\ncorrectness depends on something you cannot see in the changed files — a\ncaller, a constructor, an invariant asserted in a comment, a value's origin.\nThose are the candidates the investigation stage exists to settle, and it can\nonly settle the ones you raise.",
+      "user": "## Change under review\n\nUsers type tags inconsistently, so `Release` and `release` are meant to name the same tag. `PartialEq` for `Tag` is now hand-written on top of `eq_ignore_ascii_case` instead of derived, and the equality unit test was updated to cover mixed capitalisation. `as_str` still returns the spelling the user typed.\n\n## Diff\n\n```diff\n--- a/src/tag.rs\n+++ b/src/tag.rs\n@@ -3,8 +3,17 @@\n use std::collections::HashSet;\n \n /// A label attached to a resource.\n-#[derive(Debug, Clone, PartialEq, Eq, Hash)]\n+///\n+/// Tags are written by users, who are inconsistent about capitalisation, so\n+/// `\"Release\"` and `\"release\"` name the same tag.\n+#[derive(Debug, Clone, Eq, Hash)]\n pub struct Tag(String);\n+\n+impl PartialEq for Tag {\n+    fn eq(&self, other: &Self) -> bool {\n+        self.0.eq_ignore_ascii_case(&other.0)\n+    }\n+}\n \n impl Tag {\n     pub fn new(s: impl Into<String>) -> Self {\n@@ -51,8 +60,9 @@\n     use super::*;\n \n     #[test]\n-    fn identical_tags_are_equal() {\n-        assert_eq!(Tag::new(\"release\"), Tag::new(\"release\"));\n+    fn tags_compare_without_regard_to_case() {\n+        assert_eq!(Tag::new(\"Release\"), Tag::new(\"release\"));\n+        assert_eq!(Tag::new(\"RELEASE\"), Tag::new(\"release\"));\n     }\n \n     #[test]\n\n```\n\n## Current contents of the changed files\n\n\n### src/tag.rs\n\n```rust\n    1 | //! A tag, and a set of tags.\n    2 | \n    3 | use std::collections::HashSet;\n    4 | \n    5 | /// A label attached to a resource.\n    6 | ///\n    7 | /// Tags are written by users, who are inconsistent about capitalisation, so\n    8 | /// `\"Release\"` and `\"release\"` name the same tag.\n    9 | #[derive(Debug, Clone, Eq, Hash)]\n   10 | pub struct Tag(String);\n   11 | \n   12 | impl PartialEq for Tag {\n   13 |     fn eq(&self, other: &Self) -> bool {\n   14 |         self.0.eq_ignore_ascii_case(&other.0)\n   15 |     }\n   16 | }\n   17 | \n   18 | impl Tag {\n   19 |     pub fn new(s: impl Into<String>) -> Self {\n   20 |         Tag(s.into())\n   21 |     }\n   22 | \n   23 |     /// The tag exactly as the user wrote it.\n   24 |     pub fn as_str(&self) -> &str {\n   25 |         &self.0\n   26 |     }\n   27 | }\n   28 | \n   29 | /// A set of tags. Adding a tag that is already present is a no-op.\n   30 | #[derive(Debug, Default)]\n   31 | pub struct TagSet {\n   32 |     inner: HashSet<Tag>,\n   33 | }\n   34 | \n   35 | impl TagSet {\n   36 |     pub fn new() -> Self {\n   37 |         Self::default()\n   38 |     }\n   39 | \n   40 |     /// Returns true when the tag was not already present.\n   41 |     pub fn insert(&mut self, t: Tag) -> bool {\n   42 |         self.inner.insert(t)\n   43 |     }\n   44 | \n   45 |     pub fn contains(&self, t: &Tag) -> bool {\n   46 |         self.inner.contains(t)\n   47 |     }\n   48 | \n   49 |     pub fn len(&self) -> usize {\n   50 |         self.inner.len()\n   51 |     }\n   52 | \n   53 |     pub fn is_empty(&self) -> bool {\n   54 |         self.inner.is_empty()\n   55 |     }\n   56 | }\n   57 | \n   58 | #[cfg(test)]\n   59 | mod tests {\n   60 |     use super::*;\n   61 | \n   62 |     #[test]\n   63 |     fn tags_compare_without_regard_to_case() {\n   64 |         assert_eq!(Tag::new(\"Release\"), Tag::new(\"release\"));\n   65 |         assert_eq!(Tag::new(\"RELEASE\"), Tag::new(\"release\"));\n   66 |     }\n   67 | \n   68 |     #[test]\n   69 |     fn different_tags_are_not_equal() {\n   70 |         assert_ne!(Tag::new(\"release\"), Tag::new(\"draft\"));\n   71 |     }\n   72 | \n   73 |     #[test]\n   74 |     fn as_str_keeps_the_original_spelling() {\n   75 |         assert_eq!(Tag::new(\"Release\").as_str(), \"Release\");\n   76 |     }\n   77 | \n   78 |     #[test]\n   79 |     fn a_new_set_is_empty() {\n   80 |         let s = TagSet::new();\n   81 |         assert!(s.is_empty());\n   82 |         assert_eq!(s.len(), 0);\n   83 |     }\n   84 | \n   85 |     #[test]\n   86 |     fn inserting_the_same_tag_twice_is_a_no_op() {\n   87 |         let mut s = TagSet::new();\n   88 |         assert!(s.insert(Tag::new(\"release\")));\n   89 |         assert!(!s.insert(Tag::new(\"release\")));\n   90 |         assert_eq!(s.len(), 1);\n   91 |     }\n   92 | \n   93 |     #[test]\n   94 |     fn an_inserted_tag_is_found() {\n   95 |         let mut s = TagSet::new();\n   96 |         s.insert(Tag::new(\"release\"));\n   97 |         assert!(s.contains(&Tag::new(\"release\")));\n   98 |         assert!(!s.contains(&Tag::new(\"draft\")));\n   99 |     }\n  100 | \n  101 |     #[test]\n  102 |     fn distinct_tags_are_all_kept() {\n  103 |         let mut s = TagSet::new();\n  104 |         s.insert(Tag::new(\"release\"));\n  105 |         s.insert(Tag::new(\"draft\"));\n  106 |         assert_eq!(s.len(), 2);\n  107 |     }\n  108 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Correctness\",\n      \"severity\": \"High\",\n      \"file\": \"src/tag.rs\",\n      \"start_line\": 9,\n      \"end_line\": 16,\n      \"claim\": \"Tag derives Hash on the underlying String while implementing custom case-insensitive PartialEq, violating the invariant that equal values must yield identical hashes.\",\n      \"reasoning\": \"Tag(\\\"Release\\\") and Tag(\\\"release\\\") compare equal via PartialEq, but the derived Hash implementation hashes their distinct raw byte representations. As a result, TagSet and other HashSet/HashMap collections will fail to look up tags with different casing and will allow duplicate entries contrary to TagSet's documented contract.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 2590,
+        "output_tokens": 577,
+        "total_tokens": 3167
+      },
+      "latency_ms": 11241,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "m03-tag-equality-hash-adv-1",
+        "issue_type": "Correctness",
+        "severity": "High",
+        "location": {
+          "file": "src/tag.rs",
+          "start_line": 9,
+          "end_line": 16
+        },
+        "claim": "Tag derives Hash on the underlying String while implementing custom case-insensitive PartialEq, violating the invariant that equal values must yield identical hashes.",
+        "reasoning": "Tag(\"Release\") and Tag(\"release\") compare equal via PartialEq, but the derived Hash implementation hashes their distinct raw byte representations. As a result, TagSet and other HashSet/HashMap collections will fail to look up tags with different casing and will allow duplicate entries contrary to TagSet's documented contract."
+      }
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Falsify",
+      "prompt_version": "advanced-falsify/v2",
+      "system": "You are helping test a code-review finding.\n\nGiven a claim about a defect, write the single most decisive question whose\nanswer would show the claim is WRONG. The question must be answerable by\ninspecting the repository: callers, implementations, tests, configuration, or\ntype definitions.\n\nAsk about the thing the claim actually depends on, not about the mechanism.\nWhether a function panics on a bad input is usually not in doubt and can be\nread off the body; whether anything ever hands it a bad input is the question.\nSo when a claim rests on how the code is used, ask about the call sites by\nname.\n\nGood: \"Does every caller of parse_row check is_empty() before indexing?\"\nBad:  \"Does parse_row panic when the row is empty?\"  (asks the mechanism)\nBad:  \"Is this code correct?\"                        (unanswerable)\n\nNever make a comment the answer. If a doc comment already asserts the\nprecondition, the question is whether the callers honour it.\n\nReturn JSON of exactly this shape:\n\n{\"falsification_question\": \"<one question>\"}",
+      "user": "Claim: Tag derives Hash on the underlying String while implementing custom case-insensitive PartialEq, violating the invariant that equal values must yield identical hashes.\nLocation: src/tag.rs:9-16\nReviewer's reasoning: Tag(\"Release\") and Tag(\"release\") compare equal via PartialEq, but the derived Hash implementation hashes their distinct raw byte representations. As a result, TagSet and other HashSet/HashMap collections will fail to look up tags with different casing and will allow duplicate entries contrary to TagSet's documented contract.\n\nWhat evidence would prove this claim wrong?",
+      "response_text": "{\"falsification_question\": \"Does Tag normalize its inner string to a canonical casing upon construction, or implement a custom Hash that normalizes casing?\"}",
+      "usage": {
+        "input_tokens": 359,
+        "output_tokens": 269,
+        "total_tokens": 628
+      },
+      "latency_ms": 4724,
+      "attempts": 1
+    },
+    {
+      "event": "FalsificationQuestion",
+      "candidate_id": "m03-tag-equality-hash-adv-1",
+      "question": "Does Tag normalize its inner string to a canonical casing upon construction, or implement a custom Hash that normalizes casing?"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nTag derives Hash on the underlying String while implementing custom case-insensitive PartialEq, violating the invariant that equal values must yield identical hashes.\n\nLocation: src/tag.rs:9-16\n\n## Falsification question\n\nDoes Tag normalize its inner string to a canonical casing upon construction, or implement a custom Hash that normalizes casing?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/tag.rs\n+++ b/src/tag.rs\n@@ -3,8 +3,17 @@\n use std::collections::HashSet;\n \n /// A label attached to a resource.\n-#[derive(Debug, Clone, PartialEq, Eq, Hash)]\n+///\n+/// Tags are written by users, who are inconsistent about capitalisation, so\n+/// `\"Release\"` and `\"release\"` name the same tag.\n+#[derive(Debug, Clone, Eq, Hash)]\n pub struct Tag(String);\n+\n+impl PartialEq for Tag {\n+    fn eq(&self, other: &Self) -> bool {\n+        self.0.eq_ignore_ascii_case(&other.0)\n+    }\n+}\n \n impl Tag {\n     pub fn new(s: impl Into<String>) -> Self {\n@@ -51,8 +60,9 @@\n     use super::*;\n \n     #[test]\n-    fn identical_tags_are_equal() {\n-        assert_eq!(Tag::new(\"release\"), Tag::new(\"release\"));\n+    fn tags_compare_without_regard_to_case() {\n+        assert_eq!(Tag::new(\"Release\"), Tag::new(\"release\"));\n+        assert_eq!(Tag::new(\"RELEASE\"), Tag::new(\"release\"));\n     }\n \n     #[test]\n\n```\n\n## Investigation so far\n\n(nothing yet)\n\nWhat is your next step?",
+      "response_text": "{\n  \"arguments\": {\n    \"file\": \"src/tag.rs\",\n    \"start_line\": 1,\n    \"end_line\": 50\n  },\n  \"done\": false,\n  \"rationale\": \"Check Tag definition, Tag::new implementation, and any other constructors or Hash implementations in src/tag.rs\",\n  \"tool\": \"read\"\n}",
+      "usage": {
+        "input_tokens": 743,
+        "output_tokens": 143,
+        "total_tokens": 886
+      },
+      "latency_ms": 11760,
+      "attempts": 2
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "m03-tag-equality-hash-adv-1-t1",
+      "candidate_id": "m03-tag-equality-hash-adv-1",
+      "tool": "read",
+      "arguments": {
+        "end_line": 50,
+        "file": "src/tag.rs",
+        "start_line": 1
+      },
+      "response": "src/tag.rs lines 1-50 of 108:\n    1 | //! A tag, and a set of tags.\n    2 | \n    3 | use std::collections::HashSet;\n    4 | \n    5 | /// A label attached to a resource.\n    6 | ///\n    7 | /// Tags are written by users, who are inconsistent about capitalisation, so\n    8 | /// `\"Release\"` and `\"release\"` name the same tag.\n    9 | #[derive(Debug, Clone, Eq, Hash)]\n   10 | pub struct Tag(String);\n   11 | \n   12 | impl PartialEq for Tag {\n   13 |     fn eq(&self, other: &Self) -> bool {\n   14 |         self.0.eq_ignore_ascii_case(&other.0)\n   15 |     }\n   16 | }\n   17 | \n   18 | impl Tag {\n   19 |     pub fn new(s: impl Into<String>) -> Self {\n   20 |         Tag(s.into())\n   21 |     }\n   22 | \n   23 |     /// The tag exactly as the user wrote it.\n   24 |     pub fn as_str(&self) -> &str {\n   25 |         &self.0\n   26 |     }\n   27 | }\n   28 | \n   29 | /// A set of tags. Adding a tag that is already present is a no-op.\n   30 | #[derive(Debug, Default)]\n   31 | pub struct TagSet {\n   32 |     inner: HashSet<Tag>,\n   33 | }\n   34 | \n   35 | impl TagSet {\n   36 |     pub fn new() -> Self {\n   37 |         Self::default()\n   38 |     }\n   39 | \n   40 |     /// Returns true when the tag was not already present.\n   41 |     pub fn insert(&mut self, t: Tag) -> bool {\n   42 |         self.inner.insert(t)\n   43 |     }\n   44 | \n   45 |     pub fn contains(&self, t: &Tag) -> bool {\n   46 |         self.inner.contains(t)\n   47 |     }\n   48 | \n   49 |     pub fn len(&self) -> usize {\n   50 |         self.inner.len()\n",
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nTag derives Hash on the underlying String while implementing custom case-insensitive PartialEq, violating the invariant that equal values must yield identical hashes.\n\nLocation: src/tag.rs:9-16\n\n## Falsification question\n\nDoes Tag normalize its inner string to a canonical casing upon construction, or implement a custom Hash that normalizes casing?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/tag.rs\n+++ b/src/tag.rs\n@@ -3,8 +3,17 @@\n use std::collections::HashSet;\n \n /// A label attached to a resource.\n-#[derive(Debug, Clone, PartialEq, Eq, Hash)]\n+///\n+/// Tags are written by users, who are inconsistent about capitalisation, so\n+/// `\"Release\"` and `\"release\"` name the same tag.\n+#[derive(Debug, Clone, Eq, Hash)]\n pub struct Tag(String);\n+\n+impl PartialEq for Tag {\n+    fn eq(&self, other: &Self) -> bool {\n+        self.0.eq_ignore_ascii_case(&other.0)\n+    }\n+}\n \n impl Tag {\n     pub fn new(s: impl Into<String>) -> Self {\n@@ -51,8 +60,9 @@\n     use super::*;\n \n     #[test]\n-    fn identical_tags_are_equal() {\n-        assert_eq!(Tag::new(\"release\"), Tag::new(\"release\"));\n+    fn tags_compare_without_regard_to_case() {\n+        assert_eq!(Tag::new(\"Release\"), Tag::new(\"release\"));\n+        assert_eq!(Tag::new(\"RELEASE\"), Tag::new(\"release\"));\n     }\n \n     #[test]\n\n```\n\n## Already looked up during this review\n\nThese are results of earlier tool calls on this repository, recorded so you do\nnot have to repeat them. They are lookups, not conclusions.\n\nread {\"end_line\":50,\"file\":\"src/tag.rs\",\"start_line\":1} -> src/tag.rs lines 1-50 of 108:\n\n## Investigation so far\n\n\n--- step 1 : read {\"end_line\":50,\"file\":\"src/tag.rs\",\"start_line\":1} ---\nsrc/tag.rs lines 1-50 of 108:\n    1 | //! A tag, and a set of tags.\n    2 | \n    3 | use std::collections::HashSet;\n    4 | \n    5 | /// A label attached to a resource.\n    6 | ///\n    7 | /// Tags are written by users, who are inconsistent about capitalisation, so\n    8 | /// `\"Release\"` and `\"release\"` name the same tag.\n    9 | #[derive(Debug, Clone, Eq, Hash)]\n   10 | pub struct Tag(String);\n   11 | \n   12 | impl PartialEq for Tag {\n   13 |     fn eq(&self, other: &Self) -> bool {\n   14 |         self.0.eq_ignore_ascii_case(&other.0)\n   15 |     }\n   16 | }\n   17 | \n   18 | impl Tag {\n   19 |     pub fn new(s: impl Into<String>) -> Self {\n   20 |         Tag(s.into())\n   21 |     }\n   22 | \n   23 |     /// The tag exactly as the user wrote it.\n   24 |     pub fn as_str(&self) -> &str {\n   25 |         &self.0\n   26 |     }\n   27 | }\n   28 | \n   29 | /// A set of tags. Adding a tag that is already present is a no-op.\n   30 | #[derive(Debug, Default)]\n   31 | pub struct TagSet {\n   32 |     inner: HashSet<Tag>,\n   33 | }\n   34 | \n   35 | impl TagSet {\n   36 |     pub fn new() -> Self {\n   37 |         Self::default()\n   38 |     }\n   39 | \n   40 |     /// Returns true when the tag was not already present.\n   41 |     pub fn insert(&mut self, t: Tag) -> bool {\n   42 |         self.inner.insert(t)\n   43 |     }\n   44 | \n   45 |     pub fn contains(&self, t: &Tag) -> bool {\n   46 |         self.inner.contains(t)\n   47 |     }\n   48 | \n   49 |     pub fn len(&self) -> usize {\n   50 |         self.inner.len()\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": true,\n  \"tool\": null,\n  \"arguments\": null,\n  \"rationale\": \"Tag derives Hash directly (line 9) without a custom implementation, and Tag::new (lines 19-21) stores the input string directly as Tag(s.into()) without normalizing casing. Consequently, Tag(\\\"Release\\\") and Tag(\\\"release\\\") are equal according to PartialEq but hash differently.\"\n}",
+      "usage": {
+        "input_tokens": 1426,
+        "output_tokens": 449,
+        "total_tokens": 1875
+      },
+      "latency_ms": 6567,
+      "attempts": 1
+    },
+    {
+      "event": "EvidenceAssembled",
+      "candidate_id": "m03-tag-equality-hash-adv-1",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/tag.rs",
+          "start_line": 1,
+          "end_line": 31,
+          "excerpt": "    1 | //! A tag, and a set of tags.\n    2 | \n    3 | use std::collections::HashSet;\n    4 | \n    5 | /// A label attached to a resource.\n    6 | ///\n    7 | /// Tags are written by users, who are inconsistent about capitalisation, so\n    8 | /// `\"Release\"` and `\"release\"` name the same tag.\n    9 | #[derive(Debug, Clone, Eq, Hash)]\n   10 | pub struct Tag(String);\n   11 | \n   12 | impl PartialEq for Tag {\n   13 |     fn eq(&self, other: &Self) -> bool {\n   14 |         self.0.eq_ignore_ascii_case(&other.0)\n   15 |     }\n   16 | }\n   17 | \n   18 | impl Tag {\n   19 |     pub fn new(s: impl Into<String>) -> Self {\n   20 |         Tag(s.into())\n   21 |     }\n   22 | \n   23 |     /// The tag exactly as the user wrote it.\n   24 |     pub fn as_str(&self) -> &str {\n   25 |         &self.0\n   26 |     }\n   27 | }\n   28 | \n   29 | /// A set of tags. Adding a tag that is already present is a no-op.\n   30 | #[derive(Debug, Default)]\n   31 | pub struct TagSet {",
+          "tool_call_id": "m03-tag-equality-hash-adv-1-claimed-region"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/tag.rs",
+          "start_line": 1,
+          "end_line": 50,
+          "excerpt": "    1 | //! A tag, and a set of tags.\n    2 | \n    3 | use std::collections::HashSet;\n    4 | \n    5 | /// A label attached to a resource.\n    6 | ///\n    7 | /// Tags are written by users, who are inconsistent about capitalisation, so\n    8 | /// `\"Release\"` and `\"release\"` name the same tag.\n    9 | #[derive(Debug, Clone, Eq, Hash)]\n   10 | pub struct Tag(String);\n   11 | \n   12 | impl PartialEq for Tag {\n   13 |     fn eq(&self, other: &Self) -> bool {\n   14 |         self.0.eq_ignore_ascii_case(&other.0)\n   15 |     }\n   16 | }\n   17 | \n   18 | impl Tag {\n   19 |     pub fn new(s: impl Into<String>) -> Self {\n   20 |         Tag(s.into())\n   21 |     }\n   22 | \n   23 |     /// The tag exactly as the user wrote it.\n   24 |     pub fn as_str(&self) -> &str {\n   25 |         &self.0\n   26 |     }\n   27 | }\n   28 | \n   29 | /// A set of tags. Adding a tag that is already present is a no-op.\n   30 | #[derive(Debug, Default)]\n   31 | pub struct TagSet {\n   32 |     inner: HashSet<Tag>,\n   33 | }\n   34 | \n   35 | impl TagSet {\n   36 |     pub fn new() -> Self {\n   37 |         Self::default()\n   38 |     }\n   39 | \n   40 |     /// Returns true when the tag was not already present.\n   41 |     pub fn insert(&mut self, t: Tag) -> bool {\n   42 |         self.inner.insert(t)\n   43 |     }\n   44 | \n   45 |     pub fn contains(&self, t: &Tag) -> bool {\n   46 |         self.inner.contains(t)\n   47 |     }\n   48 | \n   49 |     pub fn len(&self) -> usize {\n   50 |         self.inner.len()",
+          "tool_call_id": "m03-tag-equality-hash-adv-1-t1"
+        }
+      ]
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Verify",
+      "prompt_version": "fresh-verify/v5",
+      "system": "You are deciding whether a body of evidence establishes that a codebase has a real defect.\n\nYou did not write the claim and have no stake in it. Someone asserted it; your\ntask is to weigh the evidence.\n\nDecide one of:\n\n  \"Supports\"      - the evidence establishes a real defect, as claimed.\n  \"Contradicts\"   - the evidence establishes that this is not a defect.\n  \"Insufficient\"  - the evidence does not settle it either way.\n\nRules:\n- Judge only from the evidence provided. Do not assume facts about code you\n  were not shown.\n- Absence of evidence is not evidence. If the excerpts do not cover what the\n  claim depends on, the answer is \"Insufficient\", not \"Supports\".\n- \"Insufficient\" is a perfectly good answer and is expected to be common.\n- Quote the specific excerpts that decided it.\n\nWeigh comments by whether the repository could check them:\n\n- A comment asserting something the repository itself can settle — which\n  callers exist, what they pass, whether a guard runs first, whether a\n  constructor rejects a value — is a CLAIM, not evidence. It is exactly the\n  kind of thing that is wrong when the code is wrong. \"Callers check first\"\n  written above a function tells you what the author believed, not what the\n  callers do. Go and look at the call sites; if the evidence asserts something\n  about callers but contains no callers, that is \"Insufficient\", never\n  \"Contradicts\". A documented precondition does not make violating it\n  acceptable — the question is whether anything violates it.\n\n- A comment stating a fact from outside the repository — a database column\n  type, a wire-protocol constant, the size of production inputs, what a\n  downstream consumer requires — is different. Nothing in the repository can\n  confirm or refute it, and the people who wrote it knew things you do not.\n  Treat it as the best available evidence and reason from it. Do not dismiss a\n  finding merely because such a fact came from a comment rather than from\n  code; that standard would make every claim about the real world\n  unverifiable.\n\nA true statement is not automatically a defect:\n\n- You are judging the finding, not the sentence. Many claims are accurate\n  descriptions of the code that identify nothing wrong with it: a type that\n  does not derive a trait nobody needs, a function returning `Option` that\n  never returns `None`, a name someone dislikes. Confirming the description is\n  accurate does not make any of these a defect.\n- Ask what goes wrong, and for whom. If the evidence does not show incorrect\n  behaviour, a crash, data loss, a violated contract, a security consequence,\n  or a real cost at the scale the code actually runs at, then this is not a\n  defect and the answer is \"Contradicts\" — however accurate the claim is.\n- Reporting a true triviality wastes human attention just as surely as\n  reporting something false, so hold both to the same bar.\n\nReachability is part of the claim, not a separate question:\n\n- Most claims depend on the code reaching some state — a collection being\n  empty, a key being absent, a number being out of range, a caller passing a\n  particular value. Confirming that the code WOULD misbehave in that state\n  settles only half of it.\n- Code that would misbehave in a state it can never actually be in is not a\n  defect. If the evidence shows the state is prevented — by a constructor, a\n  guard, a type, or an invariant every mutation preserves — then the evidence\n  CONTRADICTS the claim, however faithfully the mechanism was described.\n- So do not answer \"Supports\" merely because the described mechanism is real.\n  Answer \"Supports\" only when the evidence also shows the triggering state is\n  reachable. If the evidence settles the mechanism but leaves reachability\n  open, that is \"Insufficient\".\n\nReturn JSON of exactly this shape:\n\n{\n  \"outcome\": \"Supports\" | \"Contradicts\" | \"Insufficient\",\n  \"rationale\": \"<2-4 sentences explaining what the evidence shows>\",\n  \"decisive_evidence\": [\"<short quote or file:line reference>\", ...]\n}",
+      "user": "## Claim\n\nTag derives Hash on the underlying String while implementing custom case-insensitive PartialEq, violating the invariant that equal values must yield identical hashes.\n\nStated location: src/tag.rs:9-16\n\n## Question the evidence was gathered to answer\n\nDoes Tag normalize its inner string to a canonical casing upon construction, or implement a custom Hash that normalizes casing?\n\n## Evidence gathered from the repository\n\n[E1] DiffHunk from src/tag.rs:1-31\n    1 | //! A tag, and a set of tags.\n    2 | \n    3 | use std::collections::HashSet;\n    4 | \n    5 | /// A label attached to a resource.\n    6 | ///\n    7 | /// Tags are written by users, who are inconsistent about capitalisation, so\n    8 | /// `\"Release\"` and `\"release\"` name the same tag.\n    9 | #[derive(Debug, Clone, Eq, Hash)]\n   10 | pub struct Tag(String);\n   11 | \n   12 | impl PartialEq for Tag {\n   13 |     fn eq(&self, other: &Self) -> bool {\n   14 |         self.0.eq_ignore_ascii_case(&other.0)\n   15 |     }\n   16 | }\n   17 | \n   18 | impl Tag {\n   19 |     pub fn new(s: impl Into<String>) -> Self {\n   20 |         Tag(s.into())\n   21 |     }\n   22 | \n   23 |     /// The tag exactly as the user wrote it.\n   24 |     pub fn as_str(&self) -> &str {\n   25 |         &self.0\n   26 |     }\n   27 | }\n   28 | \n   29 | /// A set of tags. Adding a tag that is already present is a no-op.\n   30 | #[derive(Debug, Default)]\n   31 | pub struct TagSet {\n\n[E2] FileRegion from src/tag.rs:1-50\n    1 | //! A tag, and a set of tags.\n    2 | \n    3 | use std::collections::HashSet;\n    4 | \n    5 | /// A label attached to a resource.\n    6 | ///\n    7 | /// Tags are written by users, who are inconsistent about capitalisation, so\n    8 | /// `\"Release\"` and `\"release\"` name the same tag.\n    9 | #[derive(Debug, Clone, Eq, Hash)]\n   10 | pub struct Tag(String);\n   11 | \n   12 | impl PartialEq for Tag {\n   13 |     fn eq(&self, other: &Self) -> bool {\n   14 |         self.0.eq_ignore_ascii_case(&other.0)\n   15 |     }\n   16 | }\n   17 | \n   18 | impl Tag {\n   19 |     pub fn new(s: impl Into<String>) -> Self {\n   20 |         Tag(s.into())\n   21 |     }\n   22 | \n   23 |     /// The tag exactly as the user wrote it.\n   24 |     pub fn as_str(&self) -> &str {\n   25 |         &self.0\n   26 |     }\n   27 | }\n   28 | \n   29 | /// A set of tags. Adding a tag that is already present is a no-op.\n   30 | #[derive(Debug, Default)]\n   31 | pub struct TagSet {\n   32 |     inner: HashSet<Tag>,\n   33 | }\n   34 | \n   35 | impl TagSet {\n   36 |     pub fn new() -> Self {\n   37 |         Self::default()\n   38 |     }\n   39 | \n   40 |     /// Returns true when the tag was not already present.\n   41 |     pub fn insert(&mut self, t: Tag) -> bool {\n   42 |         self.inner.insert(t)\n   43 |     }\n   44 | \n   45 |     pub fn contains(&self, t: &Tag) -> bool {\n   46 |         self.inner.contains(t)\n   47 |     }\n   48 | \n   49 |     pub fn len(&self) -> usize {\n   50 |         self.inner.len()\n\n\n\nDoes the evidence support the claim, contradict it, or leave it unsettled?",
+      "response_text": "{\n  \"outcome\": \"Supports\",\n  \"rationale\": \"The evidence shows that `Tag` automatically derives `Hash` on its inner `String` while implementing a custom `PartialEq` that uses case-insensitive comparison (`eq_ignore_ascii_case`). Furthermore, `Tag::new` does not normalize casing, meaning two tags like 'Release' and 'release' evaluate as equal via `PartialEq` but produce different hash values under derived `Hash`, violating the Rust `Eq`/`Hash` invariant required by collections like `HashSet`.\",\n  \"decisive_evidence\": [\n    \"src/tag.rs:9-10\",\n    \"src/tag.rs:12-16\",\n    \"src/tag.rs:19-21\"\n  ]\n}",
+      "usage": {
+        "input_tokens": 1972,
+        "output_tokens": 495,
+        "total_tokens": 2467
+      },
+      "latency_ms": 7508,
+      "attempts": 1
+    },
+    {
+      "event": "Verification",
+      "candidate_id": "m03-tag-equality-hash-adv-1",
+      "result": {
+        "outcome": "Supports",
+        "rationale": "The evidence shows that `Tag` automatically derives `Hash` on its inner `String` while implementing a custom `PartialEq` that uses case-insensitive comparison (`eq_ignore_ascii_case`). Furthermore, `Tag::new` does not normalize casing, meaning two tags like 'Release' and 'release' evaluate as equal via `PartialEq` but produce different hash values under derived `Hash`, violating the Rust `Eq`/`Hash` invariant required by collections like `HashSet`.",
+        "decisive_evidence": [
+          "src/tag.rs:9-10",
+          "src/tag.rs:12-16",
+          "src/tag.rs:19-21"
+        ]
+      }
+    },
+    {
+      "event": "Decision",
+      "candidate_id": "m03-tag-equality-hash-adv-1",
+      "status": "Verified",
+      "reason": "fresh-context verification found the evidence supports the claim, backed by 1 repository evidence item(s)"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "m03-tag-equality-hash-adv-1",
+      "issue_type": "Correctness",
+      "severity": "High",
+      "location": {
+        "file": "src/tag.rs",
+        "start_line": 9,
+        "end_line": 16
+      },
+      "claim": "Tag derives Hash on the underlying String while implementing custom case-insensitive PartialEq, violating the invariant that equal values must yield identical hashes.",
+      "reasoning": "Tag(\"Release\") and Tag(\"release\") compare equal via PartialEq, but the derived Hash implementation hashes their distinct raw byte representations. As a result, TagSet and other HashSet/HashMap collections will fail to look up tags with different casing and will allow duplicate entries contrary to TagSet's documented contract.",
+      "falsification_question": "Does Tag normalize its inner string to a canonical casing upon construction, or implement a custom Hash that normalizes casing?",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/tag.rs",
+          "start_line": 1,
+          "end_line": 31,
+          "excerpt": "    1 | //! A tag, and a set of tags.\n    2 | \n    3 | use std::collections::HashSet;\n    4 | \n    5 | /// A label attached to a resource.\n    6 | ///\n    7 | /// Tags are written by users, who are inconsistent about capitalisation, so\n    8 | /// `\"Release\"` and `\"release\"` name the same tag.\n    9 | #[derive(Debug, Clone, Eq, Hash)]\n   10 | pub struct Tag(String);\n   11 | \n   12 | impl PartialEq for Tag {\n   13 |     fn eq(&self, other: &Self) -> bool {\n   14 |         self.0.eq_ignore_ascii_case(&other.0)\n   15 |     }\n   16 | }\n   17 | \n   18 | impl Tag {\n   19 |     pub fn new(s: impl Into<String>) -> Self {\n   20 |         Tag(s.into())\n   21 |     }\n   22 | \n   23 |     /// The tag exactly as the user wrote it.\n   24 |     pub fn as_str(&self) -> &str {\n   25 |         &self.0\n   26 |     }\n   27 | }\n   28 | \n   29 | /// A set of tags. Adding a tag that is already present is a no-op.\n   30 | #[derive(Debug, Default)]\n   31 | pub struct TagSet {",
+          "tool_call_id": "m03-tag-equality-hash-adv-1-claimed-region"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/tag.rs",
+          "start_line": 1,
+          "end_line": 50,
+          "excerpt": "    1 | //! A tag, and a set of tags.\n    2 | \n    3 | use std::collections::HashSet;\n    4 | \n    5 | /// A label attached to a resource.\n    6 | ///\n    7 | /// Tags are written by users, who are inconsistent about capitalisation, so\n    8 | /// `\"Release\"` and `\"release\"` name the same tag.\n    9 | #[derive(Debug, Clone, Eq, Hash)]\n   10 | pub struct Tag(String);\n   11 | \n   12 | impl PartialEq for Tag {\n   13 |     fn eq(&self, other: &Self) -> bool {\n   14 |         self.0.eq_ignore_ascii_case(&other.0)\n   15 |     }\n   16 | }\n   17 | \n   18 | impl Tag {\n   19 |     pub fn new(s: impl Into<String>) -> Self {\n   20 |         Tag(s.into())\n   21 |     }\n   22 | \n   23 |     /// The tag exactly as the user wrote it.\n   24 |     pub fn as_str(&self) -> &str {\n   25 |         &self.0\n   26 |     }\n   27 | }\n   28 | \n   29 | /// A set of tags. Adding a tag that is already present is a no-op.\n   30 | #[derive(Debug, Default)]\n   31 | pub struct TagSet {\n   32 |     inner: HashSet<Tag>,\n   33 | }\n   34 | \n   35 | impl TagSet {\n   36 |     pub fn new() -> Self {\n   37 |         Self::default()\n   38 |     }\n   39 | \n   40 |     /// Returns true when the tag was not already present.\n   41 |     pub fn insert(&mut self, t: Tag) -> bool {\n   42 |         self.inner.insert(t)\n   43 |     }\n   44 | \n   45 |     pub fn contains(&self, t: &Tag) -> bool {\n   46 |         self.inner.contains(t)\n   47 |     }\n   48 | \n   49 |     pub fn len(&self) -> usize {\n   50 |         self.inner.len()",
+          "tool_call_id": "m03-tag-equality-hash-adv-1-t1"
+        }
+      ],
+      "verification": {
+        "outcome": "Supports",
+        "rationale": "The evidence shows that `Tag` automatically derives `Hash` on its inner `String` while implementing a custom `PartialEq` that uses case-insensitive comparison (`eq_ignore_ascii_case`). Furthermore, `Tag::new` does not normalize casing, meaning two tags like 'Release' and 'release' evaluate as equal via `PartialEq` but produce different hash values under derived `Hash`, violating the Rust `Eq`/`Hash` invariant required by collections like `HashSet`.",
+        "decisive_evidence": [
+          "src/tag.rs:9-10",
+          "src/tag.rs:12-16",
+          "src/tag.rs:19-21"
+        ]
+      },
+      "status": "Verified",
+      "status_reason": "fresh-context verification found the evidence supports the claim, backed by 1 repository evidence item(s)"
+    }
+  ],
+  "usage": {
+    "input_tokens": 7090,
+    "output_tokens": 1933,
+    "total_tokens": 9023
+  },
+  "cost_usd": 0.012566250000000001,
+  "runtime_ms": 41803,
+  "llm_calls": 5,
+  "tool_calls": 1,
+  "retries": 1
+}

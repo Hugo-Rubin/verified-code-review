@@ -1859,3 +1859,78 @@ times" concealed.
 - **Claiming this as an improvement to the shipped system.** Rejected: at the
   shipped budget the loop still contributes nothing, and the headline figures
   are unchanged.
+
+---
+
+## 2026-08-31 06:15 UTC — Two more held-out sets, and the boundary they found
+
+### Context
+
+One held-out set of six cases is thin, and a single authoring agent can have
+blind spots of its own. Two further agents wrote five cases each under the same
+blocklist, denied each other's work, themed on concurrency/ownership and on
+error handling/API contracts.
+
+### Evidence
+
+Both sets pass `scripts/verify_benchmark.py`, and every ground truth was
+re-derived by execution here rather than taken from the agents' reports —
+including both traps, since a trap that is not actually safe scores a correct
+finding as a false positive.
+
+One run per arm:
+
+```text
+holdout2   baseline F1 1.000    advanced F1 1.000   ($0.0038 vs $0.0115)
+holdout3   baseline F1 1.000    advanced F1 0.889   ($0.0051 vs $0.0162)
+```
+
+The `holdout3` loss is the `m04` trap: the advanced arm claimed a query can
+exceed `MAX_PAIRS`, which execution disproves — the densest legal query yields
+43 pairs against a cap of 100.
+
+### The finding
+
+**The advantage did not replicate, and the reason is the useful part.** Both
+sets are diff-legible. The baseline solved even the cases their authors
+designated Challenging without opening the untouched file:
+
+    k05  "Holding an immutable RefCell borrow across visitor calls and
+          recursion causes a runtime panic if the visitor mutates the node."
+    m05  "Using unwrap_or_default() sets missing or unparseable burst values
+          to 0 instead of DEFAULT_BURST."
+
+Both correct, both from the diff alone. The changed line is a recognisable
+smell, so pattern recognition suffices and the investigation is redundant.
+
+That gives the sharpest statement of the claim's boundary this project has:
+**"the evidence lives in another file" is not what makes a case hard. A case is
+hard when the changed line looks correct** — `c12`'s bounds check that reads as
+valid, `c03`'s `unwrap` with a doc comment justifying it, `h06`'s inlined
+predicate, which the baseline missed in 6 of 6 trials.
+
+Two independent agents were explicitly asked for that shape and neither
+produced one, which is some evidence that the frozen benchmark's hard cases are
+not trivial constructions.
+
+### Decisions
+
+1. **Report as found.** The headline is unaffected — it is measured on the
+   frozen benchmark, and its by-category table has always concentrated the gain
+   on the challenging cases. What is added is the other half of the sentence,
+   now measured: when a defect is legible in the diff, this pipeline adds cost
+   and risk and nothing else, and should be pointed at unfamiliar code and
+   cross-module changes rather than at everything.
+2. New overview at `docs/benchmarks.md` covering all five case sets.
+
+### Rejected alternatives
+
+- **Rewriting `k05` and `m05` into harder cases.** Rejected. Editing a held-out
+  case because its result was inconvenient destroys the only property that
+  makes it worth having.
+- **Dropping the two sets as "bad cases".** Rejected, and the reasoning is the
+  opposite: they are exactly the kind of change a reviewer meets most of the
+  time, and a one-call baseline handling them at a third of the cost is a real
+  finding about when to reach for this system.
+- **Folding them into the headline to raise the case count.** Rejected: they
+  measure a different thing, and averaging them in would hide both results.
