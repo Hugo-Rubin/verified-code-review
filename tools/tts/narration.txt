@@ -1,95 +1,57 @@
-## 0:00 – 0:35 · Problem and user
+## 0:00 – 0:40 · The problem
 
-A developer reviewing a Rust pull request in a codebase they didn't entirely write. The question they need answered isn't "what looks suspicious", it's "is this actually broken?"
+A developer reviewing a Rust pull request in code they didn't write. The question isn't "what looks suspicious", it's "is this actually broken?"
 
-And most of what makes a change dangerous isn't in the change. Whether an unwrap can fire depends on callers in files the diff never touches. The diff shows you the suspicious line. The repository holds the verdict.
+Here's a real case. A new endpoint, an explicit bounds check, a doc comment promising it returns None rather than panicking, three passing tests. It's broken.
 
-A false positive costs a full investigation to dismiss. A false negative ships. A tool that trades one for the other hasn't helped.
+Nothing in that diff can tell you so. The guard compares against store.len(), and len returns capacity, not how many records are present, a fact that lives in a file the change never touches. The diff shows the suspicious line; the repository holds the verdict.
 
-This is a real case from our benchmark. New endpoint, explicit bounds check, doc comment promising it returns None instead of panicking, three passing tests. It's broken.
+## 0:40 – 1:10 · The simple baseline
 
-## 0:35 – 1:05 · The simple baseline
+The baseline is one direct review pass. Same model, same schema, same view of the diff and every changed file. Only repository tools are withheld.
 
-The baseline is one direct review pass. Same model, same output schema, same view of the diff and every changed file, and an explicit instruction not to speculate. The only thing it doesn't get is repository tools.
+It reports nothing, not reasoning badly, but reasoning correctly from insufficient information.
 
-Nothing. And that's not the model reasoning badly, it's reasoning correctly about insufficient information. Store::len() returns capacity, not the number of records present. That fact lives in a file this change doesn't touch, and the baseline never sees it.
+Across twelve cases it scores F one of zero point eight five seven with perfect precision, identical in all fifteen trials, missing both cases whose evidence sits outside the diff.
 
-Across twelve cases the baseline scores F one zero point eight five seven with perfect precision. It misses both cases whose evidence sits outside the diff.
+## 1:10 – 2:20 · One execution, end to end
 
-## 1:05 – 2:25 · One realistic execution, end to end
+Same case, the advanced reviewer. Four roles, each a separate stateless request.
 
-Same case, the advanced reviewer. Seven model calls, three tool calls, forty-seven seconds.
+It proposes a candidate: fetch assumes every index below len is valid.
 
-It proposes: fetch assumes record_at(index) is valid for every index below len(), which fails if the store allows sparse slots.
+Then, before gathering any evidence, it must write down what would prove it wrong: "Does the store guarantee every index below len is occupied?" A separate call on purpose, a question written after the verdict just rationalises it.
 
-Before gathering any evidence, it's made to write down what would prove it wrong: "Does the Store implementation allow deletions, vacant slots, or any index below store.len() to be unoccupied?"
+It reads store.rs, the file the change never touched. Rust runs the tools and builds the evidence; the model can request a lookup, but cannot author an evidence item.
 
-That's a separate call on purpose. A question written after the verdict just rationalises it.
+Then the part that matters. Claim and evidence go to a fresh context, a stateless request that never sees the reviewer's reasoning, or that anything believed the claim. It answers from the text: len returns capacity, so an index below it can panic.
 
-search for struct Store, then two bounded reads of src/store.rs, the file the change never touched. Rust runs the tools and builds the evidence; the model can request a lookup and read the result, but it cannot author an evidence item.
+And Rust assigns the final status, not the model. "Supports" with no repository evidence behind it becomes "uncertain", because "the model said so" is the standard this project exists to reject.
 
-The verdict comes from a separate stateless request that gets the claim and the excerpts and nothing else. Not the reviewer's reasoning. Not the fact that an earlier stage believed it. There's no conversation object that could leak it.
+## 2:20 – 3:00 · The comparison
 
-"Store::len() returns the configured capacity, whereas record_at indexes directly into self.records. Any index where filled() <= index < len() passes the guard and panics."
+Twelve frozen cases, fifteen trials per arm. F one goes from zero point eight five seven to zero point nine nine two; recall from zero point seven five to a flat one point zero, every real defect, every trial, at one and a half cents a file.
 
-Cited to three exact line ranges. It reached the ground-truth mechanism on its own.
+Now switch the stages off one at a time, and it gets uncomfortable. The advanced prompt alone scores zero point seven four two, worse than doing nothing clever. Add repository investigation: zero point eight two eight, still below the baseline. Only with falsification does it reach zero point nine nine two.
 
-Rust assigns the status, not the model. Supports plus real investigation-derived evidence equals Verified. Supports with nothing retrieved would be downgraded to Uncertain, "the model said so" isn't verification.
+Both halves are worse than the simple prompt you started with. Investigation buys recall; falsification makes that recall affordable. They're one mechanism, and if you can only ship half of it, ship neither.
 
-## 2:25 – 3:00 · Falsification killing a finding
+## 3:00 – 3:40 · The changelog, and one experiment we removed
 
-The other half. This change deletes a path-traversal guard, the shape of a real vulnerability. The reviewer proposes it, exactly as it should.
+Every iteration is logged, including five that made things worse.
 
-Then it investigates and disproves itself.
+Here's one we removed. The verifier had rejected a genuine panic because the function's own doc comment claimed callers check first, and that comment was false. So we told it comments aren't evidence. It then rejected two real defects, because the facts they rested on were also written in comments. F one dropped from zero point nine three three to zero point eight five seven, and we reverted it.
 
-"asset_path is crate-internal and all call sites pass fixed string literals from AssetKind::file_name(). No caller passes arbitrary string inputs, preventing directory traversal."
+And one we got wrong the other way. We'd reported three features as contributing nothing. Then we replayed one over every run this project has recorded: it fires seven times, and is wrong every time, merging two genuinely different defects because it borrowed a tolerance belonging to the scoring code. The test suite had been evidence for the bug, it asserted the bad merge was correct.
 
-Contradicts. Rejected. The developer never sees it, but the argument stays on the record. Five findings were investigated and cleared this way across the benchmark, one on each trap.
+## 3:40 – 4:30 · Where it stops, and the hot take
 
-## 3:00 – 3:40 · The measured comparison
+One more result, because it's the most useful one we have.
 
-Twelve frozen cases: six real defects, four traps designed to produce plausible false positives, two where the evidence lives outside the diff. Same model, same temperature, same cases for both arms.
+Three separate agents wrote sixteen more cases, with no access to our prompts, our pipeline, or any result. On the first set the advantage replicates. On the other two it vanishes, the baseline scores a perfect one point zero, and our system loses on one of them.
 
-Five trials of each arm, because one run is a sample, not a measurement.
+Those cases are legible in the diff: the changed line is a recognisable smell, so a reviewer flags it on sight. A defect isn't hard because the evidence sits in another file. It's hard when the changed line looks correct. That's where this earns its cost, and nowhere else. We didn't rewrite those cases afterwards.
 
-F one: zero point eight five seven to zero point nine eight eight. Recall zero point seven five to a flat one point zero, the advanced arm found every real defect in every trial. One false positive in the entire five-trial run.
+And the hot take. Falsification filters for truth, not significance, and most of what a reviewer should suppress is true. Our worst false positive was "this function returns Option but never returns None". Accurate. Not a bug. The verifier confirmed it correctly, because we had asked "is this true?", almost never the question that matters.
 
-The baseline was perfectly stable: identical on all twelve cases in all five runs, standard deviation zero on every metric. So the gap is not noise.
-
-Cost: a third of a cent per file, to one and a half cents. Just under five times more. That is the honest trade.
-
-All of the gain is on the challenging cases, the ones whose deciding evidence sits in a file the diff never touched.
-
-Scoring is fully deterministic. No LLM judges anything. Ground truth for every case was verified by executing it. And every citation the system produces is checked against the repository: two hundred and eighty-five cited excerpts across five trials, all of them correct.
-
-## 3:40 – 4:05 · The ablation, and the claim it overturned
-
-We thought we knew which change mattered most. We wrote it down. We were wrong, and the ablation is what caught us.
-
-Switch falsification off, and leave everything else in place. F one drops to zero point eight two eight, below the plain baseline of zero point eight five seven. Take investigation away too, and it drops to zero point seven four two. Worse again.
-
-Both intermediate versions of this system are worse than doing nothing clever. Investigation buys the recall; falsification is what makes that recall affordable. They are not two improvements to be ranked. They are one mechanism, and if you can only ship half of it, ship neither.
-
-## 4:05 – 4:30 · The held-out benchmark
-
-Here is the problem with everything I have just shown you: I wrote the reviewer and I wrote the benchmark.
-
-So we had a separate agent write six more cases, with no access to the prompts, the pipeline, the documentation, or any result. It could not see what the system finds easy.
-
-The direction replicates. Baseline zero point seven five zero, advanced zero point eight eight nine, separating on exactly the case whose evidence lives outside the diff.
-
-And it broke something we were claiming. On the frozen benchmark we report zero false positives on four traps across five trials. On the first trap this system had never seen, both arms produced a false positive, and the trajectory shows our own documented failure mode: the investigation listed the file holding the answer, saw it, and stopped without opening it, with half its tool budget unspent.
-
-We are not fixing that. Patching a prompt against a case we just watched fail is exactly the overfitting the ablations exist to catch, and it would destroy the only thing that makes a held-out set worth having.
-
-## 4:30 – 4:55 · The anti-take, and limitations
-
-We built three features on good reasoning and measured all three as worthless. Then we checked properly, and "worthless" turned out to be the charitable reading.
-
-Deduplication had fired zero times, so we called it inert. But zero firings measures the trigger, not the feature. We replayed it over every run this project has ever recorded: it fires six times, and every single firing is wrong, merging two genuinely different defects, on two different fields, because it had borrowed the evaluator's three-line matching tolerance.
-
-It survived for two reasons. An unrelated prompt change had quietened the trigger. And the unit test written to prove it worked used that exact geometry and asserted the merge was correct. The test encoded the bug.
-
-The lesson we would carry: an unused branch is not neutral, it is unmeasured, and its next firing is the one nobody is watching.
-
-Limitations: twelve cases, five trials, one model. Search is literal-substring, so trait objects and macro-generated call paths are blind spots. Human review time is still a labelled proxy. Treat the direction as the result, not the third decimal place.
+A verification step inherits whatever question you ask it. Ask the wrong one and it answers perfectly, and still hands a human noise.

@@ -339,6 +339,25 @@ cargo run --quiet --bin vcr -- evaluate --agent advanced --benchmark benchmark/h
 
 See [`holdout.md`](holdout.md).
 
+Two further independently authored sets exist, `benchmark/holdout2`
+(concurrency and ownership) and `benchmark/holdout3` (error handling and API
+contracts). They are run the same way. **The advantage does not replicate on
+either** — the baseline scores 1.000 on both — and
+[`benchmarks.md`](benchmarks.md) explains why that is the most useful result in
+the set rather than an embarrassment.
+
+Any benchmark directory can be checked structurally before it is run:
+
+```bash
+python scripts/verify_benchmark.py benchmark/holdout2
+```
+
+That verifies the suites pass despite their defects, the builds are
+warning-free, no ground truth is reachable from inside `repository/`, the diffs
+match their trees, and `vcr check` reports no anchoring or neutrality warnings.
+It deliberately does not check that the ground truth is *true*; that is recorded
+per case as executed output in `notes`.
+
 ### The second look, which ships disabled
 
 The feedback pass that re-reads a case finishing with nothing to report. It is

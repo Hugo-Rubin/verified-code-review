@@ -115,8 +115,10 @@ def main() -> int:
 
     narration = extract()
     words = len(narration.split())
-    # ~150 wpm is a comfortable technical narration pace.
-    estimate = words / 150 * 60
+    # Measured against this voice rather than assumed: a 47-word paragraph
+    # rendered to 16.9 s, i.e. 167 words per minute. The earlier 150 wpm guess
+    # understated the budget by about 10%.
+    estimate = words / 167 * 60
 
     if args.check:
         if not OUT.exists():
@@ -132,7 +134,7 @@ def main() -> int:
     OUT.write_text(narration, encoding="utf-8", newline="\n")
     sections = narration.count("\n## ") + narration.startswith("## ")
     print(f"wrote {OUT}")
-    print(f"  {sections} section(s), {words} words, ~{estimate:.0f}s at 150 wpm")
+    print(f"  {sections} section(s), {words} words, ~{estimate:.0f}s at 167 wpm (measured)")
     if estimate > 300:
         print("  WARNING: over the 300-second video limit; cut before recording")
     else:
