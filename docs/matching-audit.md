@@ -7,7 +7,15 @@ tell the difference. Using a model to judge would reintroduce exactly the
 standard this project exists to reject.
 
 So the matches were read by hand, and the raw text is reproduced here so the
-reading can be checked and disagreed with.
+reading can be checked and disagreed with. It is reproducible without a model:
+
+```bash
+cargo run --quiet --bin vcr -- audit-matches --benchmark benchmark/cases --root results-final
+```
+
+That command pairs each scored true positive with the ground truth it was
+credited for and prints both. It computes no verdict of its own — the reading
+below is a person's, and yours may differ.
 
 Scope: every matched finding in the five-trial headline run
 ([`../results-final/`](../results-final/)) — 8 expected findings across 5
@@ -192,6 +200,32 @@ That is the matcher crediting the right location for the wrong reason, and it
 is why this audit exists. It is reported in
 [`pilot-python.md`](pilot-python.md) as well, and the pilot's recall figure for
 that run should be read with it in mind.
+
+## The held-out benchmark, audited the same way
+
+`vcr audit-matches --benchmark benchmark/holdout --root results-holdout` covers
+the twelve matches from the three held-out trials. `h01`, `h02` and `h03` are
+described exactly, in every trial. **`h06` hedges**, in the same shape as
+`c12`:
+
+> Inlining `alert.severity > 7` diverges from the definition of
+> `is_page_worthy`, causing alerts with boundary severity values **or
+> additional page-worthiness conditions** to be incorrectly **included or
+> excluded** from `Digest::paging`.
+
+The divergence is named and the boundary is named; the direction is left open.
+
+**This is the audit's most useful result, and it needed two benchmarks to
+see.** `c12` and `h06` are the only boundary/off-by-one defects in either case
+set, they were written by different authors, and the system hedged on **both**
+while stating all eight other defects flatly. One hedge is a quirk of a case.
+Two, on independently authored cases of the same defect class, look like a
+property of the system: it will tell you *where* to look and that something is
+off by one, but it will not commit to which side.
+
+That is worth knowing for a reviewer using it — the claim is actionable but the
+direction still has to be checked — and it is not something the frozen
+benchmark alone could have shown.
 
 ## What would fix it properly
 

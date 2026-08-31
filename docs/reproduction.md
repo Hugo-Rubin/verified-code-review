@@ -310,7 +310,7 @@ Budget 20–40 minutes depending on how carefully you read.
 
 ### The Python pilot
 
-A separate three-case benchmark demonstrating that the pipeline is not
+A separate six-case benchmark demonstrating that the pipeline is not
 Rust-specific. It is **not** part of any headline figure:
 
 ```bash
@@ -319,10 +319,74 @@ cargo run --quiet --bin vcr -- run --agent advanced --benchmark benchmark/pilot-
 
 See [`pilot-python.md`](pilot-python.md).
 
+### The held-out benchmark
+
+Six Rust cases written by a separate agent that could not see the prompts, the
+pipeline, the documentation or any result. This is the check on author bias,
+and it is the one to run if you only run one extra thing:
+
+```bash
+cargo run --quiet --bin vcr -- run --agent baseline --benchmark benchmark/holdout --out results-holdout/t1
+```
+
+```bash
+cargo run --quiet --bin vcr -- run --agent advanced --benchmark benchmark/holdout --out results-holdout/t1
+```
+
+```bash
+cargo run --quiet --bin vcr -- evaluate --agent advanced --benchmark benchmark/holdout --out results-holdout/t1
+```
+
+See [`holdout.md`](holdout.md).
+
+### The second look, which ships disabled
+
+The feedback pass that re-reads a case finishing with nothing to report. It is
+off by default because it was measured and did not help; to reproduce that
+measurement, enable it:
+
+```bash
+VCR_MAX_SECOND_LOOKS=1 cargo run --quiet --bin vcr -- run --agent advanced --out results-secondlook
+```
+
+Or switch it off explicitly on a run where it would otherwise be on:
+
+```bash
+cargo run --quiet --bin vcr -- run --agent advanced --ablation no-second-look --out results
+```
+
+### Checks that call no model
+
+These read artifacts already in the repository, finish instantly, and cost
+nothing. Both exist because a claim in the README needed to be checkable rather
+than believed.
+
+Replay the deduplication rule over every recorded run, separating merges that
+rest on genuinely overlapping line ranges from those that rest only on the
+evaluator's matching tolerance:
+
+```bash
+cargo run --quiet --bin vcr -- replay-dedup --root .
+```
+
+Pair every scored true positive with the ground truth it was credited for, so
+the location-plus-category matcher can be checked by reading rather than
+trusted. It computes no verdict:
+
+```bash
+cargo run --quiet --bin vcr -- audit-matches --benchmark benchmark/cases --root results-final
+```
+
+```bash
+cargo run --quiet --bin vcr -- audit-matches --benchmark benchmark/holdout --root results-holdout
+```
+
 ## Expected output
 
-A single run of each arm produces a table like this. Ours (the run stored in
-`results/`) gave:
+A single run of each arm produces a table like this. An early single run gave
+the numbers below; the reported headline figures are means over five trials in
+[`../results-final/`](../results-final/), and a single run of your own will
+differ — see the note on nondeterminism in the changelog:
 
 ```
 | Metric                       |   Baseline |   Advanced |     Change |
