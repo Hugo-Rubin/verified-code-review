@@ -3,16 +3,20 @@
 
 The narration comes from `tools/tts/narration.txt`, which is extracted from
 `docs/video-script.md` so the spoken words cannot drift from the script. This
-script splits it into paragraphs, renders each paragraph to its own audio clip,
-pairs each with a slide, and concatenates the lot with ffmpeg so every slide is
-on screen for exactly as long as its sentence is spoken.
+splits it into paragraphs, renders each paragraph to its own audio clip, pairs
+each with a slide, and concatenates the lot with ffmpeg so every slide is on
+screen for exactly as long as its sentence is spoken.
 
-Paragraph-level granularity matters: one slide per section would leave a static
-frame up for the best part of a minute. One slide per paragraph gives roughly
-one image every ten to twenty seconds, which is close to how fast a person
-actually reads a terminal.
+Two consequences of that design, both learned the hard way:
 
-    python scripts/build_video.py --check     # slide plan + duration, no render
+* **Speed cannot desynchronise the video.** Each slide's duration is measured
+  from its own rendered clip *after* synthesis, so faster speech simply makes
+  each slide shorter.
+* **Speaking rate is voice-dependent.** `am_michael` runs near 145 wpm and
+  `af_heart` near 167, so the same script differs by half a minute between
+  voices. Always read the total this script prints.
+
+    python scripts/build_video.py --check     # slide plan, no rendering
     python scripts/build_video.py             # full build
 
 Requires: kokoro-onnx + the model files (see tools/tts/README.md), Pillow,
@@ -23,7 +27,6 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-import re
 import shutil
 import subprocess
 import sys
@@ -36,38 +39,49 @@ CLIPS = BUILD / "clips"
 OUT = BUILD / "verified-code-reviewer.mp4"
 
 W, H = 1920, 1080
-SAMPLE_RATE = 24000
 VOICE = "am_michael"
 
-BG = (13, 17, 23)
-FG = (201, 209, 217)
-DIM = (110, 118, 129)
+BG = (11, 15, 20)
+PANEL = (18, 24, 32)
+FG = (214, 221, 229)
+DIM = (118, 128, 141)
 ACCENT = (88, 166, 255)
 GOOD = (63, 185, 80)
 BAD = (248, 81, 73)
-RULE = (33, 38, 45)
+RULE = (30, 38, 48)
+
+MARGIN = 132
+PANEL_TOP = 262
+PANEL_BOT = H - 128
+LINE_H = 56
+COL_GAP = 46
 
 
 # --------------------------------------------------------------------------
 # Slide content. One entry per narration paragraph, in order.
 #
-# `body` is shown in monospace. Lines beginning with a marker are coloured:
-#   "+ "  green   "- "  red   ">>"  accent (highlight)   "//" dim (commentary)
+# Body lines use " | " to separate columns. The renderer measures every column
+# across the whole slide and aligns them, so nothing depends on hand-counted
+# spaces -- which is what made the earlier tables look ragged.
+#
+# A cell may carry a leading marker, which sets its colour:
+#     "+"  green     "-"  red     ">>"  accent     "//"  dim commentary
+# "+" and "//" are kept on screen because they read as real diff and comment
+# syntax; ">>" and "- " are ours and are stripped.
 # --------------------------------------------------------------------------
 SLIDES_SPEC: list[dict] = [
-    # --- 1. the problem -----------------------------------------------------
     dict(
         title="The question a reviewer actually has",
         body="""// Not "what looks suspicious" -- "is this actually broken?"
 
-  A Rust pull request, in code you did not write.
+A Rust pull request, in code you did not write.
 
-  Three passing tests.
-  An explicit bounds check.
-  A doc comment promising it cannot panic.""",
+Three passing tests.
+An explicit bounds check.
+A doc comment promising it cannot panic.""",
     ),
     dict(
-        title="benchmark/cases/c12-slot-guard-capacity/diff.patch",
+        title="c12-slot-guard-capacity  .  diff.patch",
         body="""+pub fn fetch(store: &Store, index: usize) -> Option<&Record> {
 +    if index >= store.len() {
 +        return None;
@@ -79,68 +93,66 @@ SLIDES_SPEC: list[dict] = [
     ),
     dict(
         title="The deciding fact is not in the diff",
-        body="""  src/api.rs   (changed)      if index >= store.len()
+        body="""src/api.rs | (changed) | if index >= store.len()
 
-  src/store.rs (NOT changed)  pub fn len(&self) -> usize {
->>                                self.capacity      // not the count
-                              }
+src/store.rs | (NOT changed) | pub fn len(&self) -> usize {
+ |  | >> ....self.capacity   // capacity, not the count
+ |  | }
 
-// capacity 100, holding 3 -> index 50 passes the guard and panics.""",
+// capacity 100, holding 3 -> index 50 passes the guard, then panics.""",
     ),
-    # --- 2. the baseline ----------------------------------------------------
     dict(
         title="The simple baseline: one direct review pass",
-        body="""  Same model.  Same output schema.
-  Same view of the diff and every changed file.
+        body="""Same model. | Same output schema.
+Same view of the diff | and every changed file.
 
 - Withheld: repository tools.""",
     ),
     dict(
         title="What the baseline reports on c12",
-        body="""  $ vcr run --agent baseline
+        body="""$ vcr run --agent baseline
 
-  findings: 0
+findings: 0
 
-// Not reasoning badly. Reasoning correctly from
-// insufficient information.""",
+// Not reasoning badly.
+// Reasoning correctly from insufficient information.""",
     ),
     dict(
-        title="Baseline, 12 cases x 15 trials",
-        body="""  precision   1.000
-  recall      0.750
-  F1          0.857     identical in all 15 trials
+        title="Baseline  .  12 cases x 15 trials",
+        body="""precision | 1.000
+recall | 0.750
+F1 | 0.857 | identical in all 15 trials
 
 - Misses both cases whose evidence sits outside the diff.""",
     ),
-    # --- 3. one execution ---------------------------------------------------
     dict(
         title="Four roles, each a separate stateless request",
-        body="""  1. Reviewer       propose candidates
-  2. Falsifier      what would prove this WRONG?
-  3. Investigator   search / read, bounded, sandboxed
-  4. Fresh verifier claim + evidence, nothing else
+        body="""1. Reviewer | propose candidates
+2. Falsifier | what would prove this WRONG?
+3. Investigator | search / read -- bounded, sandboxed
+4. Fresh verifier | claim + evidence, nothing else
 
 // Rust orchestrates. No role can promote its own finding.""",
     ),
     dict(
-        title="1. The candidate",
-        body="""  fetch assumes every index below store.len() is a
-  valid record, which panics if slots can be vacant.
+        title="1.  The candidate",
+        body="""fetch assumes every index below store.len() is a valid
+record, which panics if slots can be vacant.
 
-  src/api.rs:8-13     Correctness     Medium""",
+src/api.rs:8-13 | Correctness | Medium""",
     ),
     dict(
-        title="2. The falsification question, fixed BEFORE any lookup",
+        title="2.  The falsification question, fixed BEFORE any lookup",
         body=""">> "Does Store guarantee every index below len()
 >>  is occupied and valid for record_at?"
 
-// A separate call on purpose.
+// A separate call, on purpose.
 // A question written after the verdict just rationalises it.""",
     ),
     dict(
-        title="3. Investigation -- Rust runs the tools",
-        body="""  search  "struct Store"        -> src/store.rs:13
-  read    src/store.rs:1-80     -> 80 lines
+        title="3.  Investigation -- Rust runs the tools",
+        body="""search | "struct Store" | -> src/store.rs:13
+read | src/store.rs:1-80 | -> 80 lines
 
 >> src/store.rs is the file the change never touched.
 
@@ -148,99 +160,94 @@ SLIDES_SPEC: list[dict] = [
 // It cannot author an evidence item.""",
     ),
     dict(
-        title="4. Fresh-context verification",
-        body="""  Receives: the claim + the gathered excerpts.
-- Never sees: the reviewer's reasoning.
-- Never sees: that anything already believed the claim.
+        title="4.  Fresh-context verification",
+        body="""Receives: | the claim + the gathered excerpts
+- Never sees: | the reviewer's reasoning
+- Never sees: | that anything already believed the claim
 
-  Verdict: Supports
-  "Store::len returns self.capacity, while record_at
-   indexes self.records directly." """,
+>> Verdict: Supports
+"Store::len returns self.capacity, while record_at
+ indexes self.records directly." """,
     ),
     dict(
-        title="5. Rust assigns the status, not the model",
-        body="""  Supports  + repository evidence   -> Verified
->> Supports  + no evidence           -> Uncertain
-  Contradicts                       -> Rejected
+        title="5.  Rust assigns the status, not the model",
+        body="""Supports | + repository evidence | -> Verified
+>> Supports | + no evidence | -> Uncertain
+Contradicts |  | -> Rejected
 
 // "The model said so" is the standard this project rejects.""",
     ),
-    # --- 4. the comparison --------------------------------------------------
     dict(
-        title="12 frozen cases, 15 trials per arm",
-        body="""                    baseline    advanced
-  F1                 0.857       0.992
-  recall             0.750       1.000     every defect, every trial
-  precision          1.000       0.985
-  cost / file       $0.0032     $0.0157""",
+        title="12 frozen cases  .  15 trials per arm",
+        body=""" | baseline | advanced
+F1 | 0.857 | 0.992
+recall | 0.750 | 1.000 | every defect, every trial
+precision | 1.000 | 0.985
+cost / case | $0.0032 | $0.0157""",
     ),
     dict(
-        title="Switch the stages off one at a time",
-        body="""  simple baseline                    0.857
-- advanced prompt alone              0.742   worse than nothing clever
-- + repository investigation         0.828   still below baseline
-+ + falsification (the full system)  0.992""",
+        title="Switch the stages off, one at a time",
+        body="""simple baseline | 0.857
+- advanced prompt alone | 0.742 | worse than nothing clever
+- + repository investigation | 0.828 | still below baseline
++ falsification -- the full system | 0.992""",
     ),
     dict(
-        title="They are one mechanism, not two improvements",
-        body="""  investigation   buys recall        0.750 -> 1.000
-  falsification   makes it affordable 0.707 -> 0.985
+        title="One mechanism, not two improvements",
+        body="""investigation | buys recall | 0.750 -> 1.000
+falsification | makes it affordable | 0.707 -> 0.985
 
 >> If you can only ship half of it, ship neither.""",
     ),
-    # --- 5. the changelog ---------------------------------------------------
     dict(
-        title="Every iteration logged -- including five that made it worse",
-        body="""  docs/improvement-changelog.md
+        title="Every iteration logged -- five made it worse",
+        body="""docs/improvement-changelog.md
 
-  v4  "the code's own claims are not evidence"     REMOVED
-  A3  seed the claimed region as evidence          REVERTED
-  dedup  merge duplicate candidates                WRONG
-  ...""",
+v4 | "the code's own claims are not evidence" | REMOVED
+A3 | seed the claimed region as evidence | REVERTED
+dedup | merge duplicate candidates | WRONG""",
     ),
     dict(
         title="One experiment we removed",
-        body="""  The verifier rejected a real panic because a doc
-  comment claimed callers check first. The comment
-  was false. So we told it: comments are not evidence.
+        body="""The verifier rejected a real panic because a doc comment
+claimed callers check first. The comment was false.
+So we told it: comments are not evidence.
 
 - It then rejected two REAL defects, whose facts
 - were also written in comments.
 
-  F1  0.933 -> 0.857.   Reverted.""",
+>> F1  0.933 -> 0.857.   Reverted.""",
     ),
     dict(
-        title="And one we had wrong in the other direction",
-        body="""  We reported three features as contributing nothing.
-  Then we replayed one over every run ever recorded:
+        title="And one we had wrong the other way",
+        body="""We reported three features as contributing nothing.
+Then we replayed one over every run ever recorded:
 
 >> it fires 7 times, and is WRONG every time.
 
 - The test suite was evidence FOR the bug:
 - it asserted the bad merge was correct.""",
     ),
-    # --- 6. boundary + hot take --------------------------------------------
     dict(
-        title="One more result -- the most useful one we have",
-        body="""  Everything so far is measured on a benchmark
-  we wrote ourselves.
+        title="One more result -- the most useful one",
+        body="""Everything so far is measured on a benchmark we wrote.
 
 // So we had other people write the cases.
 // Or rather: other agents, that could not see us.""",
     ),
     dict(
-        title="16 more cases, written by agents that could not see us",
-        body="""  no prompts.  no pipeline.  no docs.  no results.
+        title="16 more cases, by agents that could not see us",
+        body="""// no prompts . no pipeline . no docs . no results
 
-  holdout    baseline 0.750   advanced 0.944   replicates
-- holdout2   baseline 1.000   advanced 1.000   no advantage
-- holdout3   baseline 1.000   advanced 0.889   we lose""",
+ | baseline | advanced
+holdout | 0.750 | 0.944 | replicates
+- holdout2 | 1.000 | 1.000 | no advantage
+- holdout3 | 1.000 | 0.889 | we lose""",
     ),
     dict(
         title="Why: those cases are legible in the diff",
-        body="""  The changed line is a recognisable smell, so a
-  reviewer flags it on sight and the investigation
-  is redundant.
+        body="""The changed line is a recognisable smell, so a reviewer
+flags it on sight and the investigation is redundant.
 
 >> A defect is not hard because the evidence is in
 >> another file. It is hard when the changed line
@@ -253,20 +260,21 @@ SLIDES_SPEC: list[dict] = [
         body=""">> Falsification filters for truth, not significance --
 >> and most of what a reviewer should suppress is true.
 
-  Worst false positive:
-  "this function returns Option but never returns None"
+Worst false positive:
+"this function returns Option but never returns None"
 
-  Accurate. Not a bug. Confirmed correctly, because we
-  asked "is this true?" -- almost never the question
-  that matters.""",
+Accurate. | Not a bug.
+
+// Confirmed correctly, because we asked "is this true?"
+// -- almost never the question that matters.""",
     ),
     dict(
         title="The lesson we would carry",
         body=""">> A verification step inherits whatever question
 >> you ask it.
 
-  Ask the wrong one and it will answer perfectly,
-  and still hand a human noise.""",
+Ask the wrong one and it will answer perfectly,
+and still hand a human noise.""",
     ),
 ]
 
@@ -283,14 +291,14 @@ def paragraphs() -> list[str]:
     return out
 
 
-def font(size: int, mono: bool = True):
+def font(size: int, mono: bool = True, bold: bool = False):
     from PIL import ImageFont
 
-    names = (
-        ["consola.ttf", "DejaVuSansMono.ttf", "cour.ttf"]
-        if mono
-        else ["segoeui.ttf", "DejaVuSans.ttf", "arial.ttf"]
-    )
+    if mono:
+        names = ["consola.ttf", "DejaVuSansMono.ttf", "cour.ttf"]
+    else:
+        names = (["segoeuib.ttf", "DejaVuSans-Bold.ttf"] if bold
+                 else ["segoeui.ttf", "DejaVuSans.ttf", "arial.ttf"])
     for n in names:
         for base in ("C:/Windows/Fonts/", "/usr/share/fonts/truetype/dejavu/", ""):
             try:
@@ -300,20 +308,35 @@ def font(size: int, mono: bool = True):
     return ImageFont.load_default()
 
 
-def reveal_steps(body: str) -> list[int]:
-    """How many body lines are visible at each step of a slide's build-up.
+def marker_of(cell: str) -> tuple[tuple[int, int, int], str]:
+    """Colour and display text for one cell, honouring its leading marker."""
+    if cell.startswith(">>"):
+        return ACCENT, cell[2:].lstrip()
+    if cell.startswith("//"):
+        return DIM, cell
+    if cell.startswith("+"):
+        return GOOD, cell
+    if cell.startswith("- "):
+        return BAD, cell[2:]
+    return FG, cell
 
-    A slide that appears all at once is a slideshow; a slide that fills in as
-    the sentence is spoken reads like someone working. Blank lines are treated
-    as group separators, so text arrives in paragraphs rather than one line at
-    a time, which would be twitchy.
+
+def rows_of(body: str) -> list[list[str]]:
+    return [[c.strip() for c in line.split("|")] for line in body.split("\n")]
+
+
+def reveal_steps(body: str) -> list[int]:
+    """How many body rows are visible at each step of a slide's build-up.
+
+    A slide that appears all at once is a slideshow; one that fills in as the
+    sentence is spoken reads like someone working. Blank lines separate groups,
+    so text arrives in paragraphs rather than one twitchy line at a time.
     """
     lines = body.split("\n")
     steps: list[int] = []
     for i, line in enumerate(lines, start=1):
         if line.strip() == "":
             continue
-        # A group ends where the next line is blank, or at the end.
         if i == len(lines) or lines[i].strip() == "":
             steps.append(i)
     if not steps:
@@ -323,67 +346,83 @@ def reveal_steps(body: str) -> list[int]:
     return steps
 
 
-def render_slide(
-    spec: dict,
-    index: int,
-    total: int,
-    visible: int | None = None,
-    progress: float = 0.0,
-    step: int = 0,
-) -> pathlib.Path:
+def render_slide(spec, index, total, visible=None, progress=0.0, step=0):
     from PIL import Image, ImageDraw
 
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
 
-    title_f = font(46, mono=False)
+    title_f = font(46, mono=False, bold=True)
     body_f = font(34)
-    foot_f = font(24, mono=False)
+    foot_f = font(23, mono=False)
 
-    d.text((110, 92), spec["title"], font=title_f, fill=ACCENT)
-    d.line([(110, 172), (W - 110, 172)], fill=RULE, width=3)
+    # An accent bar rather than a full-width rule: less furniture, and it
+    # anchors the eye at the left margin where the text begins.
+    d.rectangle([MARGIN - 28, 98, MARGIN - 20, 152], fill=ACCENT)
+    d.text((MARGIN, 96), spec["title"], font=title_f, fill=(238, 243, 248))
 
-    # `+` and `-` are real diff markers and stay on screen; `//` reads as a
-    # Rust comment and stays too. `>>` is ours -- a highlight instruction --
-    # so it is stripped and expressed as colour alone.
-    lines = spec["body"].split("\n")
-    line_h = 52
-    # Positioned for the *finished* slide so nothing shifts as lines arrive.
-    y = max(232, 232 + ((H - 300 - 232) - len(lines) * line_h) // 2)
+    rows = rows_of(spec["body"])
+    ncol = max(len(r) for r in rows)
 
-    shown = len(lines) if visible is None else visible
-    for line in lines[:shown]:
-        colour, text = FG, line
-        if line.startswith("+"):
-            colour = GOOD
-        elif line.startswith("- "):
-            colour = BAD
-        elif line.startswith(">>"):
-            colour, text = ACCENT, "  " + line[2:]
-        elif line.startswith("//"):
-            colour = DIM
-        d.text((130, y), text, font=body_f, fill=colour)
-        y += line_h
+    # Column widths measured across the finished slide, so every column lines
+    # up and nothing shifts as rows arrive.
+    # Only genuine table rows set column widths. A single-cell row is prose --
+    # a `//` comment, say -- and letting its full length widen column 0 pushed
+    # every later column off the right edge.
+    widths = [0] * ncol
+    for r in rows:
+        if len(r) < 2:
+            continue
+        for c, cell in enumerate(r):
+            _, text = marker_of(cell)
+            widths[c] = max(widths[c], int(d.textlength(text.replace("....", "    "),
+                                                        font=body_f)))
+    xs, x = [], MARGIN
+    for c in range(ncol):
+        xs.append(x)
+        x += widths[c] + COL_GAP
 
-    d.text(
-        (110, H - 78),
-        "Verified Code Reviewer",
-        font=foot_f,
-        fill=DIM,
-    )
-    d.text(
-        (W - 260, H - 78),
-        f"{index + 1} / {total}",
-        font=foot_f,
-        fill=DIM,
-    )
+    block_h = len(rows) * LINE_H
+    y0 = PANEL_TOP + max(0, ((PANEL_BOT - PANEL_TOP) - block_h) // 2)
 
-    # A thin progress bar: cheap, and it tells a viewer how much is left.
-    bar_y = H - 26
+    # Panel width from what is actually drawn, prose rows included, so nothing
+    # overflows it and nothing floats outside it.
+    extent = MARGIN + 640
+    for r in rows:
+        if len(r) < 2:
+            if r and r[0]:
+                _, text = marker_of(r[0])
+                extent = max(extent, MARGIN + int(
+                    d.textlength(text.replace("....", "    "), font=body_f)))
+            continue
+        for c, cell in enumerate(r):
+            if not cell:
+                continue
+            _, text = marker_of(cell)
+            extent = max(extent, xs[c] + int(
+                d.textlength(text.replace("....", "    "), font=body_f)))
+
+    pad = 42
+    d.rounded_rectangle([MARGIN - pad, y0 - pad, min(extent + pad, W - 70),
+                         y0 + block_h + pad], radius=20, fill=PANEL)
+
+    y = y0
+    shown = len(rows) if visible is None else visible
+    for r in rows[:shown]:
+        for c, cell in enumerate(r):
+            if not cell:
+                continue
+            colour, text = marker_of(cell)
+            d.text((xs[c], y), text.replace("....", "    "), font=body_f, fill=colour)
+        y += LINE_H
+
+    d.text((MARGIN, H - 72), "Verified Code Reviewer", font=foot_f, fill=DIM)
+    d.text((W - MARGIN - 90, H - 72), f"{index + 1} / {total}", font=foot_f, fill=DIM)
+
+    bar_y = H - 16
     d.line([(0, bar_y), (W, bar_y)], fill=RULE, width=6)
     if progress > 0:
-        d.line([(0, bar_y), (int(W * min(progress, 1.0)), bar_y)],
-               fill=ACCENT, width=6)
+        d.line([(0, bar_y), (int(W * min(progress, 1.0)), bar_y)], fill=ACCENT, width=6)
 
     SLIDES.mkdir(parents=True, exist_ok=True)
     path = SLIDES / f"{index:02d}_{step:02d}.png"
@@ -397,9 +436,8 @@ def synth(paras: list[str], speed: float, voice: str) -> list[float]:
     import soundfile as sf
     from kokoro_onnx import Kokoro
 
-    model = ROOT / "tools" / "tts" / "kokoro-v1.0.onnx"
-    voices = ROOT / "tools" / "tts" / "voices-v1.0.bin"
-    k = Kokoro(str(model), str(voices))
+    k = Kokoro(str(ROOT / "tools/tts/kokoro-v1.0.onnx"),
+               str(ROOT / "tools/tts/voices-v1.0.bin"))
 
     CLIPS.mkdir(parents=True, exist_ok=True)
     durations = []
@@ -407,21 +445,15 @@ def synth(paras: list[str], speed: float, voice: str) -> list[float]:
         samples, sr = k.create(para, voice=voice, speed=speed, lang="en-us")
         # A short tail so slides do not cut on the final consonant.
         samples = np.concatenate([samples, np.zeros(int(sr * 0.45), dtype=samples.dtype)])
-        path = CLIPS / f"{i:02d}.wav"
-        sf.write(path, samples, sr)
+        sf.write(CLIPS / f"{i:02d}.wav", samples, sr)
         durations.append(len(samples) / sr)
-        print(f"  clip {i:02d}  {durations[-1]:5.1f}s  {para[:58]}...")
+        print(f"  clip {i:02d}  {durations[-1]:5.1f}s  {para[:56]}...")
     return durations
 
 
-def build(paras: list[str], durations: list[float]) -> None:
-    """Write the concat list, giving each reveal step its share of the clip.
-
-    The first step of a slide gets the title and opening lines; the completed
-    slide holds for the remainder, which is where a viewer actually reads it.
-    """
+def build(durations: list[float]) -> None:
+    """Write the concat list, giving each reveal step its share of its clip."""
     total_time = sum(durations)
-    concat = BUILD / "concat.txt"
     lines: list[str] = []
     elapsed = 0.0
     last_png = None
@@ -429,63 +461,53 @@ def build(paras: list[str], durations: list[float]) -> None:
     for i, dur in enumerate(durations):
         steps = reveal_steps(SLIDES_SPEC[i]["body"])
         n = len(steps)
-        # Reveal over the first ~55% of the clip, then hold the full slide.
-        reveal_share = dur * 0.55
-        hold = dur - reveal_share
-        per_step = reveal_share / max(n - 1, 1) if n > 1 else 0.0
+        reveal = dur * 0.55
+        hold = dur - reveal
+        per_step = reveal / max(n - 1, 1) if n > 1 else 0.0
 
         for k, visible in enumerate(steps):
-            png = render_slide(
-                SLIDES_SPEC[i], i, len(SLIDES_SPEC),
-                visible=visible,
-                progress=(elapsed / total_time) if total_time else 0.0,
-                step=k,
-            )
+            png = render_slide(SLIDES_SPEC[i], i, len(SLIDES_SPEC),
+                               visible=visible,
+                               progress=elapsed / total_time if total_time else 0.0,
+                               step=k)
             seg = (per_step if k < n - 1 else hold) if n > 1 else dur
             elapsed += seg
             lines.append(f"file '{png.as_posix()}'")
             lines.append(f"duration {seg:.3f}")
             last_png = png
 
-    # ffmpeg's concat demuxer needs the last image repeated.
     lines.append(f"file '{last_png.as_posix()}'")
-    concat.write_text("\n".join(lines), encoding="utf-8")
+    (BUILD / "concat.txt").write_text("\n".join(lines), encoding="utf-8")
 
     audio_list = BUILD / "audio.txt"
     audio_list.write_text(
-        "\n".join(f"file '{(CLIPS / f'{i:02d}.wav').as_posix()}'" for i in range(len(durations))),
-        encoding="utf-8",
-    )
+        "\n".join(f"file '{(CLIPS / f'{i:02d}.wav').as_posix()}'"
+                  for i in range(len(durations))),
+        encoding="utf-8")
     full_audio = BUILD / "narration.wav"
-    subprocess.run(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(audio_list),
-         "-c", "copy", str(full_audio)],
-        check=True, capture_output=True,
-    )
+    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                    "-i", str(audio_list), "-c", "copy", str(full_audio)],
+                   check=True, capture_output=True)
+
     # `-t` pins the container to the narration length. The concat demuxer holds
     # the repeated final image for an unspecified time otherwise, which added
     # nine seconds of silent trailing frame and nearly pushed a 290s narration
     # over the 300s limit.
-    total = sum(durations)
-    subprocess.run(
-        ["ffmpeg", "-y",
-         "-f", "concat", "-safe", "0", "-i", str(concat),
-         "-i", str(full_audio),
-         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "25",
-         "-c:a", "aac", "-b:a", "160k",
-         "-t", f"{total:.3f}", "-shortest", str(OUT)],
-        check=True, capture_output=True,
-    )
+    subprocess.run(["ffmpeg", "-y",
+                    "-f", "concat", "-safe", "0", "-i", str(BUILD / "concat.txt"),
+                    "-i", str(full_audio),
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "25",
+                    "-c:a", "aac", "-b:a", "160k",
+                    "-t", f"{total_time:.3f}", "-shortest", str(OUT)],
+                   check=True, capture_output=True)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="plan only, no rendering")
-    # Changing this cannot desynchronise the video: every slide's duration is
-    # measured from its own rendered clip, after synthesis. Faster speech simply
-    # makes each slide shorter.
-    ap.add_argument("--speed", type=float, default=1.25,
-                    help="narration speed; slides retime themselves to match")
+    # Changing speed cannot desynchronise the video: every slide's duration is
+    # measured from its own rendered clip, after synthesis.
+    ap.add_argument("--speed", type=float, default=1.25)
     ap.add_argument("--voice", default=VOICE)
     args = ap.parse_args()
 
@@ -495,13 +517,13 @@ def main() -> int:
     if len(paras) != len(SLIDES_SPEC):
         print("\nMISMATCH -- every narration paragraph needs exactly one slide.")
         for i in range(max(len(paras), len(SLIDES_SPEC))):
-            p = paras[i][:64] if i < len(paras) else "(no paragraph)"
-            s = SLIDES_SPEC[i]["title"][:44] if i < len(SLIDES_SPEC) else "(no slide)"
-            print(f"  {i:02d}  {s:<46} | {p}")
+            p = paras[i][:60] if i < len(paras) else "(no paragraph)"
+            t = SLIDES_SPEC[i]["title"][:44] if i < len(SLIDES_SPEC) else "(no slide)"
+            print(f"  {i:02d}  {t:<46} | {p}")
         return 1
 
     words = sum(len(p.split()) for p in paras)
-    print(f"words: {words}  (~{words / 167 * 60:.0f}s at the measured rate)")
+    print(f"words: {words}")
 
     if args.check:
         for i, (p, s) in enumerate(zip(paras, SLIDES_SPEC)):
@@ -517,12 +539,12 @@ def main() -> int:
     total = sum(durations)
     print(f"\ntotal narration: {total:.1f}s")
     if total > 300:
-        print(f"OVER THE 300s LIMIT by {total - 300:.1f}s -- cut the script and rerun")
+        print(f"OVER THE 300s LIMIT by {total - 300:.1f}s -- cut the script or raise --speed")
         return 1
 
     print("rendering slides and muxing...")
-    build(paras, durations)
-    print(f"\nwrote {OUT}  ({total:.1f}s, {len(paras)} slides)")
+    build(durations)
+    print(f"\nwrote {OUT}  ({total:.1f}s, {len(SLIDES_SPEC)} slides)")
     print(f"headroom against the 5:00 limit: {300 - total:.0f}s")
     return 0
 
