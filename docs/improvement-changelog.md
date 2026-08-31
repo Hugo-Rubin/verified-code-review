@@ -278,7 +278,7 @@ measurement to justify the code.
 
 | Stage | What was tried and why | Evidence | Decision |
 |---|---|---|---|
-| **Trials 4 and 5 on the headline arms** | Three trials is enough to see spread, not enough to trust it. Two more, same configuration, same frozen benchmark. | Advanced **F1 0.988 ± 0.026** over 5 trials (was 0.980 ± 0.034 over 3), recall **1.000 ± 0.000**, precision 0.978. Baseline **identical on all 12 cases in all 5 trials**, σ = 0.000 on every metric. | Kept. Headline figures are now means over 5 trials. |
+| **Trials 4 and 5 on the headline arms** | Three trials is enough to see spread, not enough to trust it. Two more, same configuration, same frozen benchmark. | Advanced **F1 0.988 ± 0.026** over 5 trials (was 0.980 ± 0.034 over 3), recall **1.000 ± 0.000**, precision 0.978. Baseline **identical on all 12 cases in all 5 trials**, σ = 0.000 on every metric. | Kept. Headline figures were means over 5 trials at this point; they are now means over **15** — and the "spread comes from a single case" reading below did not survive that. |
 | **Python pilot expanded 3 → 6** | The first three cases were all ports of Rust cases, so the pilot could only confirm transfer, never discover a Python-specific failure. Three new cases were written against defect classes Rust **cannot express**: a mutable default argument, a generator consumed twice, and a shared-module-state trap that is safe only because the accessor copies and the values are scalars. | Baseline **F1 0.667**, advanced **F1 0.857**, precision **1.000 in both arms**, zero false positives, both traps cleared on repository evidence, evidence accuracy 1.000 (51/51 citations). | Kept as a pilot. Six cases, one run per arm; still not a headline figure. |
 | **`v6` did not transfer to Python** ❌ | The v6 rule ("name what unseen code must do for this to be right") took `c12` from found-in-1-of-3 to found-in-5-of-5. Its Python twin `p03` tests the same shape. | `p03` **missed again**, and the trajectory shows why: candidate generation never proposed the defect. The two candidates it did propose were investigated and correctly rejected. Verification was not the failure. | Reported, not patched. A prompt change made to fix one named case would be exactly the overfitting this project's ablations exist to catch. |
 | **Ground-truth anchoring defect, found via a result** ❌ | `p06`'s expected finding was anchored at the *consumer* (lines 24-28) rather than at the changed lines. The advanced arm reported the defect at the change (15-19) with a fully correct diagnosis and was scored a false positive **plus** a false negative. | It was **1 of 18** findings in the project anchored outside its case's changed hunk; the other 17 already followed the convention. Corrected to 15-19. Advanced pilot F1 **0.571 → 0.857**; baseline **0.667 either way**, because its location at 22-27 overlaps both anchors. | Corrected, with both figures reported side by side in [`pilot-python.md`](pilot-python.md). The correction moves one arm and not the other, which is the shape a convenient edit would have — so the reader gets both numbers rather than our word for the motive. |
@@ -419,7 +419,7 @@ the frozen benchmark:
 
 Two things follow.
 
-**The baseline is deterministic in practice.** Twelve cases, three runs,
+**The baseline is deterministic in practice.** Twelve cases, fifteen runs,
 identical every time, σ = 0.000 on every metric. Whatever nondeterminism the
 provider has at temperature 0, it did not change a single scored outcome for a
 one-call-per-case reviewer.
@@ -435,3 +435,12 @@ the baseline in every run — its worst F1, 0.875, exceeds the baseline's 0.857 
 and not enough for a confidence interval. The arms were also run sequentially
 rather than interleaved, so a drift in provider behaviour between arms would
 not be visible here.
+
+> **Both paragraphs above are superseded, and the way they failed is the
+> point.** They were written at 3 trials of the `v5` configuration. `c12` has
+> been stable since `v6`; at 15 trials the advanced arm's entire spread is two
+> rare false positives on `c03` and `c08`, and at 5 trials we had again written
+> that it came from a single case. "Name the case rather than quote σ" is still
+> the right instinct — but the case you can name is a function of how many
+> trials you ran, and we have now been caught by that twice, at n=3 and at n=5.
+> Current figures: 15 trials, F1 0.992 ± 0.021, recall 1.000 ± 0.000.
