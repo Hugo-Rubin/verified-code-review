@@ -963,7 +963,39 @@ and a test guards it.
 |---|---|---|
 | Candidate deduplication | fired 0 times | fires 7 times across all recorded runs, **wrong every time**; fixed |
 | Follow-up on "Insufficient" | fired 0 times | **not useless, idle**: starve the tool budget to 1 and it fires 6 times, resolving 6 of 9 `Insufficient` verdicts for +0.167 recall and +0.111 F1 |
-| Within-case memory | −3% calls, inside noise | unchanged — still no measurable benefit |
+| Within-case memory | −3% calls, inside noise | built the measured headroom; it made things **worse** — see below |
+
+### The third feature: we built the headroom, and it backfired
+
+Memory was the one component whose "no measurable benefit" verdict survived
+scrutiny. Replaying tool calls showed where the headroom was: **15 of 156 tool
+calls** were reads of a region an earlier candidate in the same case had
+already fetched. Roughly a tenth of all lookups, spent re-fetching text the
+pipeline already had.
+
+So we built it. Memory can now carry the whole tool response rather than a
+one-line summary, capped so recollection cannot crowd out evidence. Three
+trials, everything else identical:
+
+| | shipped (one-line) | carries content |
+|---|---:|---:|
+| F1 | 0.992 ± 0.021 *(15 trials)* | 1.000 ± 0.000 *(3 trials)* |
+| Cost/case | **$0.0157** | **$0.0178** *(+13%)* |
+| Model calls/case | 6.31 | 6.83 |
+| Tool calls/case | **2.23** | **2.67** *(+20%)* |
+
+**Tool calls went up by a fifth.** The change was built specifically to reduce
+them, and it did the opposite. The plausible reading is that showing the
+investigator more retrieved text invites it to keep pulling threads rather than
+to conclude it has enough — the prompt got longer *and* the behaviour got
+hungrier.
+
+The F1 of 1.000 is not evidence of improvement, and is not claimed as any: the
+shipped configuration already scores 1.000 in **13 of its 15 trials**, so three
+perfect trials is exactly what you would expect from it too.
+
+Off by default, kept, and reported as a change that cost 13% for nothing. The
+headroom was real; the intervention aimed at it was wrong.
 
 ### What we would carry forward
 

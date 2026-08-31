@@ -344,6 +344,20 @@ only exists because the number was checked before the knob was turned.
 
 ---
 
+## Sprint 4h — building the memory headroom, and watching it backfire
+
+| Stage | What was tried and why | Evidence | Decision |
+|---|---|---|---|
+| **Memory carries read content** ❌ | Memory was the last of the three components whose "no measurable benefit" verdict had survived. Replaying tool calls located the headroom precisely: **15 of 156** were reads of a region an earlier candidate in the same case had already fetched. So memory can now carry the whole tool response rather than a one-line summary, capped at 2000 characters so recollection cannot crowd out evidence. | 3 trials, everything else identical. Cost/case **$0.0157 → $0.0178 (+13%)**, model calls 6.31 → 6.83, and **tool calls 2.23 → 2.67 (+20%)** — the metric it was built to reduce went *up by a fifth*. F1 was 1.000 across the three trials, which is not evidence of anything: the shipped arm already scores 1.000 in 13 of its 15 trials. | **Off by default, kept, reported as a regression in cost.** The headroom was real and the intervention aimed at it was wrong. The plausible reading: showing the investigator more retrieved text invites it to keep pulling threads rather than conclude it has enough — the prompt got longer *and* the behaviour got hungrier. |
+
+**That closes the arc on all three.** Deduplication was not inert but wrong, and
+is fixed. The follow-up loop is idle rather than useless, and becomes valuable
+the moment the budget is tight. Memory is genuinely inert, and the one attempt
+to make it useful cost 13% and bought nothing. Three features, three different
+answers, none of them the one we started with.
+
+---
+
 ## Every measured run
 
 | Directory | n | Configuration | Baseline F1 | Advanced F1 |
