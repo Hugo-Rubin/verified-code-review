@@ -667,10 +667,14 @@ commands, required configuration, expected output, runtime, and cost.
 - **Human review time is still a proxy in the headline table.** A blind
   stopwatch harness (`vcr triage`) is implemented and documented, but the
   reported figure remains findings-to-triage per case until a session is run.
-- **One ablation is implemented but unmeasured.** `no-falsification`,
-  `candidates-only` and `no-second-look` are all measured and reported.
-  `no-followup` is not, because the branch it disables never fires — measured
-  at 0 of 70 verifications, see the anti-take below.
+- **Every ablation is now measured.** `no-falsification`, `candidates-only` and
+  `no-second-look` are reported in the ladder. `no-followup` could not be
+  measured at the shipped tool budget, because the branch it disables never
+  fires there — 0 `Insufficient` verdicts in 70. It is measured instead at a
+  **starved** budget of 1 tool call per candidate, where `Insufficient` becomes
+  common and the loop is worth +0.167 recall; see the anti-take below. That is
+  a measurement at a different operating point, not at the shipped one, and it
+  is labelled as such wherever it appears.
 - **Textual investigation only.** `search` is literal-substring. Dynamic
   dispatch, trait objects, re-exports, aliasing, macro-generated call paths and
   deep indirection are blind spots. Every trap here is resolvable by reading
@@ -879,13 +883,42 @@ Two things kept this hidden, and both are worth naming:
    asserted the merge was correct. A green test suite was evidence for the
    defect.
 
-### The follow-up loop had an unreachable trigger, so we gave it a reachable one
+### The follow-up loop is not worthless — it is idle, and we can prove the difference
 
 Across 70 findings the verifier returned `Supports` 44 times and `Contradicts`
 26 times, and `Insufficient` **zero** times. Broadening it to the evidence
 gate's other dead end — `Supports` downgraded for want of concrete evidence —
 would not have helped either: that path also fired 0 times. Measuring first
 prevented building a fourth inert feature.
+
+**Then we asked a better question: is the loop useless, or merely never
+needed?** Those are different claims and they have different consequences, and
+you can separate them by changing the operating conditions instead of the
+feature. The verifier says `Insufficient` when the evidence is too thin to
+settle a claim — so starve the investigation. With the tool budget cut from 8
+calls per candidate to **1**, `Insufficient` stops being hypothetical, and the
+loop can be measured against its own ablation on the same twelve cases:
+
+| Tool budget = 1 per candidate, 3 trials | `Insufficient` verdicts | Recall | F1 |
+|---|---:|---:|---:|
+| Follow-up **disabled** (`--ablation no-followup`) | **9** of 36 | 0.750 ± 0.217 | 0.844 ± 0.154 |
+| Follow-up **enabled** (shipped) | 3 of 36 | **0.917 ± 0.072** | **0.956 ± 0.039** |
+
+The loop fires 6 times, resolves two thirds of the `Insufficient` verdicts, and
+buys **+0.167 recall and +0.111 F1** — with precision 1.000 in both arms, so it
+is not trading false positives for it. It also cuts the variance by four times
+(σ 0.154 → 0.039): a starved reviewer without the loop is not just worse, it is
+erratic.
+
+So the honest statement is not "this feature does nothing". It is: **the
+shipped tool budget is generous enough that the loop never gets a chance to
+help, and if you constrain the agent it becomes one of the more valuable parts
+of the system.** That is a fact about the operating point, not about the code —
+and it is exactly the distinction that "fired 0 times" hides.
+
+Nothing was tuned to produce this. The verifier was never nudged toward
+`Insufficient`; the only thing changed was how much the investigator was
+allowed to look, which is a knob a real deployment might well turn for cost.
 
 The state that *does* occur is a case finishing with **nothing to report**. The
 change being genuinely fine and the reviewer having looked in the wrong place
@@ -914,7 +947,7 @@ and a test guards it.
 | Feature | First measurement | What measuring properly showed |
 |---|---|---|
 | Candidate deduplication | fired 0 times | fires 7 times across all recorded runs, **wrong every time**; fixed |
-| Follow-up on "Insufficient" | fired 0 times | trigger unreachable; replaced with one that fires 6 times, declines 5, gains nothing; **off by default** |
+| Follow-up on "Insufficient" | fired 0 times | **not useless, idle**: starve the tool budget to 1 and it fires 6 times, resolving 6 of 9 `Insufficient` verdicts for +0.167 recall and +0.111 F1 |
 | Within-case memory | −3% calls, inside noise | unchanged — still no measurable benefit |
 
 ### What we would carry forward

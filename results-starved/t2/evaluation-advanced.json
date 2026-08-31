@@ -1,0 +1,444 @@
+{
+  "aggregate": {
+    "agent": "Advanced",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 12,
+    "counts": {
+      "true_positives": 7,
+      "false_positives": 0,
+      "false_negatives": 1
+    },
+    "precision": 1.0,
+    "recall": 0.875,
+    "f1": 0.9333333333333333,
+    "false_positives_per_case": 0.0,
+    "manual_triage_findings_per_case": 0.5833333333333334,
+    "withheld_findings_per_case": 0.4166666666666667,
+    "mean_cost_usd_per_case": 0.011021437500000002,
+    "mean_runtime_ms_per_case": 28995.666666666668,
+    "mean_llm_calls_per_case": 4.333333333333333,
+    "mean_tool_calls_per_case": 1.1666666666666667,
+    "total_input_tokens": 66728,
+    "total_output_tokens": 21923,
+    "ablation": "None",
+    "evidence_accuracy": 1.0,
+    "evidence_audit": {
+      "total": 51,
+      "checkable": 51,
+      "accurate": 51,
+      "mismatches": []
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "c01-pool-counter-leak",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "c01-pool-counter-leak-adv-1",
+          "expected_id": "c01-f1",
+          "location": "src/pool.rs:56-60",
+          "issue_type": "ResourceManagement"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "c02-shard-index-trap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 1
+    },
+    {
+      "case_id": "c03-session-touch-context",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [
+        {
+          "expected_id": "c03-f1",
+          "location": "src/store.rs:53-55",
+          "issue_type": "ErrorHandling",
+          "description": "The stated precondition does not hold for all callers, so the `unwrap` is reachable and will panic. `Server::on_heartbeat` in src/handler.rs calls `touch` with no `contains` check, unlike `Server::on_request` which does check. Because `Server::sweep` calls `expire_before` and can remove a session while its client is still connected and sending heartbeats, an id that was valid moments earlier can reach `touch` after removal. The previous no-op behaviour absorbed exactly this race; the change converts it into a panic that takes down the server."
+        }
+      ],
+      "withheld": 1
+    },
+    {
+      "case_id": "c04-counter-lost-update",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "c04-counter-lost-update-adv-1",
+          "expected_id": "c04-f1",
+          "location": "src/counters.rs:30-43",
+          "issue_type": "Concurrency"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "c05-timeout-parse-default",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "c05-timeout-parse-default-adv-1",
+          "expected_id": "c05-f1",
+          "location": "src/config.rs:19-24",
+          "issue_type": "ErrorHandling"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "c06-dedup-quadratic",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "c06-dedup-quadratic-adv-1",
+          "expected_id": "c06-f1",
+          "location": "src/dedup.rs:10-14",
+          "issue_type": "Performance"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "c07-report-unflushed-writer",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "c07-report-unflushed-writer-adv-1",
+          "expected_id": "c07-f1",
+          "location": "src/report.rs:15-25",
+          "issue_type": "ErrorHandling"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "c08-order-name-limit",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "c08-order-name-limit-adv-1",
+          "expected_id": "c08-f1",
+          "location": "src/order.rs:26-28",
+          "issue_type": "Validation"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "c09-queue-pop-guarded-trap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 1
+    },
+    {
+      "case_id": "c10-chunk-total-overflow-trap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 1
+    },
+    {
+      "case_id": "c11-asset-path-check-trap",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 1
+    },
+    {
+      "case_id": "c12-slot-guard-capacity",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "c12-slot-guard-capacity-adv-1",
+          "expected_id": "c12-f1",
+          "location": "src/api.rs:8-13",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "c01-pool-counter-leak",
+      "trajectory_id": "7faac39d-b1fa-44cb-8f40-cfd6e09d9ef3",
+      "runtime_ms": 19466,
+      "llm_calls": 4,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 4939,
+      "output_tokens": 1771,
+      "cost_usd": 0.0103455,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c02-shard-index-trap",
+      "trajectory_id": "96c47057-3bdb-4b39-ab4f-673e87f1f9b6",
+      "runtime_ms": 26655,
+      "llm_calls": 4,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 6225,
+      "output_tokens": 1178,
+      "cost_usd": 0.00908625,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c03-session-touch-context",
+      "trajectory_id": "06cb0aaa-8824-4809-a27e-933a24502fb2",
+      "runtime_ms": 46731,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 1,
+      "input_tokens": 7941,
+      "output_tokens": 3049,
+      "cost_usd": 0.0173895,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c04-counter-lost-update",
+      "trajectory_id": "34fc7ac2-2e69-4afd-917b-c4dc0291fcc7",
+      "runtime_ms": 30447,
+      "llm_calls": 4,
+      "tool_calls": 1,
+      "retries": 1,
+      "input_tokens": 4598,
+      "output_tokens": 1962,
+      "cost_usd": 0.010806000000000001,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c05-timeout-parse-default",
+      "trajectory_id": "359579e6-50d4-4268-bf52-8018061a49b9",
+      "runtime_ms": 27958,
+      "llm_calls": 4,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 5136,
+      "output_tokens": 1589,
+      "cost_usd": 0.00981075,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c06-dedup-quadratic",
+      "trajectory_id": "c8d07f35-1416-4855-8bf9-1de0a1b1e2b7",
+      "runtime_ms": 33733,
+      "llm_calls": 4,
+      "tool_calls": 1,
+      "retries": 1,
+      "input_tokens": 4553,
+      "output_tokens": 1780,
+      "cost_usd": 0.01008975,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c07-report-unflushed-writer",
+      "trajectory_id": "b98b7725-f114-471a-bc6e-66410b6953f9",
+      "runtime_ms": 24007,
+      "llm_calls": 4,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 4602,
+      "output_tokens": 1669,
+      "cost_usd": 0.00971025,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c08-order-name-limit",
+      "trajectory_id": "43d3fd73-9a96-4bc2-9a48-568f11801806",
+      "runtime_ms": 22871,
+      "llm_calls": 4,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 5053,
+      "output_tokens": 2205,
+      "cost_usd": 0.0120585,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "c09-queue-pop-guarded-trap",
+      "trajectory_id": "311b38a0-5e59-4842-9e54-1f28b6618c72",
+      "runtime_ms": 41047,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 0,
+      "input_tokens": 7202,
+      "output_tokens": 1959,
+      "cost_usd": 0.012747749999999999,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c10-chunk-total-overflow-trap",
+      "trajectory_id": "93e89dd5-640d-47f7-9822-1d300e7ca038",
+      "runtime_ms": 37104,
+      "llm_calls": 4,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 5837,
+      "output_tokens": 1644,
+      "cost_usd": 0.01054275,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c11-asset-path-check-trap",
+      "trajectory_id": "0fdfc6f1-cfb0-4366-b48a-023468ac88ec",
+      "runtime_ms": 19527,
+      "llm_calls": 4,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 4414,
+      "output_tokens": 1393,
+      "cost_usd": 0.00853425,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "c12-slot-guard-capacity",
+      "trajectory_id": "ac075def-c29f-4d9a-9a1e-ff1e33dfce77",
+      "runtime_ms": 18402,
+      "llm_calls": 4,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 6228,
+      "output_tokens": 1724,
+      "cost_usd": 0.011136,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ],
+  "by_category": [
+    {
+      "category": "RealIssue",
+      "case_count": 6,
+      "counts": {
+        "true_positives": 6,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "category": "Trap",
+      "case_count": 4,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
+    }
+  ],
+  "line_tolerance": 3
+}

@@ -1804,3 +1804,58 @@ Headline: advanced **F1 0.992 +- 0.021** against a baseline of **0.857 +-
 
 Not updated: docs/video-script.md still quotes the n=5 figures. The script is
 rewritten when the video is made and is deliberately left alone until then.
+
+---
+
+## 2026-08-31 05:40 UTC — The follow-up loop is idle, not useless
+
+### Context
+
+Three components had been reported as contributing nothing. Two of those
+verdicts were later corrected: deduplication was actively wrong, and the second
+look fires but does not help. The third, the follow-up loop on an
+`Insufficient` verdict, had never been measurable at all, because across 70
+findings the verifier returned `Insufficient` zero times.
+
+"Fired 0 times" cannot distinguish **useless** from **never needed**, and those
+have different consequences for anyone deploying this.
+
+### Decision
+
+Separate them by changing the **operating point**, not the feature. The
+verifier returns `Insufficient` when evidence is too thin to settle a claim, so
+cut the investigation budget from 8 tool calls per candidate to 1 and run the
+loop against its own ablation on the same twelve cases, 3 trials each.
+
+```text
+tool budget = 1 per candidate, 3 trials, 36 candidates per arm
+
+  follow-up DISABLED   Insufficient 9    recall 0.750 +- 0.217   F1 0.844 +- 0.154
+  follow-up ENABLED    Insufficient 3    recall 0.917 +- 0.072   F1 0.956 +- 0.039
+                       (loop fired 6 times)
+```
+
+Precision is 1.000 in both arms, so the recall is not bought with false
+positives, and the variance falls fourfold.
+
+### Consequence
+
+The earlier verdict is corrected. The loop is not worthless; the shipped tool
+budget is generous enough that it never gets a chance to help. A deployment
+that tightened the budget for cost would want it on. This is a fact about the
+operating point rather than about the code, and it is exactly what "fired 0
+times" concealed.
+
+### Rejected alternatives
+
+- **Nudging the verifier to return `Insufficient` more often.** Rejected here
+  for the same reason it was rejected in Sprint 3: that is tuning the
+  measurement to justify the code. Nothing about the verifier was touched; only
+  how much the investigator was allowed to look, which is a knob a real
+  deployment might turn.
+- **Reporting the starved F1 alongside the headline.** Rejected. It is measured
+  at a different operating point and would be read as a comparable number.
+  Every appearance of it is labelled "tool budget = 1".
+- **Claiming this as an improvement to the shipped system.** Rejected: at the
+  shipped budget the loop still contributes nothing, and the headline figures
+  are unchanged.
