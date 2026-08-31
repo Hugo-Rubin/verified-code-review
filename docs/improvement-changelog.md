@@ -97,7 +97,7 @@ benchmark, **3 trials each**. Mean ± sample standard deviation. Artifacts in
 | False positives/case | 0.00 | 0.42 | 0.28 | 0.03 |
 | Findings to triage/case ¹ | 0.50 | 1.06 | 0.94 | 0.69 |
 | Evidence accuracy ² | n/a | 1.000 | 1.000 | 1.000 ± 0.000 |
-| Cost/case | $0.0032 | $0.0038 | $0.0112 | $0.0159 |
+| Cost/case | $0.0032 | $0.0038 | $0.0112 | $0.0157 |
 | Runtime/case | 11.1 s | 8.9 s | 34.0 s | 38.9 s |
 
 ¹ A manual-triage proxy, not a stopwatch. `vcr triage` implements the direct

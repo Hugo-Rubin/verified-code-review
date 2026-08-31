@@ -539,7 +539,7 @@ deviation.
 | False positives/case | 0.00 | 0.42 | 0.28 | 0.03 |
 | Findings to triage/case | 0.50 | 1.06 | 0.94 | 0.69 |
 | Evidence accuracy | n/a | 1.000 | 1.000 | 1.000 ± 0.000 |
-| Cost/case | $0.0032 | $0.0038 | $0.0112 | $0.0159 |
+| Cost/case | $0.0032 | $0.0038 | $0.0112 | $0.0157 |
 | Runtime/case | 11.1 s | 8.9 s | 34.0 s | 38.9 s |
 
 By category, full system, per trial (out of 3):
@@ -571,7 +571,7 @@ one extra false positive in one trial out of three.
 **Precision costs more than recall here.** Getting recall to 1.000 was a
 candidate-generation problem and was solved by an instruction. Getting
 precision back to 0.985 afterwards took the entire falsification apparatus —
-four roles, ~6.5 model calls and ~2.5 tool calls per case, and 5× the cost of
+four roles, ~6.3 model calls and ~2.2 tool calls per case, and 5× the cost of
 the baseline.
 
 ## Improvement changelog
