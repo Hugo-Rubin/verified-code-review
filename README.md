@@ -373,6 +373,35 @@ because a counter that is never decremented is defensibly
 benchmark would partly measure agreement with our taxonomy. The concession is
 on the category axis only — location must still overlap.
 
+### The known weakness of this matcher, and what we found when we checked
+
+Location plus category is a **proxy for "found the defect"**, and it can be
+fooled: a claim that lands on the right lines under an accepted category scores
+a true positive even if it describes something else entirely. Nothing in a
+deterministic matcher can tell those apart, and using a model to judge would
+reintroduce the thing this project refuses.
+
+So it was checked by hand. Every matched finding in the 5-trial headline run —
+8 expected findings × 5 trials — was read against its ground-truth
+description. The claims are in
+[`docs/matching-audit.md`](docs/matching-audit.md) in full, so the reading can
+be disagreed with.
+
+**Result: 7 of 8 defects are described exactly, in all five trials.** The
+exception is `c12`, where the claims name the right failure (an index below
+`len()` reaches a vacant slot and panics) but state the cause as a conditional
+about the store's semantics rather than flatly identifying that `Store::len`
+returns capacity. We count those as true positives — a human handed that claim
+goes and reads `Store::len` and finds the bug — and flag the hedge here rather
+than let a reader assume every match is crisp.
+
+**The matcher did produce one spurious match, on the Python pilot.** In one run
+`p03` scored a true positive for *"non-integer float indices bypass the bounds
+check"* — a different claim from the real defect, landing on the same three
+lines under a category in `also_accept`. It is reported in
+[`docs/pilot-python.md`](docs/pilot-python.md) rather than quietly kept, and it
+is the concrete reason the audit above exists.
+
 ## Results
 
 All arms, `gemini-3.7-flash` via Vertex AI, temperature 0, frozen benchmark,
