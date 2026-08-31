@@ -251,6 +251,15 @@ fn cmd_check(benchmark: &std::path::Path) -> Result<()> {
                         for problem in bench::findings_outside_the_diff(&c, &gt) {
                             println!("      WARNING: {problem}");
                         }
+                        // A description that gives away whether the change is
+                        // sound stops the case measuring review skill.
+                        let tells = bench::description_tells(&c.manifest);
+                        if !tells.is_empty() {
+                            println!(
+                                "      WARNING: description reveals the category: {}",
+                                tells.join(", ")
+                            );
+                        }
                     }
                     (Err(e), _) | (_, Err(e)) => {
                         problems += 1;

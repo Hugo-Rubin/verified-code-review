@@ -186,6 +186,66 @@ pub fn load_case(dir: impl AsRef<Path>) -> Result<Case> {
     })
 }
 
+/// Words that give away whether a case contains a real defect.
+///
+/// A case's `description` is meant to read like the change author's own commit
+/// message: what changed, and why they thought it was a good idea. If a
+/// `Trap`'s description reassures and a `RealIssue`'s description hints, the
+/// benchmark stops measuring review skill and starts measuring whether the
+/// reviewer can read our tone.
+///
+/// The list is deliberately narrow — words that state a **verdict** on the
+/// change. It is not a style guide. `mistake` is absent on purpose: it appears
+/// in one trap and one real-issue description here, both times describing what
+/// a *caller* might do, so it carries no signal about the category. Matching is
+/// on word boundaries, because an earlier substring version flagged "fix"
+/// inside "fixed protocol chunk size".
+const CATEGORY_TELLS: [&str; 20] = [
+    "bug",
+    "bugs",
+    "defect",
+    "defects",
+    "broken",
+    "incorrect",
+    "incorrectly",
+    "wrong",
+    "wrongly",
+    "unsafe",
+    "leak",
+    "leaks",
+    "leaking",
+    "regression",
+    "subtle",
+    "harmless",
+    "flaw",
+    "flaws",
+    "suspicious",
+    "dangerous",
+];
+
+/// Report any verdict-revealing word in a case's agent-visible text.
+///
+/// Checked by `vcr check`, for the same reason the anchoring convention is:
+/// benchmark integrity that is remembered rather than verified does not stay
+/// true. A prompt-leakage test already fails the build if a *review prompt*
+/// names a benchmark noun; this is the same discipline applied to the cases.
+pub fn description_tells(manifest: &CaseManifest) -> Vec<String> {
+    let haystack = format!("{} {}", manifest.title, manifest.description).to_lowercase();
+    let words: std::collections::HashSet<&str> = haystack
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '\'')
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    let mut found: Vec<String> = CATEGORY_TELLS
+        .iter()
+        .filter(|t| words.contains(*t))
+        .map(|t| (*t).to_string())
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
+
 /// Load ground truth for a case directory.
 pub fn load_ground_truth(dir: impl AsRef<Path>) -> Result<GroundTruth> {
     let path = dir.as_ref().join("ground_truth.json");
@@ -471,5 +531,74 @@ mod tests {
             .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
             .collect();
         assert_eq!(names, vec!["c01", "c02"]);
+    }
+
+    #[test]
+    fn a_description_stating_a_verdict_is_flagged() {
+        let m = CaseManifest {
+            case_id: "x".into(),
+            title: "Simplify the retry loop".into(),
+            description: "This introduces a subtle bug in the counter.".into(),
+            category: CaseCategory::RealIssue,
+            language: Language::Rust,
+        };
+        let tells = description_tells(&m);
+        assert!(tells.contains(&"bug".to_string()));
+        assert!(tells.contains(&"subtle".to_string()));
+    }
+
+    #[test]
+    fn a_neutral_description_is_not_flagged() {
+        let m = CaseManifest {
+            case_id: "x".into(),
+            title: "Add size reporting for staged uploads".into(),
+            description: "A new module reports the staged size of a buffer, using the \
+                          fixed protocol chunk size."
+                .into(),
+            category: CaseCategory::Trap,
+            language: Language::Rust,
+        };
+        // "fixed" must not match "fix"-like tells: this is why the check is on
+        // whole words rather than substrings.
+        assert!(description_tells(&m).is_empty());
+    }
+
+    #[test]
+    fn the_word_mistake_is_deliberately_not_a_tell() {
+        // It appears in both a trap and a real-issue description in this
+        // benchmark, both times about what a caller might do, so it separates
+        // nothing. Encoded as a test so nobody "helpfully" adds it later.
+        let m = CaseManifest {
+            case_id: "x".into(),
+            title: "t".into(),
+            description: "a caller mistake showed up as a phantom job".into(),
+            category: CaseCategory::Trap,
+            language: Language::Rust,
+        };
+        assert!(description_tells(&m).is_empty());
+    }
+
+    #[test]
+    fn every_shipped_case_description_is_neutral() {
+        // The benchmarks themselves, not a fixture. If someone edits a case
+        // description into a hint, this fails.
+        for root in [
+            "benchmark/cases",
+            "benchmark/pilot-python",
+            "benchmark/holdout",
+        ] {
+            let Ok(dirs) = discover_cases(root) else {
+                continue;
+            };
+            for dir in dirs {
+                let case = load_case(&dir).expect("case must load");
+                let tells = description_tells(&case.manifest);
+                assert!(
+                    tells.is_empty(),
+                    "{} description reveals its category: {tells:?}",
+                    case.id()
+                );
+            }
+        }
     }
 }
