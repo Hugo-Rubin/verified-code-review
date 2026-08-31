@@ -495,10 +495,11 @@ commands, required configuration, expected output, runtime, and cost.
 
 - **Twelve cases is small.** One finding moves F1 by roughly 0.03–0.06. Treat
   the direction as the result, not the third decimal place.
-- **Three trials, not thirty.** Enough to show the baseline is perfectly stable
-  and that the advanced arm's spread comes from a single case (`c12`), but far
-  too few for a confidence interval. The arms were not run interleaved, so a
-  drift in provider behaviour between arms would be invisible.
+- **Five trials, not thirty.** Enough to show the baseline is perfectly stable
+  (identical on all 12 cases in all 5 trials, σ = 0.000 on every metric) and
+  that the advanced arm's remaining spread comes from a single case (`c03`),
+  but far too few for a confidence interval. The arms were not run interleaved,
+  so a drift in provider behaviour between arms would be invisible.
 - **Synthetic benchmark.** The cases are realistic in shape and every
   ground-truth claim was verified by execution, but they are small crates
   written for this project, not harvested from real pull requests. They were
@@ -507,16 +508,25 @@ commands, required configuration, expected output, runtime, and cost.
 - **Human review time is still a proxy in the headline table.** A blind
   stopwatch harness (`vcr triage`) is implemented and documented, but the
   reported figure remains findings-to-triage per case until a session is run.
-- **The falsification ablation is the only one measured.** `no-followup` and
-  `candidates-only` are implemented but were not run across trials.
+- **One ablation is implemented but unmeasured.** `no-falsification` and
+  `candidates-only` were each run across 3 trials and are reported in the
+  ablation ladder. `no-followup` is not, because the branch it disables never
+  fires — see the note on inert features below. `no-second-look` is measured.
 - **Textual investigation only.** `search` is literal-substring. Dynamic
   dispatch, trait objects, re-exports, aliasing, macro-generated call paths and
   deep indirection are blind spots. Every trap here is resolvable by reading
   call sites; a trap turning on a trait object would likely defeat it.
 - **Findings are single-location.** A defect spanning several files that is
   wrong only in combination has no representation in the schema.
-- **One model, one provider.** Everything here is `gemini-3.7-flash` on Vertex
-  AI. Nothing has been checked for generalisation across models.
+- **One model for the system under test.** Every advanced-arm figure is
+  `gemini-3.7-flash` on Vertex AI. The *baseline* was reproduced on Claude
+  Sonnet 5 and agreed case-for-case — same F1 0.857, same 12 of 12 per-case
+  outcomes, same `issue_type` on all six matches
+  ([`docs/cross-model.md`](docs/cross-model.md)) — so the gap the advanced arm
+  closes is not an artefact of one model being unusually timid. What remains
+  unchecked is whether the *pipeline* behaves the same on another model, and
+  that was not run on purpose: reproducing a multi-turn tool loop outside this
+  orchestrator means re-implementing the thing under test.
 - **One language, plus a six-case pilot.** The measured benchmark is Rust. A
   Python pilot exists ([`docs/pilot-python.md`](docs/pilot-python.md)) and
   shows the same pattern — baseline F1 0.667, advanced 0.857, zero false
