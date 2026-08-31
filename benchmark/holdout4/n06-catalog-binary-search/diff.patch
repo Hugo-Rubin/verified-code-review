@@ -1,0 +1,13 @@
+--- a/src/lookup.rs
++++ b/src/lookup.rs
+@@ -4,7 +4,9 @@
+ 
+ /// The entry registered under `name`.
+ pub fn find<'a>(catalog: &'a Catalog, name: &str) -> Option<&'a Entry> {
+-    catalog.entries().iter().find(|e| e.name == name)
++    let items = catalog.entries();
++    let index = items.binary_search_by(|e| e.name.as_str().cmp(name)).ok()?;
++    Some(&items[index])
+ }
+ 
+ /// The target `name` routes to.

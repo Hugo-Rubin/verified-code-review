@@ -1,0 +1,19 @@
+{
+  "case_id": "n01-log-capacity-guard",
+  "expected_findings": [
+    {
+      "id": "n01-f1",
+      "issue_type": "Correctness",
+      "also_accept": [
+        "Validation",
+        "ApiContract",
+        "StateManagement"
+      ],
+      "file": "src/logger.rs",
+      "start_line": 32,
+      "end_line": 35,
+      "description": "The guard now compares the number of buffered entries against `config.max_entries`, but the ring does not hold `max_entries` entries. `RingBuffer::with_capacity` clamps its request to `HARD_CAP` (64), so for any configuration above 64 the ring fills at 64 and `len()` can never reach `max_entries`. The guard therefore never fires: `append` keeps returning `Ok`, `RingBuffer::push` silently overwrites the oldest entry, and the documented contract that the logger reports `LogError::Full` rather than discarding anything is broken. `rejected()` also stays at zero, so the loss is invisible to operators. The replaced `buffer.is_full()` asked the ring about its own real capacity and was correct at any configured value."
+    }
+  ],
+  "notes": "Mechanism: a guard rewritten against an accessor whose meaning is not what the surrounding code assumes. `config.max_entries` is what the operator *asked for*; the ring's real capacity is that request clamped to a build-time hard cap. The two agree for every configuration at or below 64 and diverge above it. The changed line reads as an ordinary de-indirection and is entirely self-consistent.\n\nIf `RingBuffer::with_capacity` were to allocate exactly `requested` slots, this change would be correct. It is not, because `with_capacity` clamps the request with `requested.clamp(1, HARD_CAP)` at src/buffer.rs:30, with `HARD_CAP = 64` at src/buffer.rs:8, which the diff does not touch.\n\nWhy the tests miss it: every test in the crate constructs a logger with a small limit -- `logger(4)`, `logger(2)`, `logger(1)` in src/logger.rs, and capacities 2, 4 and 5 in src/buffer.rs. Below the hard cap the clamp is the identity, so `buffer.len() >= config.max_entries` and `buffer.is_full()` are the same predicate and the changed guard behaves exactly as before. The one test that exercises the clamp, `a_request_above_the_hard_cap_is_clamped`, tests `RingBuffer` in isolation and never builds a `Logger`. Nothing in the suite constructs a `Config` above 64, which is the only region where the two expressions differ.\n\nThe secondary consequence at `max_entries == 0` (the ring still allocates one slot, so the pre-change logger accepted one entry while the post-change one refuses everything) is a real behaviour change too, but the 64+ case is the reportable defect and is what the anchor describes.\n\nalso_accept covers Validation (a limit check that admits input it should refuse), ApiContract (the documented `LogError::Full` promise is no longer kept) and StateManagement (entries silently dropped from the retained set) -- all defensible readings of the same line.\n\nVerified by execution:\n    HARD_CAP                      = 64\n    configured max_entries        = 100\n    appends attempted             = 70\n    appends refused (LogError::Full) = 0\n    entries actually stored       = 64\n    rejected() reports            = 0\n    entry \"e0\" still present      = false\n    entry \"e5\" still present      = false\n    entries silently discarded    = 6\n    ring capacity for request 100 = 64\n    ring.is_full() after 64 pushes= true\n  Six entries were overwritten with no error returned and no rejection counted;\n  the last two lines show the replaced `is_full()` guard would have fired at 64."
+}

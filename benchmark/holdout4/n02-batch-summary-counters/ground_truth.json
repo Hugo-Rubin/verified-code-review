@@ -1,0 +1,19 @@
+{
+  "case_id": "n02-batch-summary-counters",
+  "expected_findings": [
+    {
+      "id": "n02-f1",
+      "issue_type": "Correctness",
+      "also_accept": [
+        "StateManagement",
+        "ApiContract",
+        "Concurrency"
+      ],
+      "file": "src/pipeline.rs",
+      "start_line": 56,
+      "end_line": 56,
+      "description": "`Counters::accepted()` is a destructive read: it swaps the tally back to zero as it returns it. Filling the summary from it makes `finish_batch` a second consumer of a counter that is documented to have exactly one legitimate reader, so every accepted record consumed here is deducted from the next metrics scrape. `telemetry::sample` then reports `accepted: 0` for records that were really accepted, while `rejected` -- which `finish_batch` does not read -- still reports correctly, so the metrics endpoint silently under-counts accepted throughput by exactly the number of records each batch summary claimed."
+    }
+  ],
+  "notes": "Mechanism: calling a method whose untouched implementation has a side effect. The added line reads like a plain field read of a counter that is already in scope, and nothing in the hunk suggests otherwise -- the accessor is named `accepted()`, takes `&self`, and returns a `u64`.\n\nIf `Counters::accepted()` were a non-destructive read of a running total, this change would be correct. It is not, because `accepted()` is `self.accepted.swap(0, Ordering::SeqCst)` at src/counters.rs:33, documented as an interval read with exactly one legitimate reader at src/counters.rs:7-11, which the diff does not touch.\n\nWhy the tests miss it: no test in the crate does both things. The two `pipeline` tests call `finish_batch` and never sample telemetry; the two `telemetry` tests sample and never call `finish_batch`. `a_batch_summary_counts_the_batch` asserts `s.accepted == 2` and passes precisely because the destructive read hands the summary the right number -- it is the *next* reader that is short. Even `a_new_batch_starts_from_zero`, which calls `finish_batch` twice, passes: the second read of an already-drained counter is zero, which is what a fresh batch should report anyway. Catching this needs one test that interleaves a batch boundary with a scrape, and there is none.\n\nalso_accept covers StateManagement (shared tally consumed by an unintended reader), ApiContract (the counters' documented single-reader contract) and Concurrency (a read-modify-write on shared atomics used as if it were a load).\n\nVerified by execution:\n    ingested 4 accepted + 1 rejected\n    batch summary                 = Summary { total: 5, accepted: 4, elapsed_ms: 10 }\n    metrics scrape after summary  = Gauges { accepted: 0, rejected: 1 }\n    accepted reported to metrics  = 0 (records actually accepted: 4)\n    rejected reported to metrics  = 1\n  The scrape that follows the batch reports zero accepted records for an interval\n  in which four were accepted; `rejected`, which `finish_batch` does not read, is\n  unaffected, which isolates the cause to the added line."
+}

@@ -1,0 +1,6 @@
+{
+  "case_id": "n04-limiter-snapshot-limit",
+  "title": "Drop the borrow of Settings from Limiter",
+  "description": "`Limiter` no longer carries a reference to `Settings`. It reads the concurrency number in the constructor and keeps it in a `u32` field, which removes the lifetime parameter from the type so a limiter can be stored and moved like any other value, and leaves the admission decision as a comparison between two integers the limiter already owns.",
+  "category": "Challenging"
+}

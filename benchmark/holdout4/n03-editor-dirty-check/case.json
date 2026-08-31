@@ -1,0 +1,6 @@
+{
+  "case_id": "n03-editor-dirty-check",
+  "title": "Only mark the document dirty when an operation changes the text",
+  "description": "`Editor::run` used to set the dirty flag for every operation it ran, including ones the document ignores. It now takes the document before applying the operation and compares checksums, so operations that leave the text as it was no longer schedule a save. Two tests covering the ignored-position path are added alongside.",
+  "category": "Challenging"
+}

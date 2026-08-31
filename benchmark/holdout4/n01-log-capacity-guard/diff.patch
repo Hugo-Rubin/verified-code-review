@@ -1,0 +1,11 @@
+--- a/src/logger.rs
++++ b/src/logger.rs
+@@ -29,7 +29,7 @@
+     /// The log reports [`LogError::Full`] to the caller rather than discarding
+     /// anything once it is holding its full complement of entries.
+     pub fn append(&mut self, level: u8, message: &str) -> Result<(), LogError> {
+-        if self.buffer.is_full() {
++        if self.buffer.len() >= self.config.max_entries {
+             self.rejected += 1;
+             return Err(LogError::Full);
+         }

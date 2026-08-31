@@ -1,0 +1,6 @@
+{
+  "case_id": "n01-log-capacity-guard",
+  "title": "Compare buffered entries against the configured retention limit",
+  "description": "`Logger::append` now compares the number of buffered entries against `config.max_entries` directly instead of asking the ring whether it is full. The two express the same limit, and the explicit comparison keeps the operator-facing number visible at the point where the limit is enforced.",
+  "category": "Challenging"
+}

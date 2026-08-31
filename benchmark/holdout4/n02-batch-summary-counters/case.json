@@ -1,0 +1,6 @@
+{
+  "case_id": "n02-batch-summary-counters",
+  "title": "Report accepted records in the batch summary",
+  "description": "`Summary` gains an `accepted` field and `Pipeline::finish_batch` fills it in from the pipeline's counters. Operators reading a batch summary previously had to correlate it with a separate source to learn how much of the batch was actually taken, and the number is already available where the summary is built.",
+  "category": "Challenging"
+}

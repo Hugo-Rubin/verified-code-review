@@ -1,0 +1,18 @@
+{
+  "case_id": "n03-editor-dirty-check",
+  "expected_findings": [
+    {
+      "id": "n03-f1",
+      "issue_type": "Correctness",
+      "also_accept": [
+        "StateManagement",
+        "ResourceManagement"
+      ],
+      "file": "src/editor.rs",
+      "start_line": 35,
+      "end_line": 39,
+      "description": "`before` is not a snapshot of the document. `Doc` is a handle whose lines live behind an `Rc<RefCell<Vec<String>>>` and whose `Clone` is derived, so `self.doc.clone()` yields a second handle onto the same buffer. `self.doc.apply(&op)` mutates the buffer both handles share, and the two checksums are therefore equal after every operation, including operations that changed the text. `dirty` is now never set, `save_if_needed` always returns false, and edits are silently never written out -- the opposite of the intended narrowing, which was meant to skip only the no-op operations."
+    }
+  ],
+  "notes": "Mechanism: a trait implementation in another file behaving differently from the obvious one. Take-a-copy-then-compare is a standard way to detect a no-op edit, and the hunk is written exactly as that idiom looks when it is correct; nothing in it reveals that `Doc`'s `Clone` shares rather than copies.\n\nIf `Doc::clone` were a deep copy of the line buffer, this change would be correct. It is not, because `Doc` stores its lines as `Rc<RefCell<Vec<String>>>` under a derived `Clone` at src/doc.rs:17-20, so the clone is a second handle onto the same buffer -- as its own doc comment states at src/doc.rs:12-16 -- which the diff does not touch.\n\nWhy the tests miss it: the suite only ever asserts the *negative* side of the flag. `an_operation_outside_the_document_leaves_it_clean` and `a_clean_editor_does_not_write` assert `!is_dirty()` and `saves() == 0` after an ignored operation, and both pass trivially under a flag that is never set. `an_operation_reaches_the_document` checks the text, not the flag. `a_fresh_editor_has_nothing_to_save` never runs an operation at all. No test asserts that a real edit marks the document dirty or that it is ever saved, so the failing direction is untested. The `doc` tests do not help either: `the_checksum_follows_the_text` compares one handle's checksum before and after, which is a sequential comparison rather than a comparison between a clone and the original.\n\nalso_accept covers StateManagement (a flag that is never raised) and ResourceManagement (edits never persisted); Correctness is the canonical reading.\n\nVerified by execution:\n    after a real edit, lines      = [\"zero\", \"one\", \"two\"]\n    after a real edit, is_dirty   = false\n    save_if_needed()              = false\n    saves()                       = 0\n    checksums equal before edit   = true\n    a.lines() after edit          = [\"x\", \"one\"]\n    b.lines() after edit          = [\"x\", \"one\"]\n    checksums equal after edit    = true\n  The document visibly gained a line and still reports clean. The last four lines\n  isolate the cause: an edit applied through one handle is visible through the\n  clone, so the two checksums can never differ."
+}

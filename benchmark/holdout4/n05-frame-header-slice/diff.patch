@@ -1,0 +1,60 @@
+--- a/src/decode.rs
++++ b/src/decode.rs
+@@ -3,38 +3,25 @@
+ use crate::frame::{Frame, HEADER_LEN};
+ 
+ /// The frame's kind tag.
+-pub fn kind(frame: &Frame) -> Option<u16> {
+-    let bytes = frame.bytes();
+-    if bytes.len() < HEADER_LEN {
+-        return None;
+-    }
+-    Some(u16::from_be_bytes([bytes[0], bytes[1]]))
++pub fn kind(frame: &Frame) -> u16 {
++    let header = &frame.bytes()[..HEADER_LEN];
++    u16::from_be_bytes([header[0], header[1]])
+ }
+ 
+ /// The payload length the sender declared in the header.
+-pub fn declared_len(frame: &Frame) -> Option<u16> {
+-    let bytes = frame.bytes();
+-    if bytes.len() < HEADER_LEN {
+-        return None;
+-    }
+-    Some(u16::from_be_bytes([bytes[2], bytes[3]]))
++pub fn declared_len(frame: &Frame) -> u16 {
++    let header = &frame.bytes()[..HEADER_LEN];
++    u16::from_be_bytes([header[2], header[3]])
+ }
+ 
+ /// The bytes after the header.
+ pub fn payload(frame: &Frame) -> &[u8] {
+-    let bytes = frame.bytes();
+-    if bytes.len() < HEADER_LEN {
+-        return &[];
+-    }
+-    &bytes[HEADER_LEN..]
++    &frame.bytes()[HEADER_LEN..]
+ }
+ 
+ /// Whether the frame carries as much payload as its header declares.
+ pub fn is_complete(frame: &Frame) -> bool {
+-    match declared_len(frame) {
+-        Some(declared) => payload(frame).len() >= declared as usize,
+-        None => false,
+-    }
++    payload(frame).len() >= declared_len(frame) as usize
+ }
+ 
+ #[cfg(test)]
+@@ -48,8 +35,8 @@
+     #[test]
+     fn the_header_fields_are_read_big_endian() {
+         let f = frame(&[0x01, 0x02, 0x00, 0x03, 7, 8, 9]);
+-        assert_eq!(kind(&f), Some(0x0102));
+-        assert_eq!(declared_len(&f), Some(3));
++        assert_eq!(kind(&f), 0x0102);
++        assert_eq!(declared_len(&f), 3);
+     }
+ 
+     #[test]

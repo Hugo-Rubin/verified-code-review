@@ -1,0 +1,31 @@
+--- a/src/limiter.rs
++++ b/src/limiter.rs
+@@ -6,22 +6,22 @@
+ ///
+ /// One limiter is built when the runner starts and lives for as long as the
+ /// process does; `try_start` runs on every job start.
+-pub struct Limiter<'a> {
+-    settings: &'a Settings,
++pub struct Limiter {
++    concurrent_jobs: u32,
+     running: u32,
+ }
+ 
+-impl<'a> Limiter<'a> {
+-    pub fn new(settings: &'a Settings) -> Self {
++impl Limiter {
++    pub fn new(settings: &Settings) -> Self {
+         Self {
+-            settings,
++            concurrent_jobs: settings.concurrent_jobs(),
+             running: 0,
+         }
+     }
+ 
+     /// Admit one job if there is room for it.
+     pub fn try_start(&mut self) -> bool {
+-        if self.running >= self.settings.concurrent_jobs() {
++        if self.running >= self.concurrent_jobs {
+             return false;
+         }
+         self.running += 1;

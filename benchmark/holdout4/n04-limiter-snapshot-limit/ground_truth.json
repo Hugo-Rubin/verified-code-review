@@ -1,0 +1,19 @@
+{
+  "case_id": "n04-limiter-snapshot-limit",
+  "expected_findings": [
+    {
+      "id": "n04-f1",
+      "issue_type": "StateManagement",
+      "also_accept": [
+        "Correctness",
+        "ApiContract",
+        "Concurrency"
+      ],
+      "file": "src/limiter.rs",
+      "start_line": 15,
+      "end_line": 19,
+      "description": "The constructor copies the concurrency limit out of `Settings` once, but `Settings` is a live view rather than a value: `Settings::set_concurrent_jobs` installs a new number through a `Cell`, and `reload::apply` calls it while the runner is up. A limiter built at start-up therefore keeps admitting against whatever the limit was at start-up and never sees an operator update. Raising the limit no longer opens the throttle -- the runner stays pinned at the old number -- and, worse, lowering the limit to shed load no longer takes effect, so the limiter keeps admitting jobs above the limit the operator has set. The replaced code read `self.settings.concurrent_jobs()` on every admission decision and observed each update on the next call."
+    }
+  ],
+  "notes": "Mechanism: relying on an invariant -- that the value read in the constructor stays current -- which a different, untouched caller violates. The hunk reads as a lifetime-removal refactor: a borrow is replaced by an owned `u32` and the comparison becomes two fields of the same struct. Nothing in it says whether `Settings` can change, and for an ordinary immutable config struct the change would be a straight improvement.\n\nIf `Settings` were immutable for the lifetime of a `Limiter`, this change would be correct. It is not, because `Settings` holds its value in a `Cell` and exposes `set_concurrent_jobs` at src/settings.rs:31-33, and `reload::apply` calls that setter mid-flight, from the same loop that starts jobs, at src/reload.rs:18-21 -- neither of which the diff touches.\n\nWhy the tests miss it: every limiter test constructs `Settings`, builds a `Limiter` from it and then never touches the settings again, so the snapshot and the live value are equal for the whole test. The tests that do change a setting -- `an_update_raises_the_limit` and `an_update_lowers_the_limit` in src/reload.rs, and `a_reference_taken_earlier_sees_the_new_value` in src/settings.rs -- assert on `Settings` alone and never build a `Limiter`. No test in the crate interleaves the two, which is the only arrangement in which a snapshot and a live read differ.\n\nalso_accept covers Correctness (admission decided against a stale number), ApiContract (`Settings` is documented as a live view whose holders observe updates) and Concurrency (a control-plane update that no longer reaches the data path).\n\nVerified by execution:\n    limit at construction         = 2\n    limit after operator update   = 5\n    jobs admitted out of 5        = 2\n    limit at construction         = 4\n    limit after operator update   = 1\n    jobs admitted out of 4        = 4\n    jobs in flight over the limit = 3\n  The first block shows a raised limit that never takes effect; the second shows\n  the load-shedding direction, where four jobs are admitted after the operator\n  lowered the limit to one."
+}

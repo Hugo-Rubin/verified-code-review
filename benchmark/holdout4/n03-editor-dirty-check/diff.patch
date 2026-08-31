@@ -1,0 +1,41 @@
+--- a/src/editor.rs
++++ b/src/editor.rs
+@@ -32,8 +32,11 @@
+ 
+     /// Run one operation against the document.
+     pub fn run(&mut self, op: Op) {
++        let before = self.doc.clone();
+         self.doc.apply(&op);
+-        self.dirty = true;
++        if self.doc.checksum() != before.checksum() {
++            self.dirty = true;
++        }
+     }
+ 
+     /// Write the document out if it has changed since the last save.
+@@ -66,9 +69,25 @@
+     }
+ 
+     #[test]
++    fn an_operation_outside_the_document_leaves_it_clean() {
++        let mut e = editor();
++        e.run(Op::Remove { at: 42 });
++        assert!(!e.is_dirty());
++        assert_eq!(e.doc().len(), 2);
++    }
++
++    #[test]
+     fn a_fresh_editor_has_nothing_to_save() {
+         let mut e = editor();
+         assert!(!e.save_if_needed());
+         assert_eq!(e.saves(), 0);
+     }
++
++    #[test]
++    fn a_clean_editor_does_not_write() {
++        let mut e = editor();
++        e.run(Op::Remove { at: 7 });
++        assert!(!e.save_if_needed());
++        assert_eq!(e.saves(), 0);
++    }
+ }

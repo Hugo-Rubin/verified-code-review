@@ -1,0 +1,6 @@
+{
+  "case_id": "n06-catalog-binary-search",
+  "title": "Look catalogue entries up by binary search",
+  "description": "`find` locates an entry with `binary_search_by` on the catalogue's slice instead of scanning it. Dispatch calls this once per message and the catalogue holds a few thousand entries in production, so the scan showed up in profiles; the comparator matches an entry's name against the requested one.",
+  "category": "Trap"
+}

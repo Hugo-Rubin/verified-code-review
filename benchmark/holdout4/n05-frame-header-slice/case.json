@@ -1,0 +1,6 @@
+{
+  "case_id": "n05-frame-header-slice",
+  "title": "Return header fields directly instead of as options",
+  "description": "`kind` and `declared_len` now return `u16` rather than `Option<u16>`, and each takes the header as one slice. `is_complete` becomes a single comparison instead of a match, and callers no longer thread an option through code that only ever wanted the number.",
+  "category": "Trap"
+}
