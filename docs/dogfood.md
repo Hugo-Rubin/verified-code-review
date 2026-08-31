@@ -12,8 +12,8 @@ cargo run --quiet --bin vcr -- review --repo . --diff my-change.patch --out resu
 
 No ground truth, no score. The output is a report for a person.
 
-Two runs are recorded here. Neither was chosen because it flattered the
-system — the second one is a failure, and it is the more useful of the two.
+Three runs are recorded here. None was chosen because it flattered the system:
+the second is a failure, and it is the most useful of the three.
 
 ---
 
@@ -104,8 +104,8 @@ implementation. Falsification needs a claim that repository evidence can settle.
 "This constant is being used for a purpose its definition does not support" is a
 claim about *design intent*, and the repository does not contain intent — it
 contains text. The thing that found this bug was not a reviewer; it was
-`vcr replay-dedup`, running the rule against six months of recorded behaviour
-and asking what it actually did.
+`vcr replay-dedup`, running the rule against every run this project has ever
+recorded and asking what it actually did.
 
 ### What we did not do
 
@@ -125,7 +125,7 @@ benchmark case as input so the command reproduces byte-for-byte from committed
 files:
 
 ```bash
-cargo run --quiet --bin vcr -- review   --repo benchmark/cases/c12-slot-guard-capacity/repository   --diff benchmark/cases/c12-slot-guard-capacity/diff.patch   --title "Add read endpoints over the record store"   --description "..." --out results-review-demo
+cargo run --quiet --bin vcr -- review   --repo benchmark/cases/c12-slot-guard-capacity/repository   --diff benchmark/cases/c12-slot-guard-capacity/diff.patch   --title "Add read endpoints over the record store"   --description "..."   --out results-review-demo
 ```
 
 One finding, 6 model calls, 2 tool calls, $0.0159 — a bounds check that reads as
@@ -149,6 +149,7 @@ Full output in [`../results-review-demo/review.md`](../results-review-demo/revie
 | Runs where the output was genuinely useful | 1 of 3, on a benchmark case |
 
 The honest summary is that `vcr review` demonstrably runs the full pipeline on
-arbitrary repositories and produces evidence-backed output, and that on two real
-changes from this project's own history it surfaced nothing a human needed. Two
-runs is not a measurement of usefulness, and this page is not claiming one.
+arbitrary repositories and produces evidence-backed output, and that on the two
+real changes from this project's own history it surfaced nothing a human needed.
+Three runs is not a measurement of usefulness, and this page is not claiming
+one.
