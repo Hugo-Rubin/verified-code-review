@@ -6,10 +6,11 @@ By the end you will have run the baseline, run the agent solution, scored both
 against the frozen benchmark with a deterministic evaluator, and printed the
 comparison table from the README.
 
-**Approximate cost:** one full sweep of both arms is ~132k input and ~38k
-output tokens. At $0.75/Mtok in and $3.75/Mtok out — the rates these results
-were measured at — that is **$0.21**: $0.038 for the baseline and $0.176 for
-the advanced arm. The optional 3-trial sweep is roughly $1.10.
+**Approximate cost:** one full sweep of both arms costs about **$0.23** at
+$0.75/Mtok in and $3.75/Mtok out, the rates these results were measured at:
+$0.038 for the baseline and $0.189 for the advanced arm. Reproducing the
+published 15-trial headline costs roughly **$3.40** and takes a few hours; a
+single sweep is enough to see the direction.
 
 **Approximate runtime:** ~11 minutes wall clock for both arms (3.5 min +
 7.5 min), plus a first-time Rust build of ~1 minute. The 3-trial sweep takes
@@ -434,14 +435,19 @@ differ — see the note on nondeterminism in the changelog:
 | Runtime/case (ms)            |       6208 |      38841 |     +32633 |
 ```
 
-**Do not read that F1 as the result.** It is one sample, and it happened to be
-the best of the three we ran. The reported figures are means over 3 trials:
+**Do not read a single run's F1 as the result.** One sweep is one sample. The
+published headline is the mean over **15 trials per arm**, recorded in
+[`../results-final/`](../results-final/):
 
-| Arm | F1 mean | range | σ | cost/case |
-|---|---:|---|---:|---:|
-| Baseline | 0.857 | 0.857–0.857 | 0.000 | $0.0032 |
-| Advanced | **0.917** | 0.875–0.941 | 0.036 | $0.0147 |
-| Advanced, no falsification | 0.725 | 0.700–0.737 | 0.021 | $0.0108 |
+| Arm | Trials | F1 mean | range | σ | cost/case |
+|---|---:|---:|---|---:|---:|
+| Baseline | 15 | 0.857 | 0.857–0.857 | 0.000 | $0.0032 |
+| Advanced | 15 | **0.992** | 0.941–1.000 | 0.021 | $0.0157 |
+| Advanced, no falsification | 3 | 0.828 | 0.800–0.842 | 0.024 | $0.0112 |
+| Advanced, candidates only | 3 | 0.742 | 0.700–0.800 | 0.052 | $0.0038 |
+
+Your own single run will land somewhere in the advanced range above; 13 of our
+15 trials scored a flat 1.000 and the other two scored 0.941.
 
 Per category, full system, per trial:
 

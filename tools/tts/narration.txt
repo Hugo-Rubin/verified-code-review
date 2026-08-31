@@ -30,7 +30,7 @@ And Rust assigns the final status, not the model. "Supports" with no repository 
 
 ## 2:20 – 3:00 · The comparison
 
-Twelve frozen cases, fifteen trials per arm. F one goes from zero point eight five seven to zero point nine nine two; recall from zero point seven five to a flat one point zero, every real defect, every trial, at one and a half cents a file.
+Twelve frozen cases, fifteen trials per arm. F one goes from zero point eight five seven to zero point nine nine two; recall from zero point seven five to a flat one point zero, every real defect, every trial, at about one and a half cents per case.
 
 Now switch the stages off one at a time, and it gets uncomfortable. The advanced prompt alone scores zero point seven four two, worse than doing nothing clever. Add repository investigation: zero point eight two eight, still below the baseline. Only with falsification does it reach zero point nine nine two.
 

@@ -90,8 +90,8 @@ A live advanced run is ~40 s per case, so run the sweep beforehand and show
 
 > Twelve frozen cases, fifteen trials per arm. F one goes from zero point eight
 > five seven to zero point nine nine two; recall from zero point seven five to a
-> flat one point zero — every real defect, every trial — at one and a half cents
-> a file.
+> flat one point zero — every real defect, every trial — at about one and a half cents
+> per case.
 >
 > Now switch the stages off one at a time, and it gets uncomfortable. The
 > advanced prompt alone scores zero point seven four two, worse than doing

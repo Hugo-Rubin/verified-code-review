@@ -1934,3 +1934,45 @@ not trivial constructions.
   finding about when to reach for this system.
 - **Folding them into the headline to raise the case count.** Rejected: they
   measure a different thing, and averaging them in would hide both results.
+
+---
+
+## 2026-08-31 11:10 UTC — Outside review: three stale-number fixes
+
+### Context
+
+An independent agent reviewed the published repository. Its three "must fix"
+items were checked against the files rather than accepted, and all three were
+real.
+
+### Evidence and fixes
+
+1. **README cost section was two sprints stale.** It carried $0.0147/case,
+   4.6x the baseline, and "+0.167 recall, +0.060 F1" -- the 3-trial figures,
+   still sitting under a headline that had moved to 15 trials. Corrected to
+   $0.0157, 4.9x, +0.250 recall and +0.135 F1, with a note saying what it used
+   to say and who caught it.
+2. **reproduction.md said "the reported figures are means over 3 trials"** and
+   tabled advanced F1 0.917. Replaced with the 15-trial table, plus the
+   ablation rows marked at their own 3 trials, and a line telling a reproducer
+   where their single run should land (13 of our 15 scored 1.000). The sweep
+   cost estimate was also stale and is now $0.23 for one sweep, ~$3.40 to
+   reproduce the full headline.
+3. **The video narration said "one and a half cents a file"** where the metric
+   is per *case*. Changed. Small, and exactly the kind of thing a technical
+   judge would catch on screen.
+
+The recommended consistency sweep for old headline values (0.941, 0.917,
+0.0147, $0.176, 4.6x, "three trials") was run. Every remaining occurrence is
+legitimate: 0.941 is the worst of the 15 trials, 0.917 is the starved-budget
+recall figure, holdout's own advanced cost really is $0.0147, and the changelog
+entries are historical by design.
+
+### Consequence
+
+This is the third time a stale figure has survived a headline change in this
+project (after the n=5 "spread comes from a single case" claim and the
+deduplication replay count). The pattern is consistent: prose written to
+explain a number does not get re-read when the number is regenerated. The
+durable fix already in place is that every current-facing figure has a command
+that reproduces it; the fragile part remains the sentences around it.

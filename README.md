@@ -1062,13 +1062,18 @@ Measured, at $0.75/Mtok input and $3.75/Mtok output:
 | | Cost/case | Whole 12-case sweep |
 |---|---:|---:|
 | Baseline | $0.0032 | $0.038 |
-| Advanced | $0.0147 | $0.176 |
-| Advanced, no falsification | $0.0108 | $0.130 |
+| Advanced | $0.0157 | $0.189 |
+| Advanced, no falsification | $0.0112 | $0.134 |
 
-The advanced arm costs **4.6× the baseline**, which buys +0.167 recall and
-+0.060 F1. At roughly 1.5 cents a file that is a trade most teams would take,
-but it is a real cost and it scales with the number of files in a pull request,
-not with the number of defects.
+The advanced arm costs **4.9× the baseline**, which buys **+0.250 recall and
++0.135 F1**. At roughly 1.6 cents per case that is a trade most teams would
+take, but it is a real cost, and it scales with the size of the change under
+review rather than with the number of defects in it.
+
+These are the 15-trial means. Earlier drafts of this section carried the
+3-trial figures ($0.0147, 4.6×, +0.167 recall) after the headline had moved on
+— caught by an outside reviewer, and the reason for the consistency sweep
+recorded in `DECISIONS.md`.
 
 Token usage is recorded for every request. Dollar cost is reported **only**
 when rates are supplied in `.env`:
