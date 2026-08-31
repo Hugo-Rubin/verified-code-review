@@ -523,7 +523,9 @@ commands, required configuration, expected output, runtime, and cost.
 ## Limitations
 
 - **Twelve cases is small.** One finding moves F1 by roughly 0.03–0.06. Treat
-  the direction as the result, not the third decimal place.
+  the direction as the result, not the third decimal place. A further six
+  held-out cases and six Python pilot cases exist, but each is a single run and
+  neither is folded into the headline.
 - **Five trials, not thirty.** Enough to show the baseline is perfectly stable
   (identical on all 12 cases in all 5 trials, σ = 0.000 on every metric) and
   that the advanced arm's remaining spread comes from a single case (`c03`),
@@ -531,9 +533,16 @@ commands, required configuration, expected output, runtime, and cost.
   so a drift in provider behaviour between arms would be invisible.
 - **Synthetic benchmark.** The cases are realistic in shape and every
   ground-truth claim was verified by execution, but they are small crates
-  written for this project, not harvested from real pull requests. They were
-  also written by the same person who built the reviewer, which is a bias no
-  amount of care removes.
+  written for this project, not harvested from real pull requests.
+- **Author bias, partly addressed.** The frozen benchmark was written by the
+  same person who built the reviewer. A six-case **held-out** benchmark
+  ([`docs/holdout.md`](docs/holdout.md)) was authored by a separate agent
+  denied access to the prompts, the pipeline, the docs and every result. The
+  advantage replicates there (baseline F1 0.750, advanced **0.889**) — and it
+  also produced a false positive on a trap, which the frozen benchmark's four
+  traps never do. Trap performance is weaker than the headline suggests. The
+  authoring agent is still an LLM, so this reduces the bias rather than
+  removing it; harvested pull requests would be the real fix.
 - **Human review time is still a proxy in the headline table.** A blind
   stopwatch harness (`vcr triage`) is implemented and documented, but the
   reported figure remains findings-to-triage per case until a session is run.

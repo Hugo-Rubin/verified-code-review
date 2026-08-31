@@ -131,7 +131,104 @@ h05  2000 failing runs (1000 empty input, 1000 unparseable field)
 
 ## Results
 
-Not yet run. No figure from this benchmark appears anywhere in this repository
-until it has been, and when it is, it will be reported whether or not it
-flatters the system — a held-out set whose result is only published when it
-agrees with the headline is not a held-out set.
+One run per arm, `gemini-3.7-flash`, temperature 0, the same configuration that
+produced the headline figures (second look disabled — see below).
+
+| Metric | Baseline | Advanced |
+|---|---:|---:|
+| Precision | 0.750 | 0.800 |
+| Recall | 0.750 | **1.000** |
+| **F1** | **0.750** | **0.889** |
+| False positives/case | 0.17 | 0.17 |
+| Evidence accuracy | n/a (0 citations) | **1.000** (23/23) |
+| Cost/case | $0.0039 | $0.0127 |
+| LLM calls/case | 1.0 | 5.0 |
+
+| Case | Baseline | Advanced |
+|---|---|---|
+| `h01-registry-swap-remove` | found | found |
+| `h02-status-class-guard` | found | found |
+| `h03-cache-retain-polarity` | found | found |
+| `h04-include-flatten-recursion` (trap) | **false positive** | **false positive** |
+| `h05-lease-early-return` (trap) | clean | clean |
+| `h06-digest-threshold-inline` (challenging) | **missed** | **found** |
+
+**The pattern replicates on cases the author never saw.** Advanced beats
+baseline by +0.139 F1, and it is the same mechanism the frozen benchmark shows:
+the two arms agree on every defect visible in the diff, and separate on the one
+case whose deciding evidence lives in a file the change does not touch. That is
+the claim this project makes, reproduced on a case set chosen by someone who
+could not see the system.
+
+It is one run of six cases. The direction is the result; the third decimal
+place is not.
+
+### The success, in detail
+
+`h06` is the case the whole design is for. The change inlines `severity > 7`,
+replacing a call to `is_page_worthy` in an untouched module. The reviewer's
+falsification question was:
+
+> Is `is_page_worthy` defined as anything other than `self.severity > 7`?
+
+That is the right question — it targets the precondition, not the mechanism. It
+searched the symbol, read `src/model.rs`, and the verifier answered with the
+text: `is_page_worthy` is `severity >= PAGE_THRESHOLD`, `PAGE_THRESHOLD` is 7,
+so severity exactly 7 is dropped. The baseline, seeing only the diff, had no
+way to know and reported nothing.
+
+### The failure, in detail — and it is our documented failure mode
+
+Both arms produce the same false positive on `h04`, and the advanced arm's
+trajectory is worth reading, because it fails in the exact way this project has
+already written up as its main failure mode.
+
+The claim: *"Graphs with diamond dependencies or shared include nodes emit
+duplicate entries into the flattened load order."* The mechanism is real —
+`visit` keeps no visited set. The precondition is not: `from_pairs` is the only
+constructor and it rejects a shared child with `IncludedTwice`. Confirmed by
+execution here:
+
+```text
+from_pairs(root -> a,b;  a -> c;  b -> c;  c)   ->  IncludedTwice("c")
+from_pairs(a -> c;  b -> c;  c)                 ->  IncludedTwice("c")
+```
+
+Two things went wrong, in order:
+
+1. **The falsification question targeted the mechanism, not the precondition.**
+   It asked *"Does `resolve` deduplicate `out` before returning?"* — a question
+   about what happens downstream of the walk, when the question that settles
+   the claim is whether a diamond graph can exist at all. The verifier then
+   confirmed the mechanism correctly, because the mechanism is real.
+
+2. **The investigation listed the file that holds the answer and never opened
+   it.** Its four tool calls were: read `src/resolve.rs`, search `flatten`,
+   read `src/lib.rs`, and `list_files` — which returned `src/graph.rs`. It
+   stopped there, with **four of its eight tool calls unspent**. Every fact
+   needed to reject the claim is in that file.
+
+This is the A3/A4 lesson from the seed phase — *"X will panic if Y" cannot be
+disproved; the verifier must find the triggering state reachable* — failing to
+generalise to a trap the author did not write. On the frozen benchmark's four
+traps that discipline holds in all five trials. On the first new trap it met,
+it did not.
+
+**We are not fixing it.** A prompt change written against a case we just
+watched fail is precisely the overfitting the ablation ladder exists to catch,
+and it would destroy the only property that makes this benchmark worth having.
+It is recorded as the most useful thing the held-out set produced, and as the
+first thing a follow-up should work on.
+
+### What the held-out set changed about our confidence
+
+- The advanced arm's **recall** advantage on out-of-diff evidence: **confirmed**
+  on new cases. This is the load-bearing claim and it survived.
+- **Zero false positives on traps**: **not confirmed.** The frozen benchmark
+  reports 0 FPs on 4 traps across 5 trials; the held-out set produced one on
+  its first new trap, in both arms. The honest reading is that the frozen
+  traps are ones the system was iterated against, and trap performance is
+  weaker than the headline suggests.
+- **Evidence accuracy 1.000**: **confirmed**, 23/23 on unseen files.
+
+That second bullet is the reason to build a held-out set at all.
