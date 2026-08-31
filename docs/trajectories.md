@@ -14,6 +14,7 @@ them. Representative trajectories covering every role are below.
 | | Falsifier | `advanced-falsify/v2` |
 | | Investigator | `advanced-investigate/v2` |
 | | Fresh verifier | `fresh-verify/v5` |
+| | Second look *(ships disabled)* | `advanced-second-look/v1` |
 
 Each role is a separate stateless request with its own instructions. In a
 trajectory they are distinguishable by the `stage` and `prompt_version` fields
@@ -26,7 +27,7 @@ python -c "import json,sys; t=json.load(open(sys.argv[1])); [print(e['stage'], e
 
 - **Raw records:** [`../results-final/t1/trajectories/`](../results-final/t1/trajectories/)
   — every case for all four arms of the reported run.
-- **Rendered for reading:** [`trajectories/`](trajectories/) — the five
+- **Rendered for reading:** [`trajectories/`](trajectories/) — the seven
   discussed here, as Markdown.
 
 To render any other run:
@@ -205,6 +206,59 @@ For a worked example of failure handling changing an outcome, see
 finding was classified `Uncertain` for want of a verdict. That run has 5 hard
 failures and 21 retries across the advanced arm, and diagnosing it produced the
 request-pacing fix.
+
+## Two trajectories from the held-out benchmark
+
+The five rendered above are from the frozen benchmark, which the system was
+developed against. These two are from the [held-out set](holdout.md), written
+by an agent that could not see the prompts or the pipeline, and they are the
+most useful pair in the repository because they are the same machinery
+succeeding and failing on cases nobody tuned it for.
+
+### [`h06-digest-threshold-inline-advanced.md`](trajectories/h06-digest-threshold-inline-advanced.md) — the design working
+
+The change inlines `alert.severity > 7`, replacing a call to `is_page_worthy`
+in a module the diff does not touch. The falsification question it wrote for
+itself was:
+
+> Is `is_page_worthy` defined as anything other than `self.severity > 7`?
+
+That question targets the **precondition** — the thing that decides the claim —
+rather than the mechanism. Two tool calls: search the symbol, read
+`src/model.rs`. The verifier answered with the text it found:
+`is_page_worthy` is `severity >= PAGE_THRESHOLD`, and `PAGE_THRESHOLD` is 7, so
+severity exactly 7 is silently dropped. The baseline, seeing only the diff,
+reported nothing on this case in all three trials.
+
+### [`h04-include-flatten-recursion-advanced.md`](trajectories/h04-include-flatten-recursion-advanced.md) — the same machinery failing
+
+A trap. `flatten` recurses with no visited set, which looks unbounded; it is
+safe because the only constructor rejects cycles and shared children and caps
+the graph at 64 units. The trajectory is worth reading line by line, because
+the failure is legible:
+
+1. The falsification question was *"Does `resolve` deduplicate `out` before
+   returning?"* — a question about the **mechanism**, downstream of the walk,
+   when the question that settles the claim is whether a diamond graph can
+   exist at all.
+2. The investigation ran `read src/resolve.rs`, `search flatten`,
+   `read src/lib.rs`, then `list_files` — which returned `src/graph.rs`. It
+   stopped there, **with four of its eight tool calls unspent.** Every fact
+   needed to reject the claim is in the file it had just listed and did not
+   open.
+3. The verifier then confirmed the mechanism, correctly, because the mechanism
+   is real. The claim was reported.
+
+This is the project's own documented main failure mode — a claim phrased as a
+conditional about a state that cannot occur — recurring on a trap the author
+did not write. It is not patched, and
+[`holdout.md`](holdout.md) explains why.
+
+Put side by side, the two trajectories isolate the variable exactly: identical
+prompts, identical budgets, identical machinery. The one that asked about the
+precondition succeeded; the one that asked about the mechanism failed.
+
+---
 
 ## Human checkpoints
 
