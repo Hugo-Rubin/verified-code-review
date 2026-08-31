@@ -25,6 +25,7 @@ half that can be tested, and 202 tests do test it.
 | `eval.rs` | Deterministic matching and metrics | No model anywhere near scoring |
 | `trajectory.rs` | Full execution record | Auditability |
 | `runner.rs` | Orchestration and aggregation | Keeps `main.rs` thin |
+| `review.rs` | The reviewer used as a tool on a real repo and diff | A benchmark case and a real review are the *same* `Case` value; if this path behaved better, the benchmark would be measuring the wrong thing |
 | `triage.rs` | Blind stopwatch session over pooled findings | Measurement, kept out of the pipeline it measures |
 | `replay.rs` | Re-runs rules over recorded artifacts, calling no model | "Fired 0 times" is a claim about a run; this is how it gets checked against every run |
 

@@ -1621,3 +1621,75 @@ not commit to which side.
 237 tests. Every documented analysis is now reproducible from a committed
 command or test: `vcr replay-dedup`, `vcr audit-matches`, `vcr check`, and
 `scripts/extract_narration.py --check`.
+
+---
+
+## 2026-08-31 04:00 UTC — Sprint 4f: from harness to tool, and dogfooding it
+
+### Context
+
+Every figure in this project came from benchmarks we wrote. That measures a
+change in behaviour; it does not show the thing is usable. There was no way to
+point the reviewer at a real repository and a real diff.
+
+### Decisions
+
+1. **`vcr review --repo <dir> --diff <file>`.** A benchmark case is a directory
+   holding `case.json`, `diff.patch` and `repository/`; a real review is the
+   same `Case` value assembled in memory. Same prompts, same sandbox, same
+   evidence gate, same roles. Deliberately not a special path: if reviewing a
+   real diff behaved better than the benchmark harness, the benchmark would be
+   measuring the wrong thing.
+
+2. **The report shows what was cleared, not only what was found.** A reviewer
+   who disagrees with a rejection needs the claim and the repository evidence
+   that closed it, or the system is asking to be trusted rather than checked. A
+   test asserts the model's internal reasoning never reaches the reader: claims
+   and evidence are checkable, narration is not.
+
+3. **Dogfooded on this repository, and both runs reported whether or not they
+   flattered us.** Reviewing its own newest code proposed nothing. Reviewing
+   commit `70315f1`, which introduced the deduplication defect later found by
+   replay, it **did not find the bug** — it proposed one candidate, gathered
+   evidence from two files outside the diff, and correctly cleared it.
+
+### The finding that came out of it
+
+The dogfood run caught a real bug in **our own output**. With zero candidates
+proposed, the renderer printed "every candidate below was investigated against
+the repository and ruled out" — a stronger claim about the system's diligence
+than the run supported, which is precisely the failure mode this project exists
+to prevent, in our own report. The two silences are now distinguished and two
+tests pin them.
+
+And the miss sharpened the stated failure mode. The deduplication defect is not
+wrong in the code — the comparison is sound, the constant is real, the tests
+pass. It is wrong in what the constant *means*. So:
+
+> The system finds defects that are wrong in the code. It does not find defects
+> that are wrong in the intent behind a name.
+
+That is a limit of falsification itself, not of this implementation:
+falsification needs a claim repository evidence can settle, and "this constant
+is used for a purpose its definition does not support" is a claim about design
+intent. The repository contains text, not intent. What actually caught that bug
+was `vcr replay-dedup` asking what the rule had done across every recorded run.
+
+### Rejected alternatives
+
+- **Tuning a prompt so the dogfood case would pass.** Rejected. A rule written
+  to catch "a constant borrowed from another subsystem", authored after
+  watching this exact miss, is overfitting to one observation and would fire on
+  every shared constant in every codebase. The miss stands, like `h04`.
+- **Choosing a dogfood diff more likely to succeed.** Rejected before running:
+  the commit was picked because it contains the worst defect this project has
+  made, which is the strongest available test and the one whose failure is most
+  worth publishing.
+- **Omitting the run that found nothing.** Rejected. It is the run that caught
+  the false claim in our own renderer.
+
+### Consequence
+
+246 tests. `vcr review` ships. Two dogfood runs are recorded in full under
+`results-selfreview/` and `results-dogfood/`, with the write-up in
+`docs/dogfood.md`, including the defect it failed to find.

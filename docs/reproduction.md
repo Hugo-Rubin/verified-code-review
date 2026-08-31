@@ -355,6 +355,23 @@ Or switch it off explicitly on a run where it would otherwise be on:
 cargo run --quiet --bin vcr -- run --agent advanced --ablation no-second-look --out results
 ```
 
+### Reviewing a real change
+
+The benchmark commands above measure the reviewer. This one uses it:
+
+```bash
+cargo run --quiet --bin vcr -- review --repo . --diff my-change.patch --out results-review
+```
+
+The diff may also come from stdin (`--diff -`, or omit it). `--language python`
+switches the reviewer's self-description and source fences; `--agent baseline`
+runs the one-call arm instead. `--repo` is the sandbox boundary: nothing outside
+it can be read.
+
+There is no ground truth and no score — the output is a report, written to
+`review.md` alongside the trajectory. See [`dogfood.md`](dogfood.md) for two
+runs against this repository, including one where it missed a real defect.
+
 ### Checks that call no model
 
 These read artifacts already in the repository, finish instantly, and cost
