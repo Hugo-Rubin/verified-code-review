@@ -43,3 +43,4 @@ tools/tts/*.onnx
 tools/tts/*.bin
 tools/tts/audio/
 tools/tts/video/
+tools/tts/voice-samples/
