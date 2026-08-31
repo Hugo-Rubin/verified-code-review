@@ -131,37 +131,54 @@ h05  2000 failing runs (1000 empty input, 1000 unparseable field)
 
 ## Results
 
-One run per arm, `gemini-3.7-flash`, temperature 0, the same configuration that
-produced the headline figures (second look disabled — see below).
+**3 trials per arm**, `gemini-3.7-flash`, temperature 0, the same configuration
+that produced the headline figures (second look disabled). Mean ± sample
+standard deviation.
 
 | Metric | Baseline | Advanced |
 |---|---:|---:|
-| Precision | 0.750 | 0.800 |
-| Recall | 0.750 | **1.000** |
-| **F1** | **0.750** | **0.889** |
-| False positives/case | 0.17 | 0.17 |
-| Evidence accuracy | n/a (0 citations) | **1.000** (23/23) |
-| Cost/case | $0.0039 | $0.0127 |
-| LLM calls/case | 1.0 | 5.0 |
+| Precision | 0.750 ± 0.000 | 0.867 ± 0.116 |
+| Recall | 0.750 ± 0.000 | **1.000 ± 0.000** |
+| **F1** | **0.750 ± 0.000** | **0.926 ± 0.064** |
+| False positives/case | 0.17 | 0.11 |
+| Evidence accuracy | n/a (0 citations) | **1.000 ± 0.000** |
+| Cost/case | $0.0039 | $0.0150 |
+| LLM calls/case | 1.0 | 5.2 |
+
+Per case, across the three trials:
 
 | Case | Baseline | Advanced |
 |---|---|---|
-| `h01-registry-swap-remove` | found | found |
-| `h02-status-class-guard` | found | found |
-| `h03-cache-retain-polarity` | found | found |
-| `h04-include-flatten-recursion` (trap) | **false positive** | **false positive** |
-| `h05-lease-early-return` (trap) | clean | clean |
-| `h06-digest-threshold-inline` (challenging) | **missed** | **found** |
+| `h01-registry-swap-remove` | found ×3 | found ×3 |
+| `h02-status-class-guard` | found ×3 | found ×3 |
+| `h03-cache-retain-polarity` | found ×3 | found ×3 |
+| `h04-include-flatten-recursion` (trap) | **FP ×3** | **FP ×1** |
+| `h05-lease-early-return` (trap) | clean ×3 | **FP ×1** |
+| `h06-digest-threshold-inline` (challenging) | **missed ×3** | **found ×3** |
 
 **The pattern replicates on cases the author never saw.** Advanced beats
-baseline by +0.139 F1, and it is the same mechanism the frozen benchmark shows:
-the two arms agree on every defect visible in the diff, and separate on the one
-case whose deciding evidence lives in a file the change does not touch. That is
-the claim this project makes, reproduced on a case set chosen by someone who
-could not see the system.
+baseline by +0.176 F1 on average and in every individual trial, by the same
+mechanism the frozen benchmark shows: the arms agree on every defect visible in
+the diff, and separate on `h06`, the one case whose deciding evidence lives in
+a file the change does not touch.
 
-It is one run of six cases. The direction is the result; the third decimal
-place is not.
+Two things carry over from the frozen benchmark exactly:
+
+- **Recall is 1.000 with zero variance.** Every real defect, every trial, on
+  cases the system was never tuned against.
+- **The baseline is perfectly stable** — identical on all six cases in all
+  three trials, σ = 0.000 on every metric, just as it is on the frozen twelve.
+  So the gap is not sampling noise.
+
+**All of the advanced arm's variance is on traps.** `h04` produced a false
+positive in one trial of three, `h05` in a different one. That is the shape of
+the weakness: not that a particular trap always fools it, but that a new trap
+fools it *sometimes*.
+
+Arm order was alternated between trials — baseline-first in t1 and t3,
+advanced-first in t2 — so a drift in provider behaviour between arms would not
+land consistently on one of them. It is a partial answer to "the arms were not
+run interleaved", not a full one.
 
 ### The success, in detail
 
@@ -179,9 +196,10 @@ way to know and reported nothing.
 
 ### The failure, in detail — and it is our documented failure mode
 
-Both arms produce the same false positive on `h04`, and the advanced arm's
-trajectory is worth reading, because it fails in the exact way this project has
-already written up as its main failure mode.
+The baseline produces a false positive on `h04` in all three trials; the
+advanced arm does so in one of three. That single trajectory is worth reading,
+because it fails in the exact way this project has already written up as its
+main failure mode.
 
 The claim: *"Graphs with diamond dependencies or shared include nodes emit
 duplicate entries into the flattened load order."* The mechanism is real —
@@ -225,10 +243,37 @@ first thing a follow-up should work on.
 - The advanced arm's **recall** advantage on out-of-diff evidence: **confirmed**
   on new cases. This is the load-bearing claim and it survived.
 - **Zero false positives on traps**: **not confirmed.** The frozen benchmark
-  reports 0 FPs on 4 traps across 5 trials; the held-out set produced one on
-  its first new trap, in both arms. The honest reading is that the frozen
-  traps are ones the system was iterated against, and trap performance is
-  weaker than the headline suggests.
-- **Evidence accuracy 1.000**: **confirmed**, 23/23 on unseen files.
+  reports 0 FPs on 4 traps across 5 trials. The held-out set produced a false
+  positive on each of its two traps, in one trial out of three apiece. The
+  honest reading is that the frozen traps are ones the system was iterated
+  against, and trap performance on unseen traps is weaker and less stable than
+  the headline suggests.
+- **Evidence accuracy 1.000**: **confirmed**, every trial, on unseen files.
 
 That second bullet is the reason to build a held-out set at all.
+
+### The matched claims were audited too
+
+`vcr audit-matches --benchmark benchmark/holdout --root results-holdout` pairs
+every scored true positive with the ground truth it was credited for, so the
+location-plus-category matcher can be checked rather than trusted. All twelve
+matches were read.
+
+`h01`, `h02` and `h03` are described exactly, in every trial. **`h06` hedges**,
+in the same way `c12` does on the frozen benchmark:
+
+> Inlining `alert.severity > 7` diverges from the definition of
+> `is_page_worthy`, causing alerts with boundary severity values **or
+> additional page-worthiness conditions** to be incorrectly **included or
+> excluded** from `Digest::paging`.
+
+The divergence and the boundary are both named — a human handed this goes
+straight to `is_page_worthy` — but the direction is left open. Counted as a
+true positive, with the hedge recorded.
+
+This is worth more than a caveat, because it is now two independent cases.
+`c12` and `h06` are the only boundary/off-by-one defects in either benchmark,
+they were written by different authors, and the system hedged on **both** while
+stating all eight other defects flatly. That looks like a property of the
+system on this class of defect rather than a quirk of one case, and it is the
+kind of pattern a single benchmark could not have surfaced.

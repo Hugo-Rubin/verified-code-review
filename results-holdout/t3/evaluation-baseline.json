@@ -1,0 +1,267 @@
+{
+  "aggregate": {
+    "agent": "Baseline",
+    "model": "gemini-3.7-flash",
+    "provider": "Vertex",
+    "case_count": 6,
+    "counts": {
+      "true_positives": 3,
+      "false_positives": 1,
+      "false_negatives": 1
+    },
+    "precision": 0.75,
+    "recall": 0.75,
+    "f1": 0.75,
+    "false_positives_per_case": 0.16666666666666666,
+    "manual_triage_findings_per_case": 0.6666666666666666,
+    "withheld_findings_per_case": 0.0,
+    "mean_cost_usd_per_case": 0.00382775,
+    "mean_runtime_ms_per_case": 9565.333333333334,
+    "mean_llm_calls_per_case": 1.0,
+    "mean_tool_calls_per_case": 0.0,
+    "total_input_tokens": 10112,
+    "total_output_tokens": 4102,
+    "ablation": "None",
+    "evidence_accuracy": 1.0,
+    "evidence_audit": {
+      "total": 0,
+      "checkable": 0,
+      "accurate": 0,
+      "mismatches": []
+    }
+  },
+  "per_case": [
+    {
+      "case_id": "h01-registry-swap-remove",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "h01-registry-swap-remove-base-1",
+          "expected_id": "h01-f1",
+          "location": "src/registry.rs:53-59",
+          "issue_type": "StateManagement"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "h02-status-class-guard",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "h02-status-class-guard-base-1",
+          "expected_id": "h02-f1",
+          "location": "src/classify.rs:28-29",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "h03-cache-retain-polarity",
+      "category": "RealIssue",
+      "counts": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [
+        {
+          "prediction_id": "h03-cache-retain-polarity-base-1",
+          "expected_id": "h03-f1",
+          "location": "src/cache.rs:49-51",
+          "issue_type": "Correctness"
+        }
+      ],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "h04-include-flatten-recursion",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [
+        {
+          "prediction_id": "h04-include-flatten-recursion-base-1",
+          "location": "src/resolve.rs:12-17",
+          "issue_type": "Correctness",
+          "claim": "Recursive graph traversal does not track visited nodes, leading to duplicate entries for shared dependencies and infinite recursion on cyclic graphs."
+        }
+      ],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "h05-lease-early-return",
+      "category": "Trap",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [],
+      "withheld": 0
+    },
+    {
+      "case_id": "h06-digest-threshold-inline",
+      "category": "Challenging",
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "matched": [],
+      "unmatched_predictions": [],
+      "missed": [
+        {
+          "expected_id": "h06-f1",
+          "location": "src/digest.rs:18-22",
+          "issue_type": "Correctness",
+          "description": "The inlined predicate `alert.severity > 7` is not the predicate it replaced. `is_page_worthy` in src/model.rs is `alert.severity >= PAGE_THRESHOLD` with `PAGE_THRESHOLD = 7`, so the change raises the effective paging bar by one and silently drops every alert whose severity is exactly 7 — the severity the model documents as the point at which somebody gets paged. Alerts at the threshold no longer appear in `Digest::paging`."
+        }
+      ],
+      "withheld": 0
+    }
+  ],
+  "per_case_stats": [
+    {
+      "case_id": "h01-registry-swap-remove",
+      "trajectory_id": "a8ec82e5-0a46-49e5-9b7d-85cf8d6b1515",
+      "runtime_ms": 7683,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 2056,
+      "output_tokens": 787,
+      "cost_usd": 0.004493250000000001,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h02-status-class-guard",
+      "trajectory_id": "2077ae59-2aaf-4146-b881-72a7a056cecf",
+      "runtime_ms": 21243,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 1,
+      "input_tokens": 1527,
+      "output_tokens": 694,
+      "cost_usd": 0.0037477499999999998,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h03-cache-retain-polarity",
+      "trajectory_id": "4b22bf52-bce0-4df5-83ad-ab96a7131b51",
+      "runtime_ms": 6283,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1774,
+      "output_tokens": 815,
+      "cost_usd": 0.00438675,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h04-include-flatten-recursion",
+      "trajectory_id": "e6e19ff9-03b6-4eb2-80b6-7ceab15aab26",
+      "runtime_ms": 11322,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1601,
+      "output_tokens": 696,
+      "cost_usd": 0.00381075,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h05-lease-early-return",
+      "trajectory_id": "3da5b98d-2b18-4cf0-b01e-7a3b7376f908",
+      "runtime_ms": 6655,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1684,
+      "output_tokens": 800,
+      "cost_usd": 0.004263,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h06-digest-threshold-inline",
+      "trajectory_id": "e8f15fc5-065a-4301-b85b-8aa16814ee76",
+      "runtime_ms": 4206,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 1470,
+      "output_tokens": 310,
+      "cost_usd": 0.0022649999999999997,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    }
+  ],
+  "by_category": [
+    {
+      "category": "RealIssue",
+      "case_count": 3,
+      "counts": {
+        "true_positives": 3,
+        "false_positives": 0,
+        "false_negatives": 0
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "category": "Trap",
+      "case_count": 2,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 1,
+        "false_negatives": 0
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "category": "Challenging",
+      "case_count": 1,
+      "counts": {
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 1
+      },
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  ],
+  "line_tolerance": 3
+}

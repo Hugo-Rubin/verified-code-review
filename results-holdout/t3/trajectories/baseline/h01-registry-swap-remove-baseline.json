@@ -1,0 +1,96 @@
+{
+  "trajectory_id": "a8ec82e5-0a46-49e5-9b7d-85cf8d6b1515",
+  "case_id": "h01-registry-swap-remove",
+  "agent": "Baseline",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T00:38:19.617197100+00:00",
+  "finished_at": "2026-08-31T00:38:27.301198200+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "baseline-review/v2",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nReport defects that are actually present in this change. For each one, give the\nfile and the line range in the file's current state, classify it, and state the\nproblem in one sentence.\n\nBe precise and be selective:\n- Report an issue only when you are confident the code is genuinely wrong.\n- A pattern that merely looks risky is not a defect.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Do not invent a defect to have something to say.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nIf the change contains no real defect, return {\"findings\": []}. An empty\nresult is a correct answer when the code is sound.",
+      "user": "## Change under review\n\n`Registry::remove` used `Vec::remove`, which shifts every element after the removed one and then required a pass over the index map to renumber the shifted positions. The author's stated intent was to make deregistration constant-time by using `Vec::swap_remove` and dropping the renumbering pass, since the registry does not promise a stable ordering to callers.\n\n## Diff\n\n```diff\n--- a/src/registry.rs\n+++ b/src/registry.rs\n@@ -54,12 +54,7 @@\n         let Some(pos) = self.index.remove(name) else {\n             return false;\n         };\n-        self.entries.remove(pos);\n-        for slot in self.index.values_mut() {\n-            if *slot > pos {\n-                *slot -= 1;\n-            }\n-        }\n+        self.entries.swap_remove(pos);\n         true\n     }\n \n\n```\n\n## Current contents of the changed files\n\n\n### src/registry.rs\n\n```rust\n    1 | //! Name-addressed registry of service endpoints.\n    2 | \n    3 | use std::collections::HashMap;\n    4 | \n    5 | /// One registered service endpoint.\n    6 | #[derive(Debug, Clone, PartialEq, Eq)]\n    7 | pub struct Entry {\n    8 |     pub name: String,\n    9 |     pub addr: String,\n   10 | }\n   11 | \n   12 | /// Entries in registration order, plus a name -> position index so that\n   13 | /// `addr_of` does not have to scan the vector.\n   14 | #[derive(Debug, Default)]\n   15 | pub struct Registry {\n   16 |     entries: Vec<Entry>,\n   17 |     index: HashMap<String, usize>,\n   18 | }\n   19 | \n   20 | impl Registry {\n   21 |     pub fn new() -> Self {\n   22 |         Self::default()\n   23 |     }\n   24 | \n   25 |     pub fn len(&self) -> usize {\n   26 |         self.entries.len()\n   27 |     }\n   28 | \n   29 |     pub fn is_empty(&self) -> bool {\n   30 |         self.entries.is_empty()\n   31 |     }\n   32 | \n   33 |     /// Register `name` at `addr`. Re-registering a known name updates it.\n   34 |     pub fn insert(&mut self, name: &str, addr: &str) {\n   35 |         if let Some(&pos) = self.index.get(name) {\n   36 |             self.entries[pos].addr = addr.to_string();\n   37 |             return;\n   38 |         }\n   39 |         self.index.insert(name.to_string(), self.entries.len());\n   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | \n   71 |     #[test]\n   72 |     fn registers_and_resolves() {\n   73 |         let mut r = Registry::new();\n   74 |         r.insert(\"auth\", \"10.0.0.1\");\n   75 |         r.insert(\"billing\", \"10.0.0.2\");\n   76 |         assert_eq!(r.len(), 2);\n   77 |         assert_eq!(r.addr_of(\"auth\"), Some(\"10.0.0.1\"));\n   78 |         assert_eq!(r.addr_of(\"billing\"), Some(\"10.0.0.2\"));\n   79 |     }\n   80 | \n   81 |     #[test]\n   82 |     fn re_registering_updates_the_address() {\n   83 |         let mut r = Registry::new();\n   84 |         r.insert(\"auth\", \"10.0.0.1\");\n   85 |         r.insert(\"auth\", \"10.0.0.9\");\n   86 |         assert_eq!(r.len(), 1);\n   87 |         assert_eq!(r.addr_of(\"auth\"), Some(\"10.0.0.9\"));\n   88 |     }\n   89 | \n   90 |     #[test]\n   91 |     fn deregistering_the_last_entry_shrinks_the_registry() {\n   92 |         let mut r = Registry::new();\n   93 |         r.insert(\"auth\", \"10.0.0.1\");\n   94 |         r.insert(\"billing\", \"10.0.0.2\");\n   95 |         assert!(r.remove(\"billing\"));\n   96 |         assert_eq!(r.len(), 1);\n   97 |         assert_eq!(r.addr_of(\"billing\"), None);\n   98 |         assert_eq!(r.addr_of(\"auth\"), Some(\"10.0.0.1\"));\n   99 |     }\n  100 | \n  101 |     #[test]\n  102 |     fn deregistering_an_unknown_name_reports_false() {\n  103 |         let mut r = Registry::new();\n  104 |         r.insert(\"auth\", \"10.0.0.1\");\n  105 |         assert!(!r.remove(\"nope\"));\n  106 |         assert_eq!(r.len(), 1);\n  107 |     }\n  108 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Correctness\",\n      \"severity\": \"High\",\n      \"file\": \"src/registry.rs\",\n      \"start_line\": 53,\n      \"end_line\": 59,\n      \"claim\": \"Removing an entry using `swap_remove` fails to update the index entry for the element moved into the vacated slot.\",\n      \"reasoning\": \"When `self.entries.swap_remove(pos)` moves the last entry into `pos`, that entry's index in `self.index` is not updated to `pos`. Subsequent lookups or mutations for that moved entry will reference an out-of-bounds or invalid index.\",\n      \"remediation\": \"Update the moved entry's index in `self.index` to `pos` when `pos < self.entries.len()` after the swap removal.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 2056,
+        "output_tokens": 787,
+        "total_tokens": 2843
+      },
+      "latency_ms": 7683,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "h01-registry-swap-remove-base-1",
+        "issue_type": "Correctness",
+        "severity": "High",
+        "location": {
+          "file": "src/registry.rs",
+          "start_line": 53,
+          "end_line": 59
+        },
+        "claim": "Removing an entry using `swap_remove` fails to update the index entry for the element moved into the vacated slot.",
+        "reasoning": "When `self.entries.swap_remove(pos)` moves the last entry into `pos`, that entry's index in `self.index` is not updated to `pos`. Subsequent lookups or mutations for that moved entry will reference an out-of-bounds or invalid index."
+      }
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 finding(s) reported for human review. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "h01-registry-swap-remove-base-1",
+      "issue_type": "Correctness",
+      "severity": "High",
+      "location": {
+        "file": "src/registry.rs",
+        "start_line": 53,
+        "end_line": 59
+      },
+      "claim": "Removing an entry using `swap_remove` fails to update the index entry for the element moved into the vacated slot.",
+      "reasoning": "When `self.entries.swap_remove(pos)` moves the last entry into `pos`, that entry's index in `self.index` is not updated to `pos`. Subsequent lookups or mutations for that moved entry will reference an out-of-bounds or invalid index.",
+      "falsification_question": "",
+      "evidence": [],
+      "status": "Verified",
+      "status_reason": "baseline: reported as produced, no verification stage"
+    }
+  ],
+  "usage": {
+    "input_tokens": 2056,
+    "output_tokens": 787,
+    "total_tokens": 2843
+  },
+  "cost_usd": 0.004493250000000001,
+  "runtime_ms": 7683,
+  "llm_calls": 1,
+  "tool_calls": 0,
+  "retries": 0
+}

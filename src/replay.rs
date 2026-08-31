@@ -34,6 +34,8 @@ struct RecordedTrajectory {
 
 #[derive(Debug, Deserialize)]
 struct RecordedFinding {
+    #[serde(default)]
+    id: String,
     issue_type: String,
     location: RecordedLocation,
     #[serde(default)]
@@ -233,4 +235,187 @@ mod tests {
         let merges = replay(Path::new("no/such/place"), 3).unwrap();
         assert!(merges.is_empty());
     }
+}
+
+// --------------------------------------------------------------------------
+// Match audit
+// --------------------------------------------------------------------------
+
+/// One matched pair, with both texts, ready to be read by a person.
+#[derive(Debug)]
+pub struct AuditedMatch {
+    pub trial: String,
+    pub case_id: String,
+    pub expected_id: String,
+    pub expected_issue_type: String,
+    pub expected_location: String,
+    pub truth: String,
+    pub claim: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RecordedEvaluation {
+    per_case: Vec<RecordedCaseEval>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RecordedCaseEval {
+    case_id: String,
+    #[serde(default)]
+    matched: Vec<RecordedMatch>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RecordedMatch {
+    prediction_id: String,
+    expected_id: String,
+}
+
+/// Pair every scored true positive with the ground truth it was credited for.
+///
+/// The evaluator matches on location and category. That is a **proxy** for
+/// "found the defect": a claim landing on the right lines under an accepted
+/// category scores a true positive whether or not it describes the actual bug,
+/// and no deterministic matcher can tell the difference. Asking a model to
+/// judge would reintroduce exactly the standard this project rejects.
+///
+/// So the answer is to put both texts in front of a person. This command does
+/// only that — it reads artifacts, calls no model, and reaches no verdict of
+/// its own.
+pub fn audit_matches(benchmark: &Path, root: &Path) -> Result<Vec<AuditedMatch>> {
+    // Ground truth, keyed by expected id.
+    let mut truth = BTreeMap::new();
+    for dir in crate::bench::discover_cases(benchmark)? {
+        let Ok(gt) = crate::bench::load_ground_truth(&dir) else {
+            continue;
+        };
+        for e in gt.expected_findings {
+            truth.insert(
+                e.id.clone(),
+                (
+                    e.issue_type.as_str().to_string(),
+                    format!("{}:{}-{}", e.file, e.start_line, e.end_line),
+                    e.description,
+                ),
+            );
+        }
+    }
+
+    let mut out = Vec::new();
+    for eval_path in evaluations(root) {
+        let raw = std::fs::read_to_string(&eval_path)
+            .with_context(|| format!("reading {}", eval_path.display()))?;
+        let Ok(eval) = serde_json::from_str::<RecordedEvaluation>(&raw) else {
+            continue;
+        };
+
+        // Claims live in the trajectories beside the evaluation.
+        let dir = eval_path.parent().unwrap_or(Path::new("."));
+        let mut claims = BTreeMap::new();
+        for tp in advanced_trajectories(dir) {
+            let Ok(raw) = std::fs::read_to_string(&tp) else {
+                continue;
+            };
+            let Ok(t) = serde_json::from_str::<RecordedTrajectory>(&raw) else {
+                continue;
+            };
+            for f in t.final_findings {
+                claims.insert(f.id, f.claim);
+            }
+        }
+
+        let trial = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| dir.display().to_string());
+
+        for case in eval.per_case {
+            for m in case.matched {
+                let Some((issue_type, location, description)) = truth.get(&m.expected_id) else {
+                    continue;
+                };
+                out.push(AuditedMatch {
+                    trial: trial.clone(),
+                    case_id: case.case_id.clone(),
+                    expected_id: m.expected_id.clone(),
+                    expected_issue_type: issue_type.clone(),
+                    expected_location: location.clone(),
+                    truth: description.clone(),
+                    claim: claims
+                        .get(&m.prediction_id)
+                        .cloned()
+                        .unwrap_or_else(|| "(claim text not found in trajectories)".to_string()),
+                });
+            }
+        }
+    }
+
+    out.sort_by(|a, b| (&a.expected_id, &a.trial).cmp(&(&b.expected_id, &b.trial)));
+    Ok(out)
+}
+
+/// Every `evaluation-advanced.json` under `root`, at any depth.
+fn evaluations(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.file_name().and_then(|n| n.to_str()) == Some("evaluation-advanced.json") {
+                out.push(p);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Print the audit, grouping identical claims across trials.
+pub fn report_matches(benchmark: &Path, root: &Path) -> Result<()> {
+    let matches = audit_matches(benchmark, root)?;
+
+    println!("Match audit: {} vs {}", benchmark.display(), root.display());
+    println!(
+        "  {} scored true positive(s). No verdict is computed here -- read the\n  \
+         ground truth against the claim and decide whether the defect was found.\n",
+        matches.len()
+    );
+
+    let mut current = String::new();
+    let mut by_claim: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    let flush = |id: &str, by_claim: &mut BTreeMap<String, Vec<String>>| {
+        if id.is_empty() {
+            return;
+        }
+        for (claim, trials) in by_claim.iter() {
+            println!("    CLAIM ({}): {claim}", trials.join(", "));
+        }
+        println!();
+        by_claim.clear();
+    };
+
+    for m in &matches {
+        if m.expected_id != current {
+            flush(&current, &mut by_claim);
+            current = m.expected_id.clone();
+            println!(
+                "  {} -- expected {} at {}",
+                m.expected_id, m.expected_issue_type, m.expected_location
+            );
+            println!("    TRUTH: {}", m.truth);
+        }
+        by_claim
+            .entry(m.claim.clone())
+            .or_default()
+            .push(m.trial.clone());
+    }
+    flush(&current, &mut by_claim);
+
+    Ok(())
 }

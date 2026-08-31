@@ -1,0 +1,287 @@
+{
+  "trajectory_id": "7e33df4f-9faf-4f7c-a7b1-71b973d6528c",
+  "case_id": "h01-registry-swap-remove",
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "started_at": "2026-08-31T00:39:17.887447500+00:00",
+  "finished_at": "2026-08-31T00:40:11.375802500+00:00",
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "ablation": "None"
+  },
+  "events": [
+    {
+      "event": "LlmCall",
+      "stage": "Review",
+      "prompt_version": "advanced-review/v6",
+      "system": "You are an experienced Rust reviewer examining a proposed change before it merges.\n\nYou are producing CANDIDATE findings, not final ones. Nothing you write here\nreaches a human directly. Each candidate is investigated against the actual\nrepository and then independently adjudicated, and only what survives is\nreported. A candidate that turns out to be wrong costs almost nothing. A real\ndefect you never raised is never checked at all.\n\nSo err toward proposing. Raise anything a careful reviewer would want confirmed\nbefore approving this change, including things you expect will turn out to be\nfine.\n\n- Anchor each candidate to a specific file and line range.\n- State each claim as something that can actually happen, not as a\n  conditional. Write \"callers can reach this with an empty list, and it will\n  panic\", not \"this will panic if the list is empty\" — the second is true of\n  the code whether or not the situation ever arises, so it cannot be\n  disproved and is not a finding.\n- State each claim as a single falsifiable sentence — something repository\n  evidence could confirm or refute.\n- Every candidate must name a consequence: what goes wrong, and for whom.\n  Incorrect output, a panic, data loss, a violated contract, a security\n  consequence, or a real cost at the scale this code runs at. If you cannot\n  finish the sentence \"and so the user gets...\", it is not a candidate.\n  Missing trait derives, a signature that is more fallible than it needs to\n  be, and unused declarations are observations about the code, not defects —\n  leave them out. The investigation stage can settle whether a claim is true;\n  it cannot make a true triviality worth a reviewer's time.\n- Pay particular attention to anything whose correctness depends on facts that\n  are not visible in the changed files. If the code is only correct given some\n  assumption about the rest of the repository, that assumption is a candidate.\n- Apply that concretely. Where this change calls something whose definition you\n  cannot see here, ask what it must return or do for this code to be right, and\n  raise that as a candidate stating the assumption. A guard is only as good as\n  the thing it calls; a name suggests what a function does but does not\n  establish it. This is the single most common way a change that looks correct\n  in isolation turns out not to be, and it is precisely what the investigation\n  stage can settle in one lookup.\n- Do not report style preferences, naming, formatting, or missing comments.\n- Avoid vague concerns such as \"this looks fragile\"; say what would go wrong.\n\nReturn JSON of exactly this shape and nothing else:\n\n{\n  \"findings\": [\n    {\n      \"issue_type\": \"<one of the values below, spelled exactly>\",\n      \"severity\": \"Low\" | \"Medium\" | \"High\",\n      \"file\": \"<repository-relative path, forward slashes>\",\n      \"start_line\": <integer, 1-based, in the file's CURRENT state after the change>,\n      \"end_line\": <integer, >= start_line>,\n      \"claim\": \"<one sentence stating precisely what is wrong>\",\n      \"reasoning\": \"<why you believe it, 1-3 sentences>\"\n    }\n  ]\n}\n\nValid issue_type values:\n  - Correctness\n  - ErrorHandling\n  - Validation\n  - StateManagement\n  - ResourceManagement\n  - Concurrency\n  - ApiContract\n  - Testing\n  - Performance\n\nReturn {\"findings\": []} only if there is genuinely nothing worth checking.\n\nUnder-proposing is the expensive mistake at this stage. Include a candidate\neven when you suspect it is fine, and in particular whenever the code's\ncorrectness depends on something you cannot see in the changed files — a\ncaller, a constructor, an invariant asserted in a comment, a value's origin.\nThose are the candidates the investigation stage exists to settle, and it can\nonly settle the ones you raise.",
+      "user": "## Change under review\n\n`Registry::remove` used `Vec::remove`, which shifts every element after the removed one and then required a pass over the index map to renumber the shifted positions. The author's stated intent was to make deregistration constant-time by using `Vec::swap_remove` and dropping the renumbering pass, since the registry does not promise a stable ordering to callers.\n\n## Diff\n\n```diff\n--- a/src/registry.rs\n+++ b/src/registry.rs\n@@ -54,12 +54,7 @@\n         let Some(pos) = self.index.remove(name) else {\n             return false;\n         };\n-        self.entries.remove(pos);\n-        for slot in self.index.values_mut() {\n-            if *slot > pos {\n-                *slot -= 1;\n-            }\n-        }\n+        self.entries.swap_remove(pos);\n         true\n     }\n \n\n```\n\n## Current contents of the changed files\n\n\n### src/registry.rs\n\n```rust\n    1 | //! Name-addressed registry of service endpoints.\n    2 | \n    3 | use std::collections::HashMap;\n    4 | \n    5 | /// One registered service endpoint.\n    6 | #[derive(Debug, Clone, PartialEq, Eq)]\n    7 | pub struct Entry {\n    8 |     pub name: String,\n    9 |     pub addr: String,\n   10 | }\n   11 | \n   12 | /// Entries in registration order, plus a name -> position index so that\n   13 | /// `addr_of` does not have to scan the vector.\n   14 | #[derive(Debug, Default)]\n   15 | pub struct Registry {\n   16 |     entries: Vec<Entry>,\n   17 |     index: HashMap<String, usize>,\n   18 | }\n   19 | \n   20 | impl Registry {\n   21 |     pub fn new() -> Self {\n   22 |         Self::default()\n   23 |     }\n   24 | \n   25 |     pub fn len(&self) -> usize {\n   26 |         self.entries.len()\n   27 |     }\n   28 | \n   29 |     pub fn is_empty(&self) -> bool {\n   30 |         self.entries.is_empty()\n   31 |     }\n   32 | \n   33 |     /// Register `name` at `addr`. Re-registering a known name updates it.\n   34 |     pub fn insert(&mut self, name: &str, addr: &str) {\n   35 |         if let Some(&pos) = self.index.get(name) {\n   36 |             self.entries[pos].addr = addr.to_string();\n   37 |             return;\n   38 |         }\n   39 |         self.index.insert(name.to_string(), self.entries.len());\n   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | \n   71 |     #[test]\n   72 |     fn registers_and_resolves() {\n   73 |         let mut r = Registry::new();\n   74 |         r.insert(\"auth\", \"10.0.0.1\");\n   75 |         r.insert(\"billing\", \"10.0.0.2\");\n   76 |         assert_eq!(r.len(), 2);\n   77 |         assert_eq!(r.addr_of(\"auth\"), Some(\"10.0.0.1\"));\n   78 |         assert_eq!(r.addr_of(\"billing\"), Some(\"10.0.0.2\"));\n   79 |     }\n   80 | \n   81 |     #[test]\n   82 |     fn re_registering_updates_the_address() {\n   83 |         let mut r = Registry::new();\n   84 |         r.insert(\"auth\", \"10.0.0.1\");\n   85 |         r.insert(\"auth\", \"10.0.0.9\");\n   86 |         assert_eq!(r.len(), 1);\n   87 |         assert_eq!(r.addr_of(\"auth\"), Some(\"10.0.0.9\"));\n   88 |     }\n   89 | \n   90 |     #[test]\n   91 |     fn deregistering_the_last_entry_shrinks_the_registry() {\n   92 |         let mut r = Registry::new();\n   93 |         r.insert(\"auth\", \"10.0.0.1\");\n   94 |         r.insert(\"billing\", \"10.0.0.2\");\n   95 |         assert!(r.remove(\"billing\"));\n   96 |         assert_eq!(r.len(), 1);\n   97 |         assert_eq!(r.addr_of(\"billing\"), None);\n   98 |         assert_eq!(r.addr_of(\"auth\"), Some(\"10.0.0.1\"));\n   99 |     }\n  100 | \n  101 |     #[test]\n  102 |     fn deregistering_an_unknown_name_reports_false() {\n  103 |         let mut r = Registry::new();\n  104 |         r.insert(\"auth\", \"10.0.0.1\");\n  105 |         assert!(!r.remove(\"nope\"));\n  106 |         assert_eq!(r.len(), 1);\n  107 |     }\n  108 | }\n```\n",
+      "response_text": "{\n  \"findings\": [\n    {\n      \"issue_type\": \"Correctness\",\n      \"severity\": \"High\",\n      \"file\": \"src/registry.rs\",\n      \"start_line\": 53,\n      \"end_line\": 59,\n      \"claim\": \"Registry::remove does not update the index for the element moved by swap_remove, causing lookups for that element to return None and subsequent operations on it to panic.\",\n      \"reasoning\": \"When swap_remove(pos) removes an entry that is not the last element, the last entry in entries is moved to index pos, but its entry in self.index still references its old index. Callers looking up the moved entry will receive None from addr_of, and subsequent calls to insert or remove for that entry will panic due to an out-of-bounds index access.\"\n    }\n  ]\n}",
+      "usage": {
+        "input_tokens": 2577,
+        "output_tokens": 1004,
+        "total_tokens": 3581
+      },
+      "latency_ms": 30861,
+      "attempts": 1
+    },
+    {
+      "event": "CandidateProposed",
+      "candidate": {
+        "id": "h01-registry-swap-remove-adv-1",
+        "issue_type": "Correctness",
+        "severity": "High",
+        "location": {
+          "file": "src/registry.rs",
+          "start_line": 53,
+          "end_line": 59
+        },
+        "claim": "Registry::remove does not update the index for the element moved by swap_remove, causing lookups for that element to return None and subsequent operations on it to panic.",
+        "reasoning": "When swap_remove(pos) removes an entry that is not the last element, the last entry in entries is moved to index pos, but its entry in self.index still references its old index. Callers looking up the moved entry will receive None from addr_of, and subsequent calls to insert or remove for that entry will panic due to an out-of-bounds index access."
+      }
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Falsify",
+      "prompt_version": "advanced-falsify/v2",
+      "system": "You are helping test a code-review finding.\n\nGiven a claim about a defect, write the single most decisive question whose\nanswer would show the claim is WRONG. The question must be answerable by\ninspecting the repository: callers, implementations, tests, configuration, or\ntype definitions.\n\nAsk about the thing the claim actually depends on, not about the mechanism.\nWhether a function panics on a bad input is usually not in doubt and can be\nread off the body; whether anything ever hands it a bad input is the question.\nSo when a claim rests on how the code is used, ask about the call sites by\nname.\n\nGood: \"Does every caller of parse_row check is_empty() before indexing?\"\nBad:  \"Does parse_row panic when the row is empty?\"  (asks the mechanism)\nBad:  \"Is this code correct?\"                        (unanswerable)\n\nNever make a comment the answer. If a doc comment already asserts the\nprecondition, the question is whether the callers honour it.\n\nReturn JSON of exactly this shape:\n\n{\"falsification_question\": \"<one question>\"}",
+      "user": "Claim: Registry::remove does not update the index for the element moved by swap_remove, causing lookups for that element to return None and subsequent operations on it to panic.\nLocation: src/registry.rs:53-59\nReviewer's reasoning: When swap_remove(pos) removes an entry that is not the last element, the last entry in entries is moved to index pos, but its entry in self.index still references its old index. Callers looking up the moved entry will receive None from addr_of, and subsequent calls to insert or remove for that entry will panic due to an out-of-bounds index access.\n\nWhat evidence would prove this claim wrong?",
+      "response_text": "{\"falsification_question\": \"Does Registry::remove update the index mapping in self.index for the swapped element when swap_remove moves an entry into pos?\"}",
+      "usage": {
+        "input_tokens": 386,
+        "output_tokens": 374,
+        "total_tokens": 760
+      },
+      "latency_ms": 4216,
+      "attempts": 1
+    },
+    {
+      "event": "FalsificationQuestion",
+      "candidate_id": "h01-registry-swap-remove-adv-1",
+      "question": "Does Registry::remove update the index mapping in self.index for the swapped element when swap_remove moves an entry into pos?"
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nRegistry::remove does not update the index for the element moved by swap_remove, causing lookups for that element to return None and subsequent operations on it to panic.\n\nLocation: src/registry.rs:53-59\n\n## Falsification question\n\nDoes Registry::remove update the index mapping in self.index for the swapped element when swap_remove moves an entry into pos?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/registry.rs\n+++ b/src/registry.rs\n@@ -54,12 +54,7 @@\n         let Some(pos) = self.index.remove(name) else {\n             return false;\n         };\n-        self.entries.remove(pos);\n-        for slot in self.index.values_mut() {\n-            if *slot > pos {\n-                *slot -= 1;\n-            }\n-        }\n+        self.entries.swap_remove(pos);\n         true\n     }\n \n\n```\n\n## Investigation so far\n\n(nothing yet)\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": false,\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"file\": \"src/registry.rs\",\n    \"start_line\": 40,\n    \"end_line\": 70\n  },\n  \"rationale\": \"Inspect the implementation of Registry::remove and surrounding context in src/registry.rs to see how index mappings are handled.\"\n}",
+      "usage": {
+        "input_tokens": 572,
+        "output_tokens": 210,
+        "total_tokens": 782
+      },
+      "latency_ms": 3075,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "h01-registry-swap-remove-adv-1-t1",
+      "candidate_id": "h01-registry-swap-remove-adv-1",
+      "tool": "read",
+      "arguments": {
+        "end_line": 70,
+        "file": "src/registry.rs",
+        "start_line": 40
+      },
+      "response": "src/registry.rs lines 40-70 of 108:\n   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | \n",
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nRegistry::remove does not update the index for the element moved by swap_remove, causing lookups for that element to return None and subsequent operations on it to panic.\n\nLocation: src/registry.rs:53-59\n\n## Falsification question\n\nDoes Registry::remove update the index mapping in self.index for the swapped element when swap_remove moves an entry into pos?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/registry.rs\n+++ b/src/registry.rs\n@@ -54,12 +54,7 @@\n         let Some(pos) = self.index.remove(name) else {\n             return false;\n         };\n-        self.entries.remove(pos);\n-        for slot in self.index.values_mut() {\n-            if *slot > pos {\n-                *slot -= 1;\n-            }\n-        }\n+        self.entries.swap_remove(pos);\n         true\n     }\n \n\n```\n\n## Already looked up during this review\n\nThese are results of earlier tool calls on this repository, recorded so you do\nnot have to repeat them. They are lookups, not conclusions.\n\nread {\"end_line\":70,\"file\":\"src/registry.rs\",\"start_line\":40} -> src/registry.rs lines 40-70 of 108:\n\n## Investigation so far\n\n\n--- step 1 : read {\"end_line\":70,\"file\":\"src/registry.rs\",\"start_line\":40} ---\nsrc/registry.rs lines 40-70 of 108:\n   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | \n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": false,\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"file\": \"src/registry.rs\",\n    \"start_line\": 1,\n    \"end_line\": 40\n  },\n  \"rationale\": \"Check the full Registry struct definition and other methods to ensure there are no other mechanisms updating `self.index`.\"\n}",
+      "usage": {
+        "input_tokens": 1087,
+        "output_tokens": 479,
+        "total_tokens": 1566
+      },
+      "latency_ms": 4989,
+      "attempts": 1
+    },
+    {
+      "event": "ToolCall",
+      "tool_call_id": "h01-registry-swap-remove-adv-1-t2",
+      "candidate_id": "h01-registry-swap-remove-adv-1",
+      "tool": "read",
+      "arguments": {
+        "end_line": 40,
+        "file": "src/registry.rs",
+        "start_line": 1
+      },
+      "response": "src/registry.rs lines 1-40 of 108:\n    1 | //! Name-addressed registry of service endpoints.\n    2 | \n    3 | use std::collections::HashMap;\n    4 | \n    5 | /// One registered service endpoint.\n    6 | #[derive(Debug, Clone, PartialEq, Eq)]\n    7 | pub struct Entry {\n    8 |     pub name: String,\n    9 |     pub addr: String,\n   10 | }\n   11 | \n   12 | /// Entries in registration order, plus a name -> position index so that\n   13 | /// `addr_of` does not have to scan the vector.\n   14 | #[derive(Debug, Default)]\n   15 | pub struct Registry {\n   16 |     entries: Vec<Entry>,\n   17 |     index: HashMap<String, usize>,\n   18 | }\n   19 | \n   20 | impl Registry {\n   21 |     pub fn new() -> Self {\n   22 |         Self::default()\n   23 |     }\n   24 | \n   25 |     pub fn len(&self) -> usize {\n   26 |         self.entries.len()\n   27 |     }\n   28 | \n   29 |     pub fn is_empty(&self) -> bool {\n   30 |         self.entries.is_empty()\n   31 |     }\n   32 | \n   33 |     /// Register `name` at `addr`. Re-registering a known name updates it.\n   34 |     pub fn insert(&mut self, name: &str, addr: &str) {\n   35 |         if let Some(&pos) = self.index.get(name) {\n   36 |             self.entries[pos].addr = addr.to_string();\n   37 |             return;\n   38 |         }\n   39 |         self.index.insert(name.to_string(), self.entries.len());\n   40 |         self.entries.push(Entry {\n",
+      "ok": true,
+      "duration_ms": 0
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Investigate",
+      "prompt_version": "advanced-investigate/v2",
+      "system": "You are investigating a code-review claim by inspecting the repository.\n\nYour job is to gather the evidence that answers the falsification question —\nevidence that could show the claim is wrong, not only evidence that supports it.\nActively look for the disproof.\n\nYou may issue up to 8 tool calls in total. Each turn, either request\none tool call or declare the investigation complete.\n\nAvailable tools:\n\n  search      {\"pattern\": \"<literal substring>\", \"glob\": \"<optional path filter, e.g. src/**/*.rs>\"}\n              Case-sensitive literal substring match, not a regular\n              expression. Returns matching lines with file and line number.\n\n  read        {\"file\": \"<repository-relative path>\", \"start_line\": <int>, \"end_line\": <int>}\n              Returns the requested line range with line numbers.\n\n  list_files  {}\n              Returns every file path in the repository.\n\nReturn JSON of exactly this shape:\n\n{\n  \"done\": false,\n  \"tool\": \"search\" | \"read\" | \"list_files\",\n  \"arguments\": { ... },\n  \"rationale\": \"<what you expect this to tell you about the falsification question>\"\n}\n\nor, when you have gathered what you need:\n\n{ \"done\": true, \"tool\": null, \"arguments\": null, \"rationale\": \"<what the evidence shows>\" }\n\nStop as soon as the falsification question is answered either way. Do not spend\ncalls confirming something you have already established.",
+      "user": "## Claim under investigation\n\nRegistry::remove does not update the index for the element moved by swap_remove, causing lookups for that element to return None and subsequent operations on it to panic.\n\nLocation: src/registry.rs:53-59\n\n## Falsification question\n\nDoes Registry::remove update the index mapping in self.index for the swapped element when swap_remove moves an entry into pos?\n\n## Diff that produced the claim\n\n```diff\n--- a/src/registry.rs\n+++ b/src/registry.rs\n@@ -54,12 +54,7 @@\n         let Some(pos) = self.index.remove(name) else {\n             return false;\n         };\n-        self.entries.remove(pos);\n-        for slot in self.index.values_mut() {\n-            if *slot > pos {\n-                *slot -= 1;\n-            }\n-        }\n+        self.entries.swap_remove(pos);\n         true\n     }\n \n\n```\n\n## Already looked up during this review\n\nThese are results of earlier tool calls on this repository, recorded so you do\nnot have to repeat them. They are lookups, not conclusions.\n\nread {\"end_line\":70,\"file\":\"src/registry.rs\",\"start_line\":40} -> src/registry.rs lines 40-70 of 108:\nread {\"end_line\":40,\"file\":\"src/registry.rs\",\"start_line\":1} -> src/registry.rs lines 1-40 of 108:\n\n## Investigation so far\n\n\n--- step 1 : read {\"end_line\":70,\"file\":\"src/registry.rs\",\"start_line\":40} ---\nsrc/registry.rs lines 40-70 of 108:\n   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | \n\n\n--- step 2 : read {\"end_line\":40,\"file\":\"src/registry.rs\",\"start_line\":1} ---\nsrc/registry.rs lines 1-40 of 108:\n    1 | //! Name-addressed registry of service endpoints.\n    2 | \n    3 | use std::collections::HashMap;\n    4 | \n    5 | /// One registered service endpoint.\n    6 | #[derive(Debug, Clone, PartialEq, Eq)]\n    7 | pub struct Entry {\n    8 |     pub name: String,\n    9 |     pub addr: String,\n   10 | }\n   11 | \n   12 | /// Entries in registration order, plus a name -> position index so that\n   13 | /// `addr_of` does not have to scan the vector.\n   14 | #[derive(Debug, Default)]\n   15 | pub struct Registry {\n   16 |     entries: Vec<Entry>,\n   17 |     index: HashMap<String, usize>,\n   18 | }\n   19 | \n   20 | impl Registry {\n   21 |     pub fn new() -> Self {\n   22 |         Self::default()\n   23 |     }\n   24 | \n   25 |     pub fn len(&self) -> usize {\n   26 |         self.entries.len()\n   27 |     }\n   28 | \n   29 |     pub fn is_empty(&self) -> bool {\n   30 |         self.entries.is_empty()\n   31 |     }\n   32 | \n   33 |     /// Register `name` at `addr`. Re-registering a known name updates it.\n   34 |     pub fn insert(&mut self, name: &str, addr: &str) {\n   35 |         if let Some(&pos) = self.index.get(name) {\n   36 |             self.entries[pos].addr = addr.to_string();\n   37 |             return;\n   38 |         }\n   39 |         self.index.insert(name.to_string(), self.entries.len());\n   40 |         self.entries.push(Entry {\n\n\n\nWhat is your next step?",
+      "response_text": "{\n  \"done\": true,\n  \"tool\": null,\n  \"arguments\": null,\n  \"rationale\": \"Inspection of `Registry::remove` in `src/registry.rs` (lines 53-59) confirms that when `swap_remove(pos)` is called on `self.entries`, the method only removes `name` from `self.index` and does not update `self.index` with the new position `pos` for the element that was swapped from the end of `self.entries`.\"\n}",
+      "usage": {
+        "input_tokens": 1645,
+        "output_tokens": 392,
+        "total_tokens": 2037
+      },
+      "latency_ms": 4240,
+      "attempts": 1
+    },
+    {
+      "event": "EvidenceAssembled",
+      "candidate_id": "h01-registry-swap-remove-adv-1",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/registry.rs",
+          "start_line": 38,
+          "end_line": 74,
+          "excerpt": "   38 |         }\n   39 |         self.index.insert(name.to_string(), self.entries.len());\n   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | \n   71 |     #[test]\n   72 |     fn registers_and_resolves() {\n   73 |         let mut r = Registry::new();\n   74 |         r.insert(\"auth\", \"10.0.0.1\");",
+          "tool_call_id": "h01-registry-swap-remove-adv-1-claimed-region"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/registry.rs",
+          "start_line": 40,
+          "end_line": 70,
+          "excerpt": "   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | ",
+          "tool_call_id": "h01-registry-swap-remove-adv-1-t1"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/registry.rs",
+          "start_line": 1,
+          "end_line": 40,
+          "excerpt": "    1 | //! Name-addressed registry of service endpoints.\n    2 | \n    3 | use std::collections::HashMap;\n    4 | \n    5 | /// One registered service endpoint.\n    6 | #[derive(Debug, Clone, PartialEq, Eq)]\n    7 | pub struct Entry {\n    8 |     pub name: String,\n    9 |     pub addr: String,\n   10 | }\n   11 | \n   12 | /// Entries in registration order, plus a name -> position index so that\n   13 | /// `addr_of` does not have to scan the vector.\n   14 | #[derive(Debug, Default)]\n   15 | pub struct Registry {\n   16 |     entries: Vec<Entry>,\n   17 |     index: HashMap<String, usize>,\n   18 | }\n   19 | \n   20 | impl Registry {\n   21 |     pub fn new() -> Self {\n   22 |         Self::default()\n   23 |     }\n   24 | \n   25 |     pub fn len(&self) -> usize {\n   26 |         self.entries.len()\n   27 |     }\n   28 | \n   29 |     pub fn is_empty(&self) -> bool {\n   30 |         self.entries.is_empty()\n   31 |     }\n   32 | \n   33 |     /// Register `name` at `addr`. Re-registering a known name updates it.\n   34 |     pub fn insert(&mut self, name: &str, addr: &str) {\n   35 |         if let Some(&pos) = self.index.get(name) {\n   36 |             self.entries[pos].addr = addr.to_string();\n   37 |             return;\n   38 |         }\n   39 |         self.index.insert(name.to_string(), self.entries.len());\n   40 |         self.entries.push(Entry {",
+          "tool_call_id": "h01-registry-swap-remove-adv-1-t2"
+        }
+      ]
+    },
+    {
+      "event": "LlmCall",
+      "stage": "Verify",
+      "prompt_version": "fresh-verify/v5",
+      "system": "You are deciding whether a body of evidence establishes that a codebase has a real defect.\n\nYou did not write the claim and have no stake in it. Someone asserted it; your\ntask is to weigh the evidence.\n\nDecide one of:\n\n  \"Supports\"      - the evidence establishes a real defect, as claimed.\n  \"Contradicts\"   - the evidence establishes that this is not a defect.\n  \"Insufficient\"  - the evidence does not settle it either way.\n\nRules:\n- Judge only from the evidence provided. Do not assume facts about code you\n  were not shown.\n- Absence of evidence is not evidence. If the excerpts do not cover what the\n  claim depends on, the answer is \"Insufficient\", not \"Supports\".\n- \"Insufficient\" is a perfectly good answer and is expected to be common.\n- Quote the specific excerpts that decided it.\n\nWeigh comments by whether the repository could check them:\n\n- A comment asserting something the repository itself can settle — which\n  callers exist, what they pass, whether a guard runs first, whether a\n  constructor rejects a value — is a CLAIM, not evidence. It is exactly the\n  kind of thing that is wrong when the code is wrong. \"Callers check first\"\n  written above a function tells you what the author believed, not what the\n  callers do. Go and look at the call sites; if the evidence asserts something\n  about callers but contains no callers, that is \"Insufficient\", never\n  \"Contradicts\". A documented precondition does not make violating it\n  acceptable — the question is whether anything violates it.\n\n- A comment stating a fact from outside the repository — a database column\n  type, a wire-protocol constant, the size of production inputs, what a\n  downstream consumer requires — is different. Nothing in the repository can\n  confirm or refute it, and the people who wrote it knew things you do not.\n  Treat it as the best available evidence and reason from it. Do not dismiss a\n  finding merely because such a fact came from a comment rather than from\n  code; that standard would make every claim about the real world\n  unverifiable.\n\nA true statement is not automatically a defect:\n\n- You are judging the finding, not the sentence. Many claims are accurate\n  descriptions of the code that identify nothing wrong with it: a type that\n  does not derive a trait nobody needs, a function returning `Option` that\n  never returns `None`, a name someone dislikes. Confirming the description is\n  accurate does not make any of these a defect.\n- Ask what goes wrong, and for whom. If the evidence does not show incorrect\n  behaviour, a crash, data loss, a violated contract, a security consequence,\n  or a real cost at the scale the code actually runs at, then this is not a\n  defect and the answer is \"Contradicts\" — however accurate the claim is.\n- Reporting a true triviality wastes human attention just as surely as\n  reporting something false, so hold both to the same bar.\n\nReachability is part of the claim, not a separate question:\n\n- Most claims depend on the code reaching some state — a collection being\n  empty, a key being absent, a number being out of range, a caller passing a\n  particular value. Confirming that the code WOULD misbehave in that state\n  settles only half of it.\n- Code that would misbehave in a state it can never actually be in is not a\n  defect. If the evidence shows the state is prevented — by a constructor, a\n  guard, a type, or an invariant every mutation preserves — then the evidence\n  CONTRADICTS the claim, however faithfully the mechanism was described.\n- So do not answer \"Supports\" merely because the described mechanism is real.\n  Answer \"Supports\" only when the evidence also shows the triggering state is\n  reachable. If the evidence settles the mechanism but leaves reachability\n  open, that is \"Insufficient\".\n\nReturn JSON of exactly this shape:\n\n{\n  \"outcome\": \"Supports\" | \"Contradicts\" | \"Insufficient\",\n  \"rationale\": \"<2-4 sentences explaining what the evidence shows>\",\n  \"decisive_evidence\": [\"<short quote or file:line reference>\", ...]\n}",
+      "user": "## Claim\n\nRegistry::remove does not update the index for the element moved by swap_remove, causing lookups for that element to return None and subsequent operations on it to panic.\n\nStated location: src/registry.rs:53-59\n\n## Question the evidence was gathered to answer\n\nDoes Registry::remove update the index mapping in self.index for the swapped element when swap_remove moves an entry into pos?\n\n## Evidence gathered from the repository\n\n[E1] DiffHunk from src/registry.rs:38-74\n   38 |         }\n   39 |         self.index.insert(name.to_string(), self.entries.len());\n   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | \n   71 |     #[test]\n   72 |     fn registers_and_resolves() {\n   73 |         let mut r = Registry::new();\n   74 |         r.insert(\"auth\", \"10.0.0.1\");\n\n[E2] FileRegion from src/registry.rs:40-70\n   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | \n\n[E3] FileRegion from src/registry.rs:1-40\n    1 | //! Name-addressed registry of service endpoints.\n    2 | \n    3 | use std::collections::HashMap;\n    4 | \n    5 | /// One registered service endpoint.\n    6 | #[derive(Debug, Clone, PartialEq, Eq)]\n    7 | pub struct Entry {\n    8 |     pub name: String,\n    9 |     pub addr: String,\n   10 | }\n   11 | \n   12 | /// Entries in registration order, plus a name -> position index so that\n   13 | /// `addr_of` does not have to scan the vector.\n   14 | #[derive(Debug, Default)]\n   15 | pub struct Registry {\n   16 |     entries: Vec<Entry>,\n   17 |     index: HashMap<String, usize>,\n   18 | }\n   19 | \n   20 | impl Registry {\n   21 |     pub fn new() -> Self {\n   22 |         Self::default()\n   23 |     }\n   24 | \n   25 |     pub fn len(&self) -> usize {\n   26 |         self.entries.len()\n   27 |     }\n   28 | \n   29 |     pub fn is_empty(&self) -> bool {\n   30 |         self.entries.is_empty()\n   31 |     }\n   32 | \n   33 |     /// Register `name` at `addr`. Re-registering a known name updates it.\n   34 |     pub fn insert(&mut self, name: &str, addr: &str) {\n   35 |         if let Some(&pos) = self.index.get(name) {\n   36 |             self.entries[pos].addr = addr.to_string();\n   37 |             return;\n   38 |         }\n   39 |         self.index.insert(name.to_string(), self.entries.len());\n   40 |         self.entries.push(Entry {\n\n\n\nDoes the evidence support the claim, contradict it, or leave it unsettled?",
+      "response_text": "{\n  \"outcome\": \"Supports\",\n  \"rationale\": \"In `Registry::remove`, `self.entries.swap_remove(pos)` moves the last element of `self.entries` into index `pos`, but `self.index` is never updated to reflect the new position of that moved element. As a result, lookups via `addr_of` for that moved element will look for its old out-of-bounds index and return `None`, while re-inserting that element via `insert` will attempt `self.entries[pos]` with the stale index and panic.\",\n  \"decisive_evidence\": [\n    \"src/registry.rs:53-59\",\n    \"src/registry.rs:35-38\",\n    \"src/registry.rs:48-49\"\n  ]\n}",
+      "usage": {
+        "input_tokens": 2426,
+        "output_tokens": 613,
+        "total_tokens": 3039
+      },
+      "latency_ms": 6101,
+      "attempts": 1
+    },
+    {
+      "event": "Verification",
+      "candidate_id": "h01-registry-swap-remove-adv-1",
+      "result": {
+        "outcome": "Supports",
+        "rationale": "In `Registry::remove`, `self.entries.swap_remove(pos)` moves the last element of `self.entries` into index `pos`, but `self.index` is never updated to reflect the new position of that moved element. As a result, lookups via `addr_of` for that moved element will look for its old out-of-bounds index and return `None`, while re-inserting that element via `insert` will attempt `self.entries[pos]` with the stale index and panic.",
+        "decisive_evidence": [
+          "src/registry.rs:53-59",
+          "src/registry.rs:35-38",
+          "src/registry.rs:48-49"
+        ]
+      }
+    },
+    {
+      "event": "Decision",
+      "candidate_id": "h01-registry-swap-remove-adv-1",
+      "status": "Verified",
+      "reason": "fresh-context verification found the evidence supports the claim, backed by 2 repository evidence item(s)"
+    },
+    {
+      "event": "HumanCheckpoint",
+      "note": "1 verified finding(s) reported for human review; 0 investigated and cleared; 0 left uncertain. All findings, including cleared and uncertain ones, remain in this trajectory. The system takes no action on the code: it does not merge, reject, or modify anything."
+    }
+  ],
+  "final_findings": [
+    {
+      "id": "h01-registry-swap-remove-adv-1",
+      "issue_type": "Correctness",
+      "severity": "High",
+      "location": {
+        "file": "src/registry.rs",
+        "start_line": 53,
+        "end_line": 59
+      },
+      "claim": "Registry::remove does not update the index for the element moved by swap_remove, causing lookups for that element to return None and subsequent operations on it to panic.",
+      "reasoning": "When swap_remove(pos) removes an entry that is not the last element, the last entry in entries is moved to index pos, but its entry in self.index still references its old index. Callers looking up the moved entry will receive None from addr_of, and subsequent calls to insert or remove for that entry will panic due to an out-of-bounds index access.",
+      "falsification_question": "Does Registry::remove update the index mapping in self.index for the swapped element when swap_remove moves an entry into pos?",
+      "evidence": [
+        {
+          "kind": "DiffHunk",
+          "file": "src/registry.rs",
+          "start_line": 38,
+          "end_line": 74,
+          "excerpt": "   38 |         }\n   39 |         self.index.insert(name.to_string(), self.entries.len());\n   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | \n   71 |     #[test]\n   72 |     fn registers_and_resolves() {\n   73 |         let mut r = Registry::new();\n   74 |         r.insert(\"auth\", \"10.0.0.1\");",
+          "tool_call_id": "h01-registry-swap-remove-adv-1-claimed-region"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/registry.rs",
+          "start_line": 40,
+          "end_line": 70,
+          "excerpt": "   40 |         self.entries.push(Entry {\n   41 |             name: name.to_string(),\n   42 |             addr: addr.to_string(),\n   43 |         });\n   44 |     }\n   45 | \n   46 |     /// The address registered under `name`, if any.\n   47 |     pub fn addr_of(&self, name: &str) -> Option<&str> {\n   48 |         let pos = *self.index.get(name)?;\n   49 |         self.entries.get(pos).map(|e| e.addr.as_str())\n   50 |     }\n   51 | \n   52 |     /// Deregister `name`. Returns true if it had been registered.\n   53 |     pub fn remove(&mut self, name: &str) -> bool {\n   54 |         let Some(pos) = self.index.remove(name) else {\n   55 |             return false;\n   56 |         };\n   57 |         self.entries.swap_remove(pos);\n   58 |         true\n   59 |     }\n   60 | \n   61 |     /// Every registered name, in storage order.\n   62 |     pub fn names(&self) -> Vec<&str> {\n   63 |         self.entries.iter().map(|e| e.name.as_str()).collect()\n   64 |     }\n   65 | }\n   66 | \n   67 | #[cfg(test)]\n   68 | mod tests {\n   69 |     use super::*;\n   70 | ",
+          "tool_call_id": "h01-registry-swap-remove-adv-1-t1"
+        },
+        {
+          "kind": "FileRegion",
+          "file": "src/registry.rs",
+          "start_line": 1,
+          "end_line": 40,
+          "excerpt": "    1 | //! Name-addressed registry of service endpoints.\n    2 | \n    3 | use std::collections::HashMap;\n    4 | \n    5 | /// One registered service endpoint.\n    6 | #[derive(Debug, Clone, PartialEq, Eq)]\n    7 | pub struct Entry {\n    8 |     pub name: String,\n    9 |     pub addr: String,\n   10 | }\n   11 | \n   12 | /// Entries in registration order, plus a name -> position index so that\n   13 | /// `addr_of` does not have to scan the vector.\n   14 | #[derive(Debug, Default)]\n   15 | pub struct Registry {\n   16 |     entries: Vec<Entry>,\n   17 |     index: HashMap<String, usize>,\n   18 | }\n   19 | \n   20 | impl Registry {\n   21 |     pub fn new() -> Self {\n   22 |         Self::default()\n   23 |     }\n   24 | \n   25 |     pub fn len(&self) -> usize {\n   26 |         self.entries.len()\n   27 |     }\n   28 | \n   29 |     pub fn is_empty(&self) -> bool {\n   30 |         self.entries.is_empty()\n   31 |     }\n   32 | \n   33 |     /// Register `name` at `addr`. Re-registering a known name updates it.\n   34 |     pub fn insert(&mut self, name: &str, addr: &str) {\n   35 |         if let Some(&pos) = self.index.get(name) {\n   36 |             self.entries[pos].addr = addr.to_string();\n   37 |             return;\n   38 |         }\n   39 |         self.index.insert(name.to_string(), self.entries.len());\n   40 |         self.entries.push(Entry {",
+          "tool_call_id": "h01-registry-swap-remove-adv-1-t2"
+        }
+      ],
+      "verification": {
+        "outcome": "Supports",
+        "rationale": "In `Registry::remove`, `self.entries.swap_remove(pos)` moves the last element of `self.entries` into index `pos`, but `self.index` is never updated to reflect the new position of that moved element. As a result, lookups via `addr_of` for that moved element will look for its old out-of-bounds index and return `None`, while re-inserting that element via `insert` will attempt `self.entries[pos]` with the stale index and panic.",
+        "decisive_evidence": [
+          "src/registry.rs:53-59",
+          "src/registry.rs:35-38",
+          "src/registry.rs:48-49"
+        ]
+      },
+      "status": "Verified",
+      "status_reason": "fresh-context verification found the evidence supports the claim, backed by 2 repository evidence item(s)"
+    }
+  ],
+  "usage": {
+    "input_tokens": 8693,
+    "output_tokens": 3072,
+    "total_tokens": 11765
+  },
+  "cost_usd": 0.01803975,
+  "runtime_ms": 53486,
+  "llm_calls": 6,
+  "tool_calls": 2,
+  "retries": 0
+}

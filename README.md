@@ -27,10 +27,12 @@ occurred across the whole 5-trial run, in one trial of `c03`.
 
 **Replicated on cases this project's author never saw.** A six-case held-out
 benchmark, written by a separate agent denied access to the prompts, the
-pipeline, the docs and every result, reproduces the direction: baseline F1
-0.750, advanced **0.889**, again separating on the case whose evidence lives
-outside the diff. It also produced a false positive on a trap, which the frozen
-benchmark's traps never do — see [`docs/holdout.md`](docs/holdout.md).
+pipeline, the docs and every result, reproduces the direction over 3 trials:
+baseline F1 **0.750 ± 0.000**, advanced **0.926 ± 0.064**, recall again
+**1.000 ± 0.000**, separating on the one case whose evidence lives outside the
+diff. It also produced false positives on both its traps — which the frozen
+benchmark's traps never do — so trap performance on *unseen* traps is weaker
+than the headline suggests. See [`docs/holdout.md`](docs/holdout.md).
 
 ¹ Manual-triage proxy — findings a human must read and judge. **Not** a direct
 measurement of human review time. A blind stopwatch harness for the real
@@ -547,12 +549,13 @@ commands, required configuration, expected output, runtime, and cost.
 - **Author bias, partly addressed.** The frozen benchmark was written by the
   same person who built the reviewer. A six-case **held-out** benchmark
   ([`docs/holdout.md`](docs/holdout.md)) was authored by a separate agent
-  denied access to the prompts, the pipeline, the docs and every result. The
-  advantage replicates there (baseline F1 0.750, advanced **0.889**) — and it
-  also produced a false positive on a trap, which the frozen benchmark's four
-  traps never do. Trap performance is weaker than the headline suggests. The
-  authoring agent is still an LLM, so this reduces the bias rather than
-  removing it; harvested pull requests would be the real fix.
+  denied access to the prompts, the pipeline, the docs and every result. Over 3
+  trials the advantage replicates (baseline F1 0.750 ± 0.000, advanced
+  **0.926 ± 0.064**, recall 1.000 ± 0.000) — and both of its traps produced a
+  false positive in one trial each, which the frozen benchmark's four traps
+  never do. Trap performance on unseen traps is weaker and less stable than the
+  headline suggests. The authoring agent is still an LLM, so this reduces the
+  bias rather than removing it; harvested pull requests would be the real fix.
 - **Human review time is still a proxy in the headline table.** A blind
   stopwatch harness (`vcr triage`) is implemented and documented, but the
   reported figure remains findings-to-triage per case until a session is run.

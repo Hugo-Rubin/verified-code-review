@@ -140,6 +140,18 @@ enum Command {
         #[arg(long, default_value_t = 3)]
         tolerance: u32,
     },
+    /// Pair every scored true positive with the ground truth it was credited
+    /// for, so a person can check that the claim describes the actual defect.
+    ///
+    /// Reads artifacts only; calls no model and reaches no verdict. The
+    /// evaluator matches on location and category, which is a proxy for
+    /// "found the defect" -- this is how that proxy gets checked.
+    AuditMatches {
+        #[arg(long, default_value = "benchmark/cases")]
+        benchmark: PathBuf,
+        #[arg(long, default_value = "results-final")]
+        root: PathBuf,
+    },
     /// Summarise spread across repeated trials.
     ///
     /// Expects `<root>/<trial>/evaluation-<arm>.json`, i.e. one subdirectory
@@ -173,6 +185,7 @@ async fn main() -> Result<()> {
         Command::Report { out } => cmd_report(&out),
         Command::Variance { root } => cmd_variance(&root),
         Command::ReplayDedup { root, tolerance } => replay::report(&root, tolerance),
+        Command::AuditMatches { benchmark, root } => replay::report_matches(&benchmark, &root),
         Command::Triage {
             benchmark,
             out,

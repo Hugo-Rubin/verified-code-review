@@ -1,0 +1,113 @@
+{
+  "agent": "Advanced",
+  "model": "gemini-3.7-flash",
+  "provider": "Vertex",
+  "started_at": "2026-08-31T00:34:28.547390500+00:00",
+  "finished_at": "2026-08-31T00:37:33.954042400+00:00",
+  "benchmark_dir": "benchmark/holdout",
+  "case_count": 6,
+  "config": {
+    "llm": {
+      "provider": "Vertex",
+      "model": "gemini-3.7-flash",
+      "location": "global",
+      "auth": "ApiKey",
+      "temperature": 0.0,
+      "max_output_tokens": 8192,
+      "timeout_secs": 180,
+      "max_retries": 5,
+      "min_request_interval_ms": 1500,
+      "pricing": {
+        "input_usd_per_mtok": 0.75,
+        "output_usd_per_mtok": 3.75
+      }
+    },
+    "match_line_tolerance": 3,
+    "max_tool_calls_per_finding": 8,
+    "max_followup_investigations": 1,
+    "max_read_lines": 200,
+    "max_search_results": 40,
+    "max_second_looks": 0,
+    "ablation": "None"
+  },
+  "stats": [
+    {
+      "case_id": "h01-registry-swap-remove",
+      "trajectory_id": "299ba0b9-82bb-4d7f-9815-60f410c8d1ea",
+      "runtime_ms": 31865,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 6525,
+      "output_tokens": 2665,
+      "cost_usd": 0.0148875,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h02-status-class-guard",
+      "trajectory_id": "02cd2e60-9368-4fbc-91ca-ca220c265104",
+      "runtime_ms": 23447,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 0,
+      "input_tokens": 7116,
+      "output_tokens": 1979,
+      "cost_usd": 0.012758249999999999,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h03-cache-retain-polarity",
+      "trajectory_id": "674efd77-84e1-415a-b0f4-ca3b44199851",
+      "runtime_ms": 30999,
+      "llm_calls": 5,
+      "tool_calls": 1,
+      "retries": 1,
+      "input_tokens": 5969,
+      "output_tokens": 1842,
+      "cost_usd": 0.01138425,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h04-include-flatten-recursion",
+      "trajectory_id": "5d9056d7-4f7a-4155-9fc9-51fc46dff059",
+      "runtime_ms": 52666,
+      "llm_calls": 9,
+      "tool_calls": 5,
+      "retries": 0,
+      "input_tokens": 19607,
+      "output_tokens": 3150,
+      "cost_usd": 0.02651775,
+      "reported_findings": 0,
+      "withheld_findings": 1
+    },
+    {
+      "case_id": "h05-lease-early-return",
+      "trajectory_id": "5a6c0969-6cbb-4158-bd05-a9963b58aa04",
+      "runtime_ms": 14893,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "retries": 0,
+      "input_tokens": 2205,
+      "output_tokens": 1742,
+      "cost_usd": 0.008186249999999999,
+      "reported_findings": 0,
+      "withheld_findings": 0
+    },
+    {
+      "case_id": "h06-digest-threshold-inline",
+      "trajectory_id": "3436807c-2198-49c4-8322-d6576a8d2f1a",
+      "runtime_ms": 31513,
+      "llm_calls": 6,
+      "tool_calls": 2,
+      "retries": 1,
+      "input_tokens": 7329,
+      "output_tokens": 1594,
+      "cost_usd": 0.01147425,
+      "reported_findings": 1,
+      "withheld_findings": 0
+    }
+  ]
+}
