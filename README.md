@@ -10,59 +10,61 @@ while staying clean on all four false-positive traps in every trial. On a
 held-out benchmark it had never seen, it recovers the same class of defect and
 is **not** clean on the traps; both numbers are below.
 
-Mean of **5 trials per arm**, same model (`gemini-3.7-flash`), temperature 0.
+Mean of **15 trials per arm**, same model (`gemini-3.7-flash`), temperature 0.
 
 | Metric | Simple baseline | Agent solution | Change |
 |---|---:|---:|---:|
-| **Primary outcome — finding F1** | 0.857 | **0.988** | **+0.131** |
-| Precision | 1.000 | 0.978 | −0.022 |
+| **Primary outcome — finding F1** | 0.857 | **0.992** | **+0.135** |
+| Precision | 1.000 | 0.985 | −0.015 |
 | Recall | 0.750 | **1.000** | **+0.250** |
 | Human time per task (proxy) ¹ | 0.50 findings/case | 0.68 findings/case | +0.18 |
-| **Cost per task** | **$0.0032** | **$0.0153** | ×4.8 |
-| Runtime per task | 9.1 s | 37.7 s | +28.6 s |
+| **Cost per task** | **$0.0032** | **$0.0157** | ×4.9 |
+| Runtime per task | 8.3 s | 39.3 s | +31.0 s |
 | Evidence accuracy ² | n/a — gathers none | **1.000** | — |
 
-The advanced arm found **every real defect in every trial** (recall 1.000,
-σ = 0.000) and beat the baseline in all five runs — its worst F1 (0.941) still
-exceeds the baseline's (0.857, identical in all five). One false positive
-occurred across the whole 5-trial run, in one trial of `c03`.
+The advanced arm found **every real defect in every trial** (recall
+1.000 ± 0.000 over 15 trials) and beat the baseline in all fifteen — its worst
+F1 (0.941) still exceeds the baseline's (0.857, identical in all fifteen). Two
+false positives occurred across the entire 15-trial run, on two different cases
+(`c03` and `c08`), one trial each.
 
 **Replicated on cases this project's author never saw.** A six-case held-out
 benchmark, written by a separate agent denied access to the prompts, the
-pipeline, the docs and every result, reproduces the direction over 3 trials:
-baseline F1 **0.750 ± 0.000**, advanced **0.926 ± 0.064**, recall again
+pipeline, the docs and every result, reproduces the direction over 6 trials:
+baseline F1 **0.750 ± 0.000**, advanced **0.944 ± 0.061**, recall again
 **1.000 ± 0.000**, separating on the one case whose evidence lives outside the
 diff. It also produced false positives on both its traps — which the frozen
 benchmark's traps never do — so trap performance on *unseen* traps is weaker
-than the headline suggests. See [`docs/holdout.md`](docs/holdout.md).
+and less stable than the headline suggests. See
+[`docs/holdout.md`](docs/holdout.md).
 
 ¹ Manual-triage proxy — findings a human must read and judge. **Not** a direct
 measurement of human review time. A blind stopwatch harness for the real
 measurement ships as `vcr triage`; see [Cost and human time](#cost-and-human-time).
 ² Fraction of cited excerpts that really appear at the lines they cite, checked
-deterministically against the repository, 41–75 citations per run (285 across the five trials, all correct).
+deterministically against the repository, 41–83 citations per run (909 across the fifteen trials, all correct).
 
 ### The whole ladder, measured
 
 Every stage switched off in turn, same benchmark. Headline arms are means of
-5 trials; the two ablation rows are means of 3.
+15 trials; the two ablation rows are means of 3.
 
 | Configuration | Trials | F1 | Precision | Recall | Cost/case |
 |---|---:|---:|---:|---:|---:|
-| Simple baseline | 5 | 0.857 | 1.000 | 0.750 | $0.0032 |
+| Simple baseline | 15 | 0.857 | 1.000 | 0.750 | $0.0032 |
 | Advanced prompt alone (no investigation, no falsification) | 3 | 0.742 | 0.607 | 0.958 | $0.0038 |
 | **+ investigation**, no falsification | 3 | 0.828 | 0.707 | 1.000 | $0.0112 |
-| **+ falsification** — the full system | 5 | **0.988** | 0.978 | 1.000 | $0.0153 |
+| **+ falsification** — the full system | 15 | **0.992** | 0.985 | 1.000 | $0.0157 |
 
 Read the middle two rows carefully, because they are the result.
 
 **Neither half beats the baseline on its own.** The advanced prompt alone scores
 0.742 — *worse than doing nothing clever*. Adding repository investigation
 lifts it to 0.828, which is still **below** the baseline's 0.857. Only when
-falsification is added does the system reach 0.988.
+falsification is added does the system reach 0.992.
 
 Investigation supplies the recall (0.750 → 1.000). Falsification is what makes
-that recall affordable, taking precision from 0.707 to 0.978. Remove either and
+that recall affordable, taking precision from 0.707 to 0.985. Remove either and
 you have something worse than the simple prompt you started with.
 
 Full numbers: [`results-trials/`](results-trials/) and [`results/`](results-final/).
@@ -485,19 +487,27 @@ a true positive even if it describes something else entirely. Nothing in a
 deterministic matcher can tell those apart, and using a model to judge would
 reintroduce the thing this project refuses.
 
-So it was checked by hand. Every matched finding in the 5-trial headline run —
-8 expected findings × 5 trials — was read against its ground-truth
-description. The claims are in
-[`docs/matching-audit.md`](docs/matching-audit.md) in full, so the reading can
-be disagreed with.
+So it was checked by hand. The headline run now contains **120 matched
+findings** (8 defects × 15 trials). Forty of them — every match in trials 1–5 —
+were read in full against their ground-truth descriptions, and all fifteen
+claims for `c12` were read as well. The full text of all 120 is printed by
+`vcr audit-matches`, so the reading can be disagreed with; the transcript of
+the hand-read subset is in
+[`docs/matching-audit.md`](docs/matching-audit.md).
 
-**Result: 7 of 8 defects are described exactly, in all five trials.** The
-exception is `c12`, where the claims name the right failure (an index below
-`len()` reaches a vacant slot and panics) but state the cause as a conditional
-about the store's semantics rather than flatly identifying that `Store::len`
-returns capacity. We count those as true positives — a human handed that claim
-goes and reads `Store::len` and finds the bug — and flag the hedge here rather
-than let a reader assume every match is crisp.
+**Result: 7 of 8 defects are described exactly.** The exception is `c12`, where
+the claims name the right failure (an index below `len()` reaches a vacant slot
+and panics) but state the cause as a conditional about the store's semantics —
+*"if slots can be vacant"*, *"if the store is sparse"* — rather than flatly
+identifying that `Store::len` returns capacity. We count those as true
+positives, since a human handed that claim goes and reads `Store::len` and
+finds the bug, and flag the hedge rather than let a reader assume every match
+is crisp.
+
+Extending to 15 trials strengthened that observation rather than diluting it:
+**the hedge appears in all 15 of 15 `c12` claims**, never once resolving into a
+flat assertion. It is a stable property of how this system reports
+boundary-condition defects, not a phrasing accident in a small sample.
 
 **The matcher did produce one spurious match, on the Python pilot.** In one run
 `p03` scored a true positive for *"non-integer float indices bypass the bounds
@@ -509,14 +519,14 @@ is the concrete reason the audit above exists.
 ## Results
 
 All arms, `gemini-3.7-flash` via Vertex AI, temperature 0, frozen benchmark,
-Headline arms **5 trials**, ablations **3 trials**. Mean ± sample standard
+Headline arms **15 trials**, ablations **3 trials**. Mean ± sample standard
 deviation.
 
 | Metric | Baseline | Prompt alone | + investigation | **Advanced (full)** |
 |---|---:|---:|---:|---:|
-| Precision | 1.000 ± 0.000 | 0.607 ± 0.052 | 0.707 ± 0.035 | **0.978 ± 0.050** |
+| Precision | 1.000 ± 0.000 | 0.607 ± 0.052 | 0.707 ± 0.035 | **0.985 ± 0.039** |
 | Recall | 0.750 ± 0.000 | 0.958 ± 0.072 | 1.000 ± 0.000 | **1.000 ± 0.000** |
-| **F1** | 0.857 ± 0.000 | 0.742 ± 0.052 | 0.828 ± 0.024 | **0.988 ± 0.026** |
+| **F1** | 0.857 ± 0.000 | 0.742 ± 0.052 | 0.828 ± 0.024 | **0.992 ± 0.021** |
 | False positives/case | 0.00 | 0.42 | 0.28 | 0.03 |
 | Findings to triage/case | 0.50 | 1.06 | 0.94 | 0.69 |
 | Evidence accuracy | n/a | 1.000 | 1.000 | 1.000 ± 0.000 |
@@ -544,14 +554,14 @@ still below the baseline. Only the combination clears it. This is the most
 important row in the table and the one we got wrong when reasoning without it.
 
 **The baseline is perfectly stable; the advanced arm nearly is.** The baseline
-scored identically on all twelve cases in all five trials, σ = 0.000 on every
+scored identically on all twelve cases in all fifteen trials, σ = 0.000 on every
 metric. The advanced arm's recall is also σ = 0.000 — it found every defect
 every time. All of its remaining variance is one case, `c03`, which produced
 one extra false positive in one trial out of three.
 
 **Precision costs more than recall here.** Getting recall to 1.000 was a
 candidate-generation problem and was solved by an instruction. Getting
-precision back to 0.978 afterwards took the entire falsification apparatus —
+precision back to 0.985 afterwards took the entire falsification apparatus —
 four roles, ~6.5 model calls and ~2.5 tool calls per case, and 5× the cost of
 the baseline.
 
@@ -629,12 +639,15 @@ commands, required configuration, expected output, runtime, and cost.
 
 - **Twelve cases is small.** One finding moves F1 by roughly 0.03–0.06. Treat
   the direction as the result, not the third decimal place. Six held-out cases
-  (3 trials per arm) and six Python pilot cases (1 run per arm) exist and are
+  (6 trials per arm) and six Python pilot cases (1 run per arm) exist and are
   reported separately; neither is folded into the headline.
-- **Five trials, not thirty.** Enough to show the baseline is perfectly stable
-  (identical on all 12 cases in all 5 trials, σ = 0.000 on every metric) and
-  that the advanced arm's remaining spread comes from a single case (`c03`),
-  but far too few for a confidence interval. The headline arms were not run
+- **Fifteen trials, not thirty.** Enough to show the baseline is perfectly
+  stable (identical on all 12 cases in all 15 trials, σ = 0.000 on every
+  metric) and that the advanced arm's remaining spread is two rare false
+  positives, but still short of a proper confidence interval. **Trial count
+  changed a stated conclusion**: at n=5 we wrote that the spread came from a
+  single case, `c03`; at n=15 a second case, `c08`, produced a false positive
+  too. The claim was an artefact of the sample. The headline arms were not run
   interleaved, so a drift in provider behaviour between arms would be invisible
   there. The held-out trials alternate which arm runs first, which detects a
   consistent one-directional drift but is still not true interleaving.
@@ -644,11 +657,11 @@ commands, required configuration, expected output, runtime, and cost.
 - **Author bias, partly addressed.** The frozen benchmark was written by the
   same person who built the reviewer. A six-case **held-out** benchmark
   ([`docs/holdout.md`](docs/holdout.md)) was authored by a separate agent
-  denied access to the prompts, the pipeline, the docs and every result. Over 3
+  denied access to the prompts, the pipeline, the docs and every result. Over 6
   trials the advantage replicates (baseline F1 0.750 ± 0.000, advanced
-  **0.926 ± 0.064**, recall 1.000 ± 0.000) — and both of its traps produced a
-  false positive in one trial each, which the frozen benchmark's four traps
-  never do. Trap performance on unseen traps is weaker and less stable than the
+  **0.944 ± 0.061**, recall 1.000 ± 0.000) — and both of its traps produced
+  false positives, `h04` in one trial of six and `h05` in two, which the frozen
+  benchmark's four traps never do. Trap performance on unseen traps is weaker and less stable than the
   headline suggests. The authoring agent is still an LLM, so this reduces the
   bias rather than removing it; harvested pull requests would be the real fix.
 - **Human review time is still a proxy in the headline table.** A blind
@@ -790,7 +803,7 @@ nothing clever, and we can put numbers on it.**
 | Simple baseline | 0.857 |
 | Advanced prompt alone | **0.742** |
 | + repository investigation | **0.828** |
-| + falsification (full) | **0.988** |
+| + falsification (full) | **0.992** |
 
 Both middle rows sit *below* the baseline. A reviewer told to propose broadly
 is worse than one told to be careful. Give it repository tools and it is still
@@ -802,7 +815,7 @@ regression. We shipped a changelog twice claiming to know which change mattered
 most — first candidate generation, then falsification — and the ablations
 corrected us both times. The real answer is that they are one mechanism:
 investigation buys recall (0.750 → 1.000), falsification buys back the
-precision that costs (0.707 → 0.978), and neither survives alone.
+precision that costs (0.707 → 0.985), and neither survives alone.
 
 The generalisable version: **if you can only ship half of a
 propose-then-verify design, ship neither.**
@@ -887,7 +900,7 @@ scored as a false positive.
 Six firings, five correct declines, one invented finding, no recall gained on
 either benchmark, ~14% more cost per case. **So it ships off.** A single
 12-case trial with it enabled scored F1 1.000, and that number is not being
-claimed: it is inside the noise of 0.988 ± 0.026, from one run against five,
+claimed: it is inside the noise of 0.992 ± 0.021, from one run against fifteen,
 and this project has already been flattered by a single run once. The code, the
 seven tests and the `--ablation no-second-look` flag are kept; the default is 0
 and a test guards it.

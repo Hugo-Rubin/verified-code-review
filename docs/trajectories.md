@@ -228,7 +228,7 @@ rather than the mechanism. Two tool calls: search the symbol, read
 `src/model.rs`. The verifier answered with the text it found:
 `is_page_worthy` is `severity >= PAGE_THRESHOLD`, and `PAGE_THRESHOLD` is 7, so
 severity exactly 7 is silently dropped. The baseline, seeing only the diff,
-reported nothing on this case in all three trials.
+reported nothing on this case in all six trials.
 
 ### [`h04-include-flatten-recursion-advanced.md`](trajectories/h04-include-flatten-recursion-advanced.md) — the same machinery failing
 

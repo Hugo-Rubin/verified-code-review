@@ -401,7 +401,7 @@ cargo run --quiet --bin vcr -- audit-matches --benchmark benchmark/holdout --roo
 ## Expected output
 
 A single run of each arm produces a table like this. An early single run gave
-the numbers below; the reported headline figures are means over five trials in
+the numbers below; the reported headline figures are means over fifteen trials in
 [`../results-final/`](../results-final/), and a single run of your own will
 differ — see the note on nondeterminism in the changelog:
 
@@ -445,12 +445,19 @@ LLM output is nondeterministic even at temperature 0. What should reproduce is
 the *ordering*: the advanced arm ahead on recall and F1, both arms clean on all
 four traps, the baseline missing both challenging cases.
 
-Useful calibration from our three trials:
+Useful calibration from our fifteen trials:
 
 - The **baseline was perfectly stable** — identical on all twelve cases in all
-  three runs. If yours varies, something differs in your configuration.
-- The **advanced arm varied on exactly one case**, `c12-slot-guard-capacity`,
-  found in 1 trial of 3. Expect that one to move.
+  fifteen runs, σ = 0.000 on every metric. If yours varies, something differs in
+  your configuration.
+- The **advanced arm is nearly stable**: 13 of 15 trials scored a perfect 1.000,
+  and the other two each produced a single false positive — one on
+  `c03-session-touch-context`, one on `c08-order-name-limit`. Expect one of those
+  to move occasionally; expect recall to be 1.000 every time, as it was in all
+  fifteen.
+- **Do not calibrate against a small number of runs.** At five trials we
+  recorded that only `c03` ever moved. That was wrong, and ten more trials is
+  what showed it.
 - Treat a difference of one finding as noise. One finding is worth roughly
   0.03–0.06 F1 on a benchmark this size.
 - Treat the advanced arm scoring *below* the baseline as a signal to check the

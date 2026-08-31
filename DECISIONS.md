@@ -1737,3 +1737,70 @@ checked against evidence; unchecked numbers in its own prose are the cheapest
 possible way to undermine it. Verified in the same pass: 285 evidence citations
 across five trials, 70 findings with Insufficient at 0, 24 shipped benchmark
 cases, 86 adjudicated candidates.
+
+---
+
+## 2026-08-31 05:10 UTC — Headline to n=15, held-out to n=6
+
+### Context
+
+Trials are cheap and case authoring is not, so the fastest way to firm up the
+evidence was more trials of what already exists. Two batches were run: headline
+arms t6-t15 on the frozen benchmark, and held-out arms t4-t6.
+
+### Evidence
+
+Shipped configuration throughout, second look off, temperature 0. Every trial
+verified complete before use.
+
+```text
+frozen benchmark, n=15
+  advanced   F1 0.9922 +- 0.0207   P 0.9852   R 1.0000 +- 0.0000
+  baseline   F1 0.8571 +- 0.0000   identical on all 12 cases in all 15 trials
+
+held-out benchmark, n=6
+  advanced   F1 0.9444 +- 0.0609   P 0.9000   R 1.0000 +- 0.0000
+  baseline   F1 0.7500 +- 0.0000   identical on all 6 cases in all 6 trials
+```
+
+Recall is 1.000 with zero variance on both benchmarks across 21 trials. The
+baseline does not move at all on either. Every point of the advanced arm's
+spread is precision, and every false positive is on a trap.
+
+### The finding
+
+**A stated conclusion did not survive the larger sample.** At n=5 the README
+and this changelog both said the advanced arm's remaining spread "comes from a
+single case, `c03`". At n=15 a second case, `c08`, produced a false positive in
+one trial. The claim was an artefact of the sample that produced it — which is
+the same mistake this document already records making once, when a single run
+of 0.941 was quoted before three trials averaged 0.917.
+
+The corrected statement is narrower and better: 13 of 15 trials score a perfect
+1.000, and the two that do not each contribute one false positive, on two
+different cases.
+
+**The `c12` hedge is now confirmed at n=15.** All fifteen claims for that case
+state the cause conditionally and not one asserts flatly that `Store::len`
+returns capacity. Ten extra trials produced no crisp phrasing, so this is a
+property of how the system reports boundary-condition defects rather than a
+small-sample artefact. It matches `h06` on the held-out set, the only other
+off-by-one defect in either benchmark.
+
+### Rejected alternatives
+
+- **Claiming the hand audit covers all 120 matches.** Rejected: 40 were read in
+  full, plus all 15 `c12` claims. The docs now say exactly that, and
+  `vcr audit-matches` prints all 120 for anyone who wants to check the rest.
+- **Leaving the ablation rows at 3 trials unmarked.** Rejected: the ladder table
+  now carries a per-row trial count, since the headline rows are 15 and the two
+  ablation rows are 3, and presenting them as comparable would be misleading.
+
+### Consequence
+
+Headline: advanced **F1 0.992 +- 0.021** against a baseline of **0.857 +-
+0.000**, recall **1.000 +- 0.000**. Held-out: **0.944 +- 0.061** against
+**0.750 +- 0.000**. Evidence accuracy 1.000 across 909 citations in 15 trials.
+
+Not updated: docs/video-script.md still quotes the n=5 figures. The script is
+rewritten when the video is made and is deliberately left alone until then.

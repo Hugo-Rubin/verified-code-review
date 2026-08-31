@@ -17,12 +17,24 @@ That command pairs each scored true positive with the ground truth it was
 credited for and prints both. It computes no verdict of its own — the reading
 below is a person's, and yours may differ.
 
-Scope: every matched finding in the five-trial headline run
-([`../results-final/`](../results-final/)) — 8 expected findings across 5
-trials, 40 matches in total. Claims that were identical across trials are shown
-once with the trials that produced them.
+Scope. The headline run now holds **120 matches** (8 defects × 15 trials).
+Read in full by hand: **all 40 matches from trials 1–5**, reproduced below, plus
+**all 15 claims for `c12`** — the one case whose wording is not crisp. The
+remaining matches are paraphrases of the same eight defects and were not each
+read individually; `vcr audit-matches --benchmark benchmark/cases --root
+results-final` prints all 120 for anyone who wants to.
 
-**Outcome: 7 of 8 exact in all five trials, 1 hedged, 0 spurious.**
+**Outcome: 7 of 8 exact, 1 hedged, 0 spurious.**
+
+**The hedge is stable at n=15.** Every one of the fifteen `c12` claims states
+the cause conditionally — *"if slots can be uninitialized or sparse"*, *"if
+`Store` supports sparse or tombstoned slots"*, *"if `store.len()` reflects
+populated count rather than maximum index"* — and not one resolves into the flat
+assertion that `Store::len` returns capacity. Ten trials more than the original
+audit did not turn up a single crisp phrasing. That makes it a property of how
+this system reports boundary-condition defects rather than an artefact of a
+small sample, and it lines up with `h06` on the held-out benchmark, which hedges
+the same way on the only other off-by-one defect in either case set.
 
 | Defect | Verdict |
 |---|---|

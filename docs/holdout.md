@@ -131,33 +131,33 @@ h05  2000 failing runs (1000 empty input, 1000 unparseable field)
 
 ## Results
 
-**3 trials per arm**, `gemini-3.7-flash`, temperature 0, the same configuration
+**6 trials per arm**, `gemini-3.7-flash`, temperature 0, the same configuration
 that produced the headline figures (second look disabled). Mean ± sample
 standard deviation.
 
 | Metric | Baseline | Advanced |
 |---|---:|---:|
-| Precision | 0.750 ± 0.000 | 0.867 ± 0.116 |
+| Precision | 0.750 ± 0.000 | 0.900 ± 0.110 |
 | Recall | 0.750 ± 0.000 | **1.000 ± 0.000** |
-| **F1** | **0.750 ± 0.000** | **0.926 ± 0.064** |
-| False positives/case | 0.17 | 0.11 |
+| **F1** | **0.750 ± 0.000** | **0.944 ± 0.061** |
+| False positives/case | 0.17 | 0.08 |
 | Evidence accuracy | n/a (0 citations) | **1.000 ± 0.000** |
-| Cost/case | $0.0039 | $0.0150 |
+| Cost/case | $0.0039 | $0.0147 |
 | LLM calls/case | 1.0 | 5.2 |
 
-Per case, across the three trials:
+Per case, across the six trials:
 
 | Case | Baseline | Advanced |
 |---|---|---|
-| `h01-registry-swap-remove` | found ×3 | found ×3 |
-| `h02-status-class-guard` | found ×3 | found ×3 |
-| `h03-cache-retain-polarity` | found ×3 | found ×3 |
-| `h04-include-flatten-recursion` (trap) | **FP ×3** | **FP ×1** |
-| `h05-lease-early-return` (trap) | clean ×3 | **FP ×1** |
-| `h06-digest-threshold-inline` (challenging) | **missed ×3** | **found ×3** |
+| `h01-registry-swap-remove` | found ×6 | found ×6 |
+| `h02-status-class-guard` | found ×6 | found ×6 |
+| `h03-cache-retain-polarity` | found ×6 | found ×6 |
+| `h04-include-flatten-recursion` (trap) | **FP ×6** | **FP ×1** |
+| `h05-lease-early-return` (trap) | clean ×6 | **FP ×2** |
+| `h06-digest-threshold-inline` (challenging) | **missed ×6** | **found ×6** |
 
 **The pattern replicates on cases the author never saw.** Advanced beats
-baseline by +0.176 F1 on average and in every individual trial, by the same
+baseline by +0.194 F1 on average and in every individual trial, by the same
 mechanism the frozen benchmark shows: the arms agree on every defect visible in
 the diff, and separate on `h06`, the one case whose deciding evidence lives in
 a file the change does not touch.
@@ -166,19 +166,19 @@ Two things carry over from the frozen benchmark exactly:
 
 - **Recall is 1.000 with zero variance.** Every real defect, every trial, on
   cases the system was never tuned against.
-- **The baseline is perfectly stable** — identical on all six cases in all
-  three trials, σ = 0.000 on every metric, just as it is on the frozen twelve.
-  So the gap is not sampling noise.
+- **The baseline is perfectly stable** — identical on all six cases in all six
+  trials, σ = 0.000 on every metric, just as it is on the frozen twelve. So the
+  gap is not sampling noise.
 
 **All of the advanced arm's variance is on traps.** `h04` produced a false
-positive in one trial of three, `h05` in a different one. That is the shape of
-the weakness: not that a particular trap always fools it, but that a new trap
-fools it *sometimes*.
+positive in one trial of six, `h05` in two. That is the shape of the weakness:
+not that a particular trap always fools it, but that a new trap fools it
+*sometimes*. Doubling from three trials to six did not change that conclusion,
+it sharpened the rate.
 
-Arm order was alternated between trials — baseline-first in t1 and t3,
-advanced-first in t2 — so a drift in provider behaviour between arms would not
-land consistently on one of them. It is a partial answer to "the arms were not
-run interleaved", not a full one.
+Arm order was alternated between trials, so a drift in provider behaviour
+between arms would not land consistently on one of them. It is a partial answer
+to "the arms were not run interleaved", not a full one.
 
 ### The success, in detail
 
@@ -196,8 +196,8 @@ way to know and reported nothing.
 
 ### The failure, in detail — and it is our documented failure mode
 
-The baseline produces a false positive on `h04` in all three trials; the
-advanced arm does so in one of three. That single trajectory is worth reading,
+The baseline produces a false positive on `h04` in all six trials; the
+advanced arm does so in one of six. That single trajectory is worth reading,
 because it fails in the exact way this project has already written up as its
 main failure mode.
 
@@ -229,7 +229,7 @@ Two things went wrong, in order:
 This is the A3/A4 lesson from the seed phase — *"X will panic if Y" cannot be
 disproved; the verifier must find the triggering state reachable* — failing to
 generalise to a trap the author did not write. On the frozen benchmark's four
-traps that discipline holds in all five trials. On the first new trap it met,
+traps that discipline holds in all fifteen trials. On the first new trap it met,
 it did not.
 
 **We are not fixing it.** A prompt change written against a case we just
@@ -243,8 +243,8 @@ first thing a follow-up should work on.
 - The advanced arm's **recall** advantage on out-of-diff evidence: **confirmed**
   on new cases. This is the load-bearing claim and it survived.
 - **Zero false positives on traps**: **not confirmed.** The frozen benchmark
-  reports 0 FPs on 4 traps across 5 trials. The held-out set produced a false
-  positive on each of its two traps, in one trial out of three apiece. The
+  reports 0 FPs on 4 traps across 15 trials. The held-out set produced a false
+  positive on each of its two traps — `h04` once in six, `h05` twice. The
   honest reading is that the frozen traps are ones the system was iterated
   against, and trap performance on unseen traps is weaker and less stable than
   the headline suggests.

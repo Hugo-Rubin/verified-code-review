@@ -360,7 +360,7 @@ only exists because the number was checked before the knob was turned.
 | `results-trials/t1..t3/` | 12 | ablation: no falsification ❌ | 0.857 | 0.725 mean |
 | `results-trials-v6/t1..t3/` | 12 | v6, assumptions about unseen code | 0.857 | 0.961 mean |
 | `results-trials-v6/t1..t3/` | 12 | ablation: candidates only ❌ | 0.857 | 0.787 mean |
-| `results-final/t1..t5/` | 12 | **final: v6 + dedup + memory, 5 trials** | **0.857** | **0.988 mean** |
+| `results-final/t1..t15/` | 12 | **final: v6 + dedup + memory, 15 trials** | **0.857** | **0.992 mean** |
 | `results-final/t1..t3/` | 12 | ablation: no falsification ❌ | 0.857 | 0.828 mean |
 | `results-final/t1..t3/` | 12 | ablation: candidates only ❌ | 0.857 | 0.742 mean |
 | `results-pilot/` | 3 | Python pilot, first three cases (superseded by the run below) | 0.000 | 0.500 |
@@ -368,7 +368,7 @@ only exists because the number was checked before the knob was turned.
 | `results-sonnet/` | 12 | cross-model: baseline on Claude Sonnet 5 | 0.857 | — |
 | `results-secondlook/` | 12 | second look enabled, single trial | — | 1.000 |
 | `results-pilot-secondlook/` | 6 | Python pilot, second look enabled | — | 0.800 |
-| `results-holdout/` | 6 | **held-out benchmark, authored without sight of the reviewer** | **0.750** | **0.889** |
+| `results-holdout/t1..t6/` | 6 | **held-out benchmark, authored without sight of the reviewer, 6 trials** | **0.750** | **0.944 mean** |
 
 Nothing has been removed from this table. The ❌ rows are changes that made the
 system worse; they were reverted, refined, or — in the ablation's case — run
@@ -379,7 +379,12 @@ Two things this table records that a summary would hide.
 **A single run flattered us once already.** `results/` produced 0.941 and was
 quoted in earlier drafts of this document. Three trials of that same
 configuration average 0.917, range 0.875–0.941 — the single run was the best of
-three. Every headline figure here is now a mean over **five** trials.
+three. Every headline figure here is now a mean over **fifteen** trials.
+
+**And five was not enough either.** At n=5 this document said the advanced
+arm's spread came from one case, `c03`. At n=15 a second case, `c08`, produced
+a false positive too. The same mistake, one order of magnitude further along:
+a conclusion drawn from the sample that produced it.
 
 **The Python pilot appears twice, and both rows stay.** The first three cases
 were re-executed as part of the six-case sweep, so the second row is a new
