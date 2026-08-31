@@ -37,7 +37,7 @@ OUT = BUILD / "verified-code-reviewer.mp4"
 
 W, H = 1920, 1080
 SAMPLE_RATE = 24000
-VOICE = "af_heart"
+VOICE = "am_michael"
 
 BG = (13, 17, 23)
 FG = (201, 209, 217)
@@ -352,7 +352,7 @@ def render_slide(spec: dict, index: int, total: int) -> pathlib.Path:
     return path
 
 
-def synth(paras: list[str]) -> list[float]:
+def synth(paras: list[str], speed: float, voice: str) -> list[float]:
     """Render one audio clip per paragraph; return their durations."""
     import numpy as np
     import soundfile as sf
@@ -365,7 +365,7 @@ def synth(paras: list[str]) -> list[float]:
     CLIPS.mkdir(parents=True, exist_ok=True)
     durations = []
     for i, para in enumerate(paras):
-        samples, sr = k.create(para, voice=VOICE, speed=1.0, lang="en-us")
+        samples, sr = k.create(para, voice=voice, speed=speed, lang="en-us")
         # A short tail so slides do not cut on the final consonant.
         samples = np.concatenate([samples, np.zeros(int(sr * 0.45), dtype=samples.dtype)])
         path = CLIPS / f"{i:02d}.wav"
@@ -397,12 +397,18 @@ def build(paras: list[str], durations: list[float]) -> None:
          "-c", "copy", str(full_audio)],
         check=True, capture_output=True,
     )
+    # `-t` pins the container to the narration length. The concat demuxer holds
+    # the repeated final image for an unspecified time otherwise, which added
+    # nine seconds of silent trailing frame and nearly pushed a 290s narration
+    # over the 300s limit.
+    total = sum(durations)
     subprocess.run(
         ["ffmpeg", "-y",
          "-f", "concat", "-safe", "0", "-i", str(concat),
          "-i", str(full_audio),
          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "25",
-         "-c:a", "aac", "-b:a", "160k", "-shortest", str(OUT)],
+         "-c:a", "aac", "-b:a", "160k",
+         "-t", f"{total:.3f}", "-shortest", str(OUT)],
         check=True, capture_output=True,
     )
 
@@ -410,6 +416,12 @@ def build(paras: list[str], durations: list[float]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="plan only, no rendering")
+    # Changing this cannot desynchronise the video: every slide's duration is
+    # measured from its own rendered clip, after synthesis. Faster speech simply
+    # makes each slide shorter.
+    ap.add_argument("--speed", type=float, default=1.25,
+                    help="narration speed; slides retime themselves to match")
+    ap.add_argument("--voice", default=VOICE)
     args = ap.parse_args()
 
     paras = paragraphs()
@@ -439,8 +451,8 @@ def main() -> int:
     for i, spec in enumerate(SLIDES_SPEC):
         render_slide(spec, i, len(SLIDES_SPEC))
 
-    print("synthesising narration...")
-    durations = synth(paras)
+    print(f"synthesising narration ({args.voice}, speed {args.speed})...")
+    durations = synth(paras, args.speed, args.voice)
     total = sum(durations)
     print(f"\ntotal narration: {total:.1f}s")
     if total > 300:
